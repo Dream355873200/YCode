@@ -1,0 +1,33 @@
+# Build artifacts
+engine/flai-engine.exe
+engine/*.exe
+
+# Go
+*.test
+*.out
+
+# Test playground (local Flutter projects)
+playground/
+
+# Node / Electron (desktop/)
+desktop/node_modules/
+desktop/dist/
+
+# IDE & OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Logs & temp
+*.log
+/tmp/
+
+# 引擎二进制的旧备份
+engine/*.exe~
+
+# 运行期生成（引擎探测缓存等）
+engine/cmd/flai-engine/DEVICE.md
+
+# OS
+Desktop.ini

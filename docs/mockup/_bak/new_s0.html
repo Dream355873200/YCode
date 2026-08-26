@@ -1,0 +1,54 @@
+    <!-- ============ 画面一：新建项目（独立欢迎页，敲定后才进工作台） ============ -->
+    <section class="screen active" id="s0">
+      <div class="welcome">
+        <div class="welcome-inner">
+          <div class="welcome-hero">
+            <div class="welcome-logo">A</div>
+            <h1>把想法变成 App</h1>
+            <p class="welcome-sub">描述你想要的应用，AI 与你敲定规格，然后自动开发、自动测试。<br>任何想法都行 —— 不需要预设模板，不需要写代码。</p>
+          </div>
+
+          <div class="welcome-card">
+            <label class="welcome-label">描述你的想法</label>
+            <textarea class="idea-input" rows="3" placeholder="例：给钓友记录渔获的 App，拍照记录鱼种/重量/天气水温，按钓点汇总，能看年度统计…">给钓友记录渔获的 App：拍照记录鱼种/重量/天气水温，按钓点汇总，能看年度统计</textarea>
+            <div class="welcome-row">
+              <div class="chip-row">
+                <span class="chip">电商</span><span class="chip">内容社区</span><span class="chip">效率工具</span><span class="chip">聊天</span><span class="chip">记录统计</span>
+              </div>
+              <span class="welcome-hint">想不出来？点一个领域找灵感（仅预填描述，不限定范围）</span>
+            </div>
+
+            <div class="welcome-grid">
+              <div>
+                <label class="welcome-label">应用形态</label>
+                <div class="type-grid">
+                  <div class="type-card"><div class="ic"><svg width="22" height="22" viewBox="0 0 16 16" fill="none"><rect x="4" y="1.5" width="8" height="13" rx="2" stroke="currentColor" stroke-width="1.4"/><path d="M6.5 12.5h3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg></div><div class="t">纯移动端</div><div class="d">本地数据/第三方API</div></div>
+                  <div class="type-card sel"><div class="ic"><svg width="22" height="22" viewBox="0 0 16 16" fill="none"><rect x="1.5" y="2.5" width="6" height="5.5" rx="1.5" stroke="currentColor" stroke-width="1.3"/><rect x="8.5" y="8" width="6" height="5.5" rx="1.5" stroke="currentColor" stroke-width="1.3"/><path d="M4.5 5.2h0M11.5 10.7h0" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></div><div class="t">App+Go后端</div><div class="d">自建API+数据库</div></div>
+                </div>
+              </div>
+              <div>
+                <label class="welcome-label">品牌主色</label>
+                <div class="swatch-row">
+                  <div class="swatch sel" style="background:#3D5AFE"></div>
+                  <div class="swatch" style="background:#00B8A9"></div>
+                  <div class="swatch" style="background:#F6416C"></div>
+                  <div class="swatch" style="background:#FFB830"></div>
+                  <div class="swatch" style="background:#6C5CE7"></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="welcome-cta">
+              <span class="welcome-esti">AI 会先和你聊清需求、生成 SPEC.md 供你修改，确认后才开始自动开发</span>
+              <button class="btn primary" onclick="go(1)">开始与 AI 敲定需求 →</button>
+            </div>
+          </div>
+
+          <div class="welcome-foot">
+            <button class="btn small">打开最近项目</button>
+            <span class="welcome-recent">最近：钓获手账 · 2 小时前</span>
+          </div>
+        </div>
+      </div>
+    </section>
+

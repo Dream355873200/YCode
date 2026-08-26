@@ -1,0 +1,107 @@
+    <!-- ============ 画面一：新建项目（向导+方向制定 融合，一次性流程） ============ -->
+    <section class="screen active" id="s0">
+      <h2 class="screen-title">新建项目</h2>
+      <div class="screen-sub">左边选配置，右边和 AI 把需求聊清楚，中间 SPEC 实时成形 —— 一屏做完直接开工。开工后对话继续常驻，随时改。</div>
+      <div class="setup">
+        <!-- 左：配置 -->
+        <div class="card cfg">
+          <div class="cfg-sec">
+            <label>描述你的想法 <span class="req">*</span></label>
+            <textarea class="idea-input" rows="3">给钓友记录渔获的 App：拍照记录鱼种/重量/天气水温，按钓点汇总，能看年度统计</textarea>
+            <div style="font-size:10.5px;color:var(--muted);margin-top:6px">AI 会从描述推断类型并追问细节 —— 任何想法都行，不受预设限制</div>
+          </div>
+          <div class="cfg-sec">
+            <label>起点模板 <span style="font-weight:400;color:var(--muted)">（可选，点一下仅预填描述）</span></label>
+            <div class="chip-row">
+              <span class="chip">电商</span><span class="chip">内容社区</span><span class="chip">效率工具</span><span class="chip">聊天</span><span class="chip">记录统计</span><span class="chip sel">从空白开始</span>
+            </div>
+          </div>
+          <div class="cfg-sec">
+            <label>应用形态 <span class="req">*</span></label>
+            <div class="type-grid">
+              <div class="type-card"><div class="ic"><svg width="22" height="22" viewBox="0 0 16 16" fill="none"><rect x="4" y="1.5" width="8" height="13" rx="2" stroke="currentColor" stroke-width="1.4"/><path d="M6.5 12.5h3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg></div><div class="t">纯移动端</div><div class="d">本地数据/第三方API</div></div>
+              <div class="type-card sel"><div class="ic"><svg width="22" height="22" viewBox="0 0 16 16" fill="none"><rect x="1.5" y="2.5" width="6" height="5.5" rx="1.5" stroke="currentColor" stroke-width="1.3"/><rect x="8.5" y="8" width="6" height="5.5" rx="1.5" stroke="currentColor" stroke-width="1.3"/><path d="M4.5 5.2h0M11.5 10.7h0" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></div><div class="t">App+Go后端</div><div class="d">自建API+数据库</div></div>
+            </div>
+          </div>
+          <div class="cfg-sec">
+            <label>核心功能 <span class="req">*</span></label>
+            <div class="chip-row">
+              <span class="chip sel">账号登录</span><span class="chip sel">商品列表</span><span class="chip sel">购物车</span>
+              <span class="chip">订单支付</span><span class="chip">搜索</span><span class="chip">消息推送</span>
+            </div>
+          </div>
+          <div class="cfg-sec">
+            <label>品牌主色</label>
+            <div class="swatch-row">
+              <div class="swatch sel" style="background:#3D5AFE"></div>
+              <div class="swatch" style="background:#00B8A9"></div>
+              <div class="swatch" style="background:#F6416C"></div>
+              <div class="swatch" style="background:#FFB830"></div>
+              <div class="swatch" style="background:#6C5CE7"></div>
+            </div>
+          </div>
+          <div class="cfg-sec">
+            <label>项目名</label>
+            <input class="proj-name-input" value="钓获手账">
+            <div style="font-size:10.5px;color:var(--muted);margin-top:4px">fresh_mall · Flutter · Riverpod</div>
+          </div>
+          <div class="esti">
+            当前预估：页面 <b>12</b> · 任务卡 <b>18</b><br>
+            开发 <b>≈25 min</b> · 测试 <b>≈8 min</b> · token <b>≈1.2M</b>（¥6.5）
+          </div>
+        </div>
+        <!-- 中：AI 对话（方向制定） -->
+        <div class="card" style="padding:0">
+          <div class="pane-head">需求对话 <span class="tag info" style="margin-left:auto">SPEC v3 · 已同步</span></div>
+          <div class="chat-body">
+            <div class="msg ai"><div class="av">AI</div><div class="bubble">看到你选了「账号登录 + 商品列表 + 购物车」。先确认两件事：<br>① 游客可以浏览加购，还是打开就必须登录？<br>② 商品图先做固定尺寸还是瀑布流？</div></div>
+            <div class="msg user"><div class="av">你</div><div class="bubble">游客可浏览，加购时再登录。瀑布流好看点，就瀑布流。订单支付这版不要</div></div>
+            <div class="msg ai"><div class="av">AI</div><div class="bubble">收到，范围收敛为三个模块（已从 SPEC 移除订单/支付）：<br>· <b>账号登录</b>：手机号+验证码，token 加密存储<br>· <b>商品列表</b>：瀑布流 + 下拉刷新 + 懒加载<br>· <b>购物车</b>：本地持久化，游客可用<br><br>右侧 SPEC 已更新，还有要调的吗？没有就开始开发。</div></div>
+            <div class="msg user"><div class="av">你</div><div class="bubble">可以，开始吧</div></div>
+          </div>
+          <div class="chat-input">
+            <textarea placeholder="继续补充或修改需求…"></textarea>
+            <button class="btn primary" onclick="go(1)">开始自动开发 →</button>
+          </div>
+        </div>
+        <!-- 右：SPEC 实时预览 -->
+        <div class="card" style="padding:0">
+          <div class="pane-head">SPEC.md <span class="tag muted" style="margin-left:auto">可直接编辑</span></div>
+          <div class="spec-body"><pre><span class="md-h"># 钓获手账 · 产品规格书</span>
+<span class="md-dim">由左侧配置 + 对话推导 · v3</span>
+
+<span class="md-h">## 概述</span>
+城市用户的水果电商，主打 30 分钟送达。
+
+<span class="md-h">## 模块</span>
+<span class="md-h">### 账号登录</span>
+- 手机号 + 6 位验证码
+- Token 走 secure storage
+- 失效自动回登录页
+
+<span class="md-h">### 商品列表</span>
+- 瀑布流 · 图片懒加载
+- 下拉刷新 / 触底加载
+- 卡片：图/名/价/加购
+
+<span class="md-h">### 购物车</span>
+- 本地持久化（游客可用）
+- 增减 / 左滑删 / 全选
+
+<span class="md-h">### Go 后端</span>
+- Gin + GORM · SQLite(dev)
+- 用户/商品/购物车 REST API
+- JWT 鉴权 · 参数化查询
+
+<span class="md-h">## 非目标</span>
+- 订单 / 支付 / 推送
+<span class="md-dim">（对话 v2 收敛）</span>
+
+<span class="md-h">## 验收</span>
+- analyze 零 error
+- 主流程测试 100% 通过
+- 冷启动 &lt; 2s</pre></div>
+        </div>
+      </div>
+    </section>
+
