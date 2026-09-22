@@ -103,6 +103,34 @@ async function refreshQueue(
   } catch { /* 引擎暂不可达，下个周期再试 */ }
 }
 
+/** 未决提问对账（restore / 流断轮询共用）：提问卡不在引擎历史里——
+ * run 阻塞在提问上时，request_id 与问题文本只在引擎内存中。重载后向
+ * 引擎查询：有未决 = run 还活着，把提问卡还原（可答）；无未决 = run
+ * 已结束 / 引擎重启过，历史即真相。幂等：同 request_id 不重复入流。 */
+async function reconcilePendingAsk(
+  sid: string,
+  patchFn: typeof patch,
+  set: Parameters<typeof patch>[0],
+): Promise<void> {
+  try {
+    const r = await engine.get(`/pending-ask?session_id=${encodeURIComponent(sid)}`);
+    const body = r.body as { pending?: boolean; request_id?: string; question?: string; payload?: Record<string, unknown> } | undefined;
+    if (!body?.pending || !body.request_id) return;
+    patchFn(set, sid, (s) => {
+      if (s.rows.some((row) => (row.kind === 'ask' || row.kind === 'confirm') && row.requestId === body.request_id)) {
+        return s;
+      }
+      return {
+        ...s,
+        rows: applyFrame(s.rows, {
+          type: 'ask_user', session_id: sid, request_id: body.request_id,
+          question: body.question || '', payload: body.payload,
+        } as unknown as Envelope),
+      };
+    });
+  } catch { /* 引擎暂不可达，下个周期再试 */ }
+}
+
 /** 轮询直到引擎侧会话空闲（sendNow 的停轮等待；有界防悬挂）。 */
 async function waitIdle(sid: string, tries = 20): Promise<boolean> {
   for (let i = 0; i < tries; i++) {
@@ -183,6 +211,8 @@ export const useConversation = create<ConversationStore>((set, get) => {
         }
         // 队列对账（引擎侧 bg 任务也会入队，轮询兜底可见）
         void refreshQueue(sid, patch, set);
+        // 未决提问对账：轮询恢复路径没有直播流，帧丢失的 ask_user 在这里补
+        void reconcilePendingAsk(sid, patch, set);
         if (!running) { stopResume(sid); handleFrame({ type: 'done', session_id: sid } as Envelope); }
       } catch { /* 引擎暂不可达，下个周期再试 */ }
     }, 3000);
@@ -251,6 +281,10 @@ export const useConversation = create<ConversationStore>((set, get) => {
       } catch { /* 状态不可得 → 只回放历史 */ }
       // 排队消息对账
       void refreshQueue(sid, patch, set);
+      // 未决提问对账：引擎历史不含待答提问，重载后向运行时查询——
+      // 有未决（run 仍阻塞）恢复可答的提问卡；无未决（run 已结束 /
+      // 引擎随上次应用退出而终止）按历史渲染，不复活死掉的提问
+      void reconcilePendingAsk(sid, patch, set);
     },
 
     async send(sid, text) {
