@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useApp } from '../../state/AppState.jsx';
 import { useChat } from '../../lib/useChat.js';
-import { TurnView, ApproveBarView } from './TurnView.jsx';
+import { TurnView, ApproveBarView, ConfirmCard, AskCard } from './TurnView.jsx';
+import { actVerbPlain } from '../../lib/toolRender.jsx';
 
 export default function ChatPanel({ chatApi, onAct }) {
   const { project, sessionId, setSessionId, setUsage, engine } = useApp();
@@ -9,8 +10,9 @@ export default function ChatPanel({ chatApi, onAct }) {
   sessionIdRef.current = sessionId;
   const onActRef = useRef(onAct);
   onActRef.current = onAct;
-  const { items, busy, send, approve, restore, resumeState, interrupt } = useChat({
+  const { items, busy, send, approve, restore, resumeState, interrupt, answerAsk } = useChat({
     sessionIdRef,
+    sessionId,
     onUsage: (u) => setUsage((x) => ({ input: x.input + u.input_tokens, output: x.output + u.output_tokens })),
     onAct: (a) => onActRef.current && onActRef.current(a),
   });
@@ -20,16 +22,11 @@ export default function ChatPanel({ chatApi, onAct }) {
   const [mode, setMode] = useState('plan');
   const bodyRef = useRef(null);
 
-  // 会话标识：每项目一个持久会话（amc-<目录名>），重开项目可恢复历史
-  useEffect(() => {
-    const sid = project && project.dir ? 'amc-' + project.dir.split(/[\\/]/).filter(Boolean).pop() : null;
-    setSessionId(sid);
-  }, [project?.dir]);
+  // 会话 ID 由 AppState.openProject 按项目派生（amc-<目录名>），此处只消费。
 
-  // 换项目/换会话/引擎就绪时回放历史。
-  // 打开项目会触发 bindProject 重启引擎（数秒），restore 若在引擎起来前
-  // 发出只会得到连接错误 → 依赖 engine.status：就绪后会再拉一次。
-  // 对话进行中不回放（引擎状态抖动不应冲掉正在直播的回合）。
+  // 换项目/换会话/引擎就绪时恢复历史。直播状态在模块级 store（不随组件
+  // 卸载丢失）：退出项目再进来，进行中的 run 直播直接续上；只有应用整个
+  // 重启过（SSE 断了、引擎任务还在后台跑）才走轮询跟踪兜底。
   useEffect(() => {
     if (!busyRef.current) restore(sessionId);
   }, [sessionId, engine.status, restore]);
@@ -52,7 +49,11 @@ export default function ChatPanel({ chatApi, onAct }) {
       const it = items[i];
       if (it.type === 'turn' && it.steps.length) {
         const a = [...it.steps].reverse().find((s) => s.kind === 'act' && s.cls === 'run');
-        if (a) return `正在 ${a.verb} ${a.obj || ''}…`;
+        // 状态行用人话（剥 emoji 与「了」尾：「正在 ✏️ 修改了 …」→「正在 修改 …」）
+        if (a) {
+          const verb = actVerbPlain(a.verb);
+          return `正在${verb ? ' ' + verb : ''} ${a.obj || ''}…`;
+        }
       }
     }
     return busy ? '思考中…' : '空闲';
@@ -74,15 +75,6 @@ export default function ChatPanel({ chatApi, onAct }) {
               <button className="btn small" style={{ marginLeft: 'auto' }} onClick={() => interrupt()}>⏹ 终止</button>
             </div>
           )}
-          {resumeState === 'interrupted' && !busy && (
-            <div className="approve-bar" style={{ margin: '6px 10px' }}>
-              <span className="ap-text">
-                ⏸ 上次任务被中断（应用关闭）
-                <span className="ap-dim">上方是已完成的步骤；点击继续，AI 会从断点接着执行</span>
-              </span>
-              <button className="btn primary small" disabled={busy} onClick={() => send('继续执行上次被中断的任务：检查当前进度，从中断处接着完成剩余工作')}>▶ 从断点继续</button>
-            </div>
-          )}
           {items.length === 0 && (
             <div style={{ color: 'var(--faint)', fontSize: 12, textAlign: 'center', marginTop: 40, lineHeight: 2 }}>
               {project ? `和 AI 聊聊「${project.name}」——` : ''}<br />
@@ -91,8 +83,18 @@ export default function ChatPanel({ chatApi, onAct }) {
           )}
           {items.map((it) => {
             if (it.type === 'user') return <div key={it.id} className="msg user"><div className="bubble">{it.text}</div></div>;
-            if (it.type === 'turn') return <TurnView key={it.id} turn={it} />;
+            if (it.type === 'turn') return <TurnView key={it.id} turn={it} onAnswer={answerAsk} />;
             if (it.type === 'approve') return <ApproveBarView key={it.id} item={it} onApprove={approve} />;
+            if (it.type === 'confirm') return <ConfirmCard key={it.id} item={it} onAnswer={answerAsk} />;
+            if (it.type === 'ask') return <AskCard key={it.id} item={it} onAnswer={answerAsk} />;
+            if (it.type === 'status') {
+              return (
+                <div key={it.id} className="retry-status">
+                  <span className="rs-spinner" />
+                  <span className="rs-text">{it.text}</span>
+                </div>
+              );
+            }
             return <div key={it.id} style={{ fontSize: 10.5, color: 'var(--faint)', textAlign: 'center' }}>{it.text}</div>;
           })}
         </div>

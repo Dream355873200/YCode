@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from 'react';
 
 const modalStyle = {
-  position: 'fixed', inset: 0, zIndex: 100, background: 'rgba(0,0,0,.45)',
+  position: 'fixed', inset: 0, zIndex: 100, background: 'var(--scrim)',
   display: 'grid', placeItems: 'center',
 };
 

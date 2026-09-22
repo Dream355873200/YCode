@@ -2,6 +2,12 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('amc', {
+  // 窗口控制（v2 自绘标题栏）
+  win: {
+    minimize: () => ipcRenderer.invoke('win:minimize'),
+    maximize: () => ipcRenderer.invoke('win:maximize'),
+    close: () => ipcRenderer.invoke('win:close'),
+  },
   // 引擎（goagent daemon）
   engine: {
     get: (apiPath) => ipcRenderer.invoke('engine:get', apiPath),
@@ -9,7 +15,8 @@ contextBridge.exposeInMainWorld('amc', {
     chat: (payload) => ipcRenderer.invoke('engine:chat', payload),
     restart: () => ipcRenderer.invoke('engine:restart'),
     status: () => ipcRenderer.invoke('engine:status'),
-    bindProject: (dir) => ipcRenderer.invoke('engine:bindProject', dir),
+    listModels: () => ipcRenderer.invoke('engine:listModels'),
+    bindProject: (sessionId, dir) => ipcRenderer.invoke('engine:bindProject', sessionId, dir),
     onStatus: (cb) => {
       const h = (_e, s) => cb(s);
       ipcRenderer.on('engine:status', h);
@@ -18,8 +25,12 @@ contextBridge.exposeInMainWorld('amc', {
     // SSE 事件流
     onSseBegin: (cb) => { const h = (_e, x) => cb(x); ipcRenderer.on('sse:begin', h); return () => ipcRenderer.removeListener('sse:begin', h); },
     onSseEvent: (cb) => { const h = (_e, x) => cb(x); ipcRenderer.on('sse:event', h); return () => ipcRenderer.removeListener('sse:event', h); },
-    onSseDone: (cb) => { const h = () => cb(); ipcRenderer.on('sse:done', h); return () => ipcRenderer.removeListener('sse:done', h); },
+    onSseDone: (cb) => { const h = (_e, x) => cb(x); ipcRenderer.on('sse:done', h); return () => ipcRenderer.removeListener('sse:done', h); },
     onSseError: (cb) => { const h = (_e, x) => cb(x); ipcRenderer.on('sse:error', h); return () => ipcRenderer.removeListener('sse:error', h); },
+  },
+  // Git 面板（右栏）：分支/变更/最近提交
+  git: {
+    status: (dir) => ipcRenderer.invoke('git:status', dir),
   },
   // 配置
   config: {
@@ -37,6 +48,7 @@ contextBridge.exposeInMainWorld('amc', {
   // 文件
   fs: {
     readFile: (p) => ipcRenderer.invoke('fs:readFile', p),
+    writeFile: (p, content) => ipcRenderer.invoke('fs:writeFile', p, content),
     listDir: (p) => ipcRenderer.invoke('fs:listDir', p),
     readImage: (p) => ipcRenderer.invoke('fs:readImage', p),
   },

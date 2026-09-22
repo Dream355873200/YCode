@@ -36,7 +36,10 @@ func NewTestReportTool() (string, goagent.ToolDef) {
 	return "test_report", goagent.ToolDef{
 		Description: "生成 Markdown 测试报告并保存到项目 .yume/test-reports/（含 PASS/FAIL 条目与截图证据）。" +
 			"全量测试（收尾外环）完成后必须调用：条目用 items 传 JSON 数组，截图路径填 screenshot 工具返回的路径。" +
-			"对话回复里只需告知结论摘要，报告细节由本工具固化。",
+			"【截图是硬性要求】每个 pass/fail 条目都必须有 evidence 截图路径——无证据的条目会被拒绝。" +
+			"【按页面组织条目】报告按证据截图自动分组：同一页面的条目把相同截图路径填进 evidence，" +
+			"它们会归到同一张页面图下列出（一张图对应一组条目，不重复贴图）。" +
+			"顺序建议：同页面的条目相邻排列。对话回复里只需告知结论摘要，报告细节由本工具固化。",
 		Input:      TestReportInput{},
 		Permission: goagent.ReadOnly, // 只写项目内 .yume/ 目录，无破坏性
 		Concurrent: false,
@@ -52,8 +55,24 @@ func NewTestReportTool() (string, goagent.ToolDef) {
 			if verdict == "" {
 				return "", fmt.Errorf("verdict 必须是 pass/fail/partial")
 			}
+			// 截图硬校验：pass/fail 条目必须有证据（skip 豁免——跳过的
+			// 没有可截的）。无图报告对用户毫无说服力，宁可打回让模型补截。
+			var noEvidence []string
+			for _, it := range items {
+				if it.Status == "skip" {
+					continue
+				}
+				if len(it.Evidence) == 0 {
+					noEvidence = append(noEvidence, it.Name)
+				}
+			}
+			if len(noEvidence) > 0 {
+				return "", fmt.Errorf("以下条目缺少截图证据（pass/fail 必须带 evidence）: %s——"+
+					"先对相应页面/功能调 screenshot 工具，再把返回的路径填进 evidence",
+					strings.Join(noEvidence, "、"))
+			}
 
-			root := projectRoot()
+			root := projectRootFrom(ctx)
 			if root == "" {
 				return "", fmt.Errorf("无法定位项目根（.yume/test-reports 需要）")
 			}
@@ -77,6 +96,18 @@ func NewTestReportTool() (string, goagent.ToolDef) {
 				}
 			}
 
+			// 证据路径归一化：绝对路径转「相对项目根」+ 正斜杠。
+			// frontmatter 的 shots 和正文的图片引用共用此格式（前端
+			// readImage 按项目根解析；md 链接里反斜杠/盘符都不合法）。
+			relEvidence := func(e string) string {
+				e = strings.TrimSpace(e)
+				e = filepath.ToSlash(e)
+				if rel, err := filepath.Rel(root, e); err == nil && !strings.HasPrefix(rel, "..") {
+					return rel
+				}
+				return e // 已是相对路径或无法归一化：原样保留
+			}
+
 			var b strings.Builder
 			// frontmatter：报告页签解析结构化字段（列表徽标/统计），正文人类可读
 			b.WriteString("---\n")
@@ -90,27 +121,62 @@ func NewTestReportTool() (string, goagent.ToolDef) {
 			b.WriteString("shots:\n")
 			for _, it := range items {
 				for _, e := range it.Evidence {
-					fmt.Fprintf(&b, "  - %s\n", e)
+					fmt.Fprintf(&b, "  - %s\n", relEvidence(e))
 				}
 			}
 			b.WriteString("---\n\n")
 
 			fmt.Fprintf(&b, "# %s\n\n%s · 设备 %s · %d 条目（✅%d ❌%d）\n\n",
 				in.Title, verdict, dev, len(items), npass, nfail)
-			b.WriteString("| # | 条目 | 状态 | 备注 |\n|---|---|---|---|\n")
-			for i, it := range items {
-				icon := map[string]string{"pass": "✅", "fail": "❌", "skip": "⏭"}[it.Status]
-				if icon == "" {
-					icon = "❓"
-				}
-				note := strings.ReplaceAll(it.Note, "|", "\\|")
-				fmt.Fprintf(&b, "| %d | %s | %s | %s |\n", i+1, it.Name, icon, note)
+
+			// 按证据截图分组渲染：同页面的多个条目共用一张图——图只贴
+			// 一次，它证明的所有条目列在图下（去重截图后报告不再一图多贴）。
+			// 无证据的条目（skip）归入「跳过」小节。
+			type shotGroup struct {
+				img    string   // 归一化截图路径
+				items  []int    // 引用该图的条目下标
 			}
-			b.WriteString("\n## 证据截图\n\n")
-			for _, it := range items {
-				for _, e := range it.Evidence {
-					fmt.Fprintf(&b, "**%s**\n\n![%s](../../%s)\n\n", it.Name, it.Name, e)
+			var groups []*shotGroup
+			groupOf := map[string]*shotGroup{}
+			var skipped []int
+			for i, it := range items {
+				if len(it.Evidence) == 0 {
+					skipped = append(skipped, i)
+					continue
 				}
+				// 多证据的条目挂到第一张图（其余路径也登记进 frontmatter
+				// 清单，详情页都有）。
+				key := relEvidence(it.Evidence[0])
+				g, ok := groupOf[key]
+				if !ok {
+					g = &shotGroup{img: key}
+					groupOf[key] = g
+					groups = append(groups, g)
+				}
+				g.items = append(g.items, i)
+			}
+
+			for gi, g := range groups {
+				fmt.Fprintf(&b, "## 页面 %d\n\n", gi+1)
+				fmt.Fprintf(&b, "![页面%d](%s)\n\n", gi+1, g.img)
+				b.WriteString("| 状态 | 条目 | 备注 |\n|---|---|---|\n")
+				for _, i := range g.items {
+					it := items[i]
+					icon := map[string]string{"pass": "✅", "fail": "❌", "skip": "⏭"}[it.Status]
+					if icon == "" {
+						icon = "❓"
+					}
+					note := strings.ReplaceAll(it.Note, "|", "\\|")
+					fmt.Fprintf(&b, "| %s | %s | %s |\n", icon, it.Name, note)
+				}
+				b.WriteString("\n")
+			}
+			if len(skipped) > 0 {
+				b.WriteString("## 跳过的条目\n\n")
+				for _, i := range skipped {
+					fmt.Fprintf(&b, "- ⏭ %s（%s）\n", items[i].Name, items[i].Note)
+				}
+				b.WriteString("\n")
 			}
 			if in.Extra != "" {
 				fmt.Fprintf(&b, "## 补充\n\n%s\n", in.Extra)

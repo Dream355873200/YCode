@@ -3,13 +3,17 @@ const { spawn } = require('child_process');
 const http = require('http');
 const { URL } = require('url');
 const fs = require('fs');
+const path = require('path');
+const os = require('os');
+// goagent 协议 TS 客户端：SSE 解析/统一信封/交互回传全部走 SDK，不再手写
+const { GoAgentClient } = require('goagent-client');
 
 const state = {
   proc: null,
   addr: 'http://127.0.0.1:8420',
   status: 'stopped', // stopped | starting | running | error
-  projectDir: '',    // 引擎绑定的项目目录（cwd 决定文件工具工作区）
   win: null,         // 广播状态用的 BrowserWindow 引用（由 main.js 注入）
+  client: null,      // GoAgentClient 懒初始化（addr 变化时重建）
 };
 
 function setWin(w) { state.win = w; }
@@ -17,7 +21,7 @@ function setWin(w) { state.win = w; }
 function setStatus(s, extra) {
   state.status = s;
   if (state.win && !state.win.isDestroyed()) state.win.webContents.send('engine:status', {
-    status: s, addr: state.addr, projectDir: state.projectDir, ...extra,
+    status: s, addr: state.addr, ...extra,
   });
 }
 
@@ -53,17 +57,36 @@ function probeEngine(addr) {
   return httpJSON('GET', addr, '/health').then((r) => r.status === 200).catch(() => false);
 }
 
-async function ensure(cfg, projectDir) {
-  const wantDir = projectDir || '';
+// sessionMapPath 会话→项目映射文件（引擎按会话扎根项目目录的真源）。
+// 引擎侧 WithSessionWorkDir 读它解析每个 session 的项目路径——
+// 切项目只是换 session_id，引擎进程不重启（多项目并行）。
+function sessionMapPath() {
+  return path.join(os.homedir(), '.amobilecreater', 'session-map.json');
+}
+
+// bindSession 登记会话→项目映射并即时写盘（引擎 mtime 缓存会自动重读）。
+function bindSession(sessionId, projectDir) {
+  if (!sessionId || !projectDir) return false;
+  const file = sessionMapPath();
+  let map = {};
+  try { map = JSON.parse(fs.readFileSync(file, 'utf8')) || {}; } catch { /* 首次/损坏：重建 */ }
+  map[sessionId] = projectDir;
+  try {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify(map, null, 2));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function ensure(cfg) {
+  // 引擎是单例常驻进程：多项目并行靠 session→项目映射（session-map.json），
+  // 不再按项目重启。已在跑（含用户手动先启动的）直接复用。
   try {
     if (await probeEngine(cfg.engine.addr)) {
-      if (!wantDir || !state.projectDir || state.projectDir === wantDir || state.proc === null) {
-        if (!(!state.projectDir && wantDir)) {
-          // 无新目录要求，或引擎本来就是本壳拉起的（cwd 已对）→ 复用
-          setStatus('running', { reused: true });
-          return true;
-        }
-      }
+      setStatus('running', { reused: true });
+      return true;
     }
   } catch { /* 未运行，继续拉起 */ }
 
@@ -81,11 +104,14 @@ async function ensure(cfg, projectDir) {
     FLAI_API_KEY: cfg.engine.apiKey,
     FLAI_CONTEXT_WINDOW: String(cfg.engine.contextWindow),
   };
-  // cwd = 项目目录：Read/Glob/Write 等文件工具都在项目内工作
-  if (wantDir && fs.existsSync(wantDir)) state.projectDir = wantDir;
-  state.proc = spawn(cfg.engine.binary, ['--addr', cfg.engine.addr], {
+  // 最大输出（推理模型的 reasoning 也占此额度）；未配置走引擎缺省 393216
+  if (cfg.engine.maxOutputTokens) env.FLAI_MAX_OUTPUT_TOKENS = String(cfg.engine.maxOutputTokens);
+  // --mode 决定引擎装配哪个模式包（工具集/领域规范/技能目录）；未配置
+  // 时不传参，走引擎自身缺省（flutter），老配置文件无需迁移。
+  const args = ['--addr', cfg.engine.addr];
+  if (cfg.engine.mode) args.push('--mode', cfg.engine.mode);
+  state.proc = spawn(cfg.engine.binary, args, {
     env, windowsHide: true,
-    cwd: state.projectDir || undefined,
   });
   state.proc.stdout.on('data', () => {});
   state.proc.stderr.on('data', () => {});
@@ -106,39 +132,36 @@ async function ensure(cfg, projectDir) {
   return false;
 }
 
-// SSE 桥：POST /chat 流式读出，逐事件转发 renderer
+// SSE 桥：经 goagent-client SDK 消费 /chat 流（统一信封），逐事件转发 renderer。
+// 首帧恒为 run_start（sse:begin 语义沿用——renderer 以首帧绑定会话）。
+// 每流独立状态：begin 标记与 session 归属都是流内变量，多会话并行流互不串扰；
+// sse:done / sse:error 携带该流的 session_id，renderer 按会话收尾（不再依赖
+// 「最近活跃会话」猜测，避免并行流先结束的一方误关别家的轮次）。
+function client() {
+  if (!state.client || state.client.baseUrl !== state.addr) {
+    state.client = new GoAgentClient(state.addr);
+  }
+  return state.client;
+}
+
+function send(channel, payload) {
+  if (state.win && !state.win.isDestroyed()) state.win.webContents.send(channel, payload);
+}
+
 async function streamChat({ message, sessionId }) {
-  const u = new URL('/chat', state.addr);
-  const payload = JSON.stringify({ message, session_id: sessionId || undefined });
-  return new Promise((resolve, reject) => {
-    const req = http.request(
-      { hostname: u.hostname, port: u.port, path: u.pathname, method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) } },
-      (res) => {
-        let buf = '';
-        let firstEvent = true;
-        res.on('data', (chunk) => {
-          buf += chunk;
-          let idx;
-          while ((idx = buf.indexOf('\n')) >= 0) {
-            const line = buf.slice(0, idx).trim();
-            buf = buf.slice(idx + 1);
-            if (!line.startsWith('data: ')) continue;
-            let evt;
-            try { evt = JSON.parse(line.slice(6)); } catch { continue; }
-            if (firstEvent && state.win) { state.win.webContents.send('sse:begin', evt); firstEvent = false; }
-            if (state.win && !state.win.isDestroyed()) state.win.webContents.send('sse:event', evt);
-          }
-        });
-        res.on('end', () => { if (state.win && !state.win.isDestroyed()) state.win.webContents.send('sse:done'); resolve(); });
-        res.on('error', (e) => { if (state.win && !state.win.isDestroyed()) state.win.webContents.send('sse:error', String(e)); reject(e); });
-      }
-    );
-    req.on('error', reject);
-    req.setTimeout(30 * 60_000, () => req.destroy(new Error('chat timeout')));
-    req.write(payload);
-    req.end();
-  });
+  let sid = sessionId || '';
+  let first = true;
+  try {
+    for await (const evt of client().chat({ message, sessionId })) {
+      if (evt && evt.session_id) sid = evt.session_id;
+      if (first) { send('sse:begin', evt); first = false; }
+      send('sse:event', evt);
+    }
+    send('sse:done', { session_id: sid });
+  } catch (e) {
+    send('sse:error', { session_id: sid, error: String(e && e.message || e) });
+    throw e;
+  }
 }
 
 function kill() {
@@ -146,5 +169,5 @@ function kill() {
 }
 
 module.exports = {
-  state, setWin, ensure, kill, streamChat, httpJSON, isConnRefused,
+  state, setWin, ensure, kill, streamChat, httpJSON, isConnRefused, bindSession,
 };

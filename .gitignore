@@ -1,6 +1,18 @@
 # Build artifacts
 engine/flai-engine.exe
 engine/*.exe
+engine/cmd/flai-engine/*.exe
+engine/bin/
+*.exe~
+
+# Node / Electron (desktop/)
+desktop/node_modules/
+desktop/src/node_modules/
+desktop/dist/
+**/node_modules/
+
+# 运行期生成的项目数据（.yume/tasks、plans 等）
+.yume/
 
 # Go
 *.test

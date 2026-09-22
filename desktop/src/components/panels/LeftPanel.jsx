@@ -1,49 +1,65 @@
-// 左栏：测试意图横幅 + 任务/测试/网络/问题 单卡四页签
+// 左栏：测试意图横幅 + 任务/测试/网络/问题 单卡四页签。
+// 「问题」页签只收 IssueReport 记录的测试缺陷（带修复生命周期）；
+// analyze 静态问题是 AI 开发内循环的自修复过程（analyze→修→analyze
+// 直到收敛），不进 UI——那是 AI 自己消化的东西，用户关心的是测试发现。
 import React, { useEffect, useState } from 'react';
 import { useApp } from '../../state/AppState.jsx';
+import { TOOL_LABELS, testLogArg } from '../../lib/toolLang.js';
+import { on, debounce } from '../../lib/refreshBus.js';
 
-const TABS = ['任务', '测试', '网络', '问题'];
+const TABS = ['任务', '测试', '网络', '问题', '文件'];
 
-// 从 flutter analyze 输出提取问题条目
-export function parseAnalyzeIssues(result) {
-  if (!result) return [];
-  const issues = [];
-  for (const line of result.split('\n')) {
-    // "   error - The method 'x' isn't defined - lib\main.dart:10:5 - undefined_method"
-    const m = line.match(/^\s*(error|warning|info)\s+-\s+(.+?)\s+-\s+(\S+):(\d+):(\d+)\s+-\s+(\S+)\s*$/i);
-    if (m) {
-      issues.push({ sev: m[1].toLowerCase(), msg: m[2], file: m[3], line: m[4], rule: m[6] });
-    }
+// 文件树节点（pro 模式「文件」页签）：点击文件 → onOpen 在中栏编辑器打开。
+// 沿用 StagePanel 文件树的行为：目录折叠展开、NEW/MOD 徽标（git st 派生）。
+function TreeFileNode({ node, dir, depth = 0, onOpen }) {
+  const [open, setOpen] = useState(depth < 1);
+  const stCls = { A: 'new', '??': 'new', M: 'mod' }[node.st?.trim()] || null;
+
+  if (node.type === 'dir') {
+    return (
+      <>
+        <div className="ft-dir" style={{ paddingLeft: depth * 14, cursor: 'pointer' }} onClick={() => setOpen(!open)}>
+          {open ? '▾' : '▸'} {node.name}/
+        </div>
+        {open && node.children.map((c) => <TreeFileNode key={c.path} node={c} dir={dir} depth={depth + 1} onOpen={onOpen} />)}
+      </>
+    );
   }
-  return issues;
+  return (
+    <div className="ft-file" style={{ paddingLeft: depth * 14 + 16, cursor: 'pointer' }}
+      onClick={() => onOpen && onOpen(dir + '/' + node.path)} title={node.path}>
+      {node.name}
+      {stCls && <span className={'ft-st ' + stCls}>{stCls === 'new' ? 'NEW' : 'MOD'}</span>}
+    </div>
+  );
 }
 
-// 测试工具名 → 人话（横幅展示）
-const TOOL_LABELS = {
-  ui_tree: '读取界面结构', tap: '点击屏幕', swipe: '滑动屏幕', type: '输入文本',
-  back: '按返回键', wait_for: '等待页面元素', screenshot: '截取屏幕', screen_diff: '对比截图',
-  logcat: '查设备日志', net: '网络联调', vision_ask: '视觉判断', test_report: '生成测试报告',
-};
-
-export default function LeftPanel({ issues = [], testState }) {
-  const { engine, project } = useApp();
+export default function LeftPanel({ testState, onOpenFile }) {
+  const { engine, project, sessionId } = useApp();
   const [tab, setTab] = useState(0);
   const [tasks, setTasks] = useState(null);
   const [netLog, setNetLog] = useState([]); // 网络页签：录制代理落盘的请求流
 
+  // 任务跟随会话：task store 按会话隔离，轮询带 session_id 才拿到本项目的任务
   useEffect(() => {
+    if (!project || !sessionId) return;
     let alive = true;
-    const load = () => {
-      // 引擎未就绪时跳过本轮轮询（启动窗口期刷 ECONNREFUSED 日志无意义）
-      if (engine.status !== 'running') return;
-      window.amc.engine.get('/tasks')
-        .then((r) => { if (alive && r && r.body && Array.isArray(r.body)) setTasks(r.body); })
-        .catch(() => {});
+    const load = async () => {
+      const r = await window.amc.engine.get(`/tasks?session_id=${encodeURIComponent(sessionId)}`);
+      if (alive && r && r.body && Array.isArray(r.body)) setTasks(r.body);
     };
     load();
-    const t = setInterval(load, 5000);
-    return () => { alive = false; clearInterval(t); };
-  }, [engine.status]);
+    // 事件驱动为主（task 工具 done → 即时拉），慢速轮询只做兜底
+    const off = on('tasks', debounce(load));
+    const t = setInterval(load, 15000);
+    return () => { alive = false; off(); clearInterval(t); };
+  }, [engine.status, project, sessionId]);
+
+  // AI 记录的问题（IssueReport 工具 → task store，metadata.issue 标记）。
+  // 与 analyze 静态问题合并进「问题」页签：动态问题带状态（待修复/已解决），
+  // 静态问题只有级别。同一轮询数据里分流，不额外发请求。
+  const issueTasks = (tasks || []).filter((t) => t.metadata && t.metadata.issue);
+  const openIssueTasks = issueTasks.filter((t) => t.status === 'pending' || t.status === 'in_progress');
 
   // 网络页签：轮询引擎录制代理落盘的请求流（.yume/net-log.jsonl，JSONL）。
   // AI 联调测试（net record_start → 操作 app → record_stop）期间实时出现。
@@ -64,8 +80,45 @@ export default function LeftPanel({ issues = [], testState }) {
         .catch(() => {});
     };
     load();
-    const t = setInterval(load, 3000);
-    return () => { alive = false; clearInterval(t); };
+    const off = on('net-log', debounce(load));
+    const t = setInterval(load, 15000);
+    return () => { alive = false; off(); clearInterval(t); };
+  }, [project]);
+
+  // 测试页签：轮询测试工具时间线（.yume/test-log.jsonl，工具层捕获——
+  // 每次 tap/screenshot/… 的参数+结果+耗时，不依赖 SSE 事件流）。
+  const [testLog, setTestLog] = useState([]);  useEffect(() => {
+    if (!project) return;
+    let alive = true;
+    const load = () => {
+      window.amc.fs.readFile(project.dir + '/.yume/test-log.jsonl')
+        .then((r) => {
+          if (!alive || !r.ok) return;
+          const lines = r.content.trim().split('\n').filter(Boolean);
+          const rows = [];
+          for (const l of lines.slice(-300)) {
+            try { rows.push(JSON.parse(l)); } catch { /* 跳过残行 */ }
+          }
+          setTestLog(rows);
+        })
+        .catch(() => {});
+    };
+    load();
+    const off = on('test-log', debounce(load));
+    const t = setInterval(load, 10000);
+    return () => { alive = false; off(); clearInterval(t); };
+  }, [project]);
+
+  // 文件页签：项目文件树（NEW/MOD 徽标由 git status 派生）。
+  // Write/Edit done → 即时刷新（tree 信号）；轮询 30s 兜底。
+  const [tree, setTree] = useState(null);
+  useEffect(() => {
+    if (!project) return;
+    const load = () => window.amc.projects.filetree(project.dir).then(setTree);
+    load();
+    const off = on('tree', debounce(load, 500));
+    const t = setInterval(load, 30000);
+    return () => { off(); clearInterval(t); };
   }, [project]);
 
   const statusMap = { completed: 'done', in_progress: 'run', pending: 'todo' };
@@ -76,18 +129,17 @@ export default function LeftPanel({ issues = [], testState }) {
     return 'flutter';
   };
   const sevTag = { error: 'err', warning: 'warn', info: 'info' };
-  const errCount = issues.filter((i) => i.sev === 'error').length;
 
-  // 横幅三态：analyze 错误 > 测试进行中 > 上次测试结论/引导
+  // 横幅三态：问题待修 > 测试进行中 > 上次测试结论/引导
   const testRunning = testState && testState.running;
   const testLabel = testRunning
     ? `${TOOL_LABELS[testState.tool] || testState.tool}${testState.obj ? ' · ' + testState.obj : ''}`
     : '';
-  const bannerTitle = errCount > 0 ? `发现问题 · ${errCount} error`
+  const bannerTitle = openIssueTasks.length > 0 ? `发现问题 · ${openIssueTasks.length} 待修复`
     : testRunning ? '自动化测试中'
     : (testState && testState.doneAt) ? '测试完成'
     : '复合自动化测试';
-  const bannerText = errCount > 0 ? 'flutter analyze 报告 error — 「问题」页签可查，AI 自修复中'
+  const bannerText = openIssueTasks.length > 0 ? '测试发现的问题 — 「问题」页签可查，AI 修复中'
     : testRunning ? testLabel + '…'
     : (testState && testState.doneAt) ? '结论见对话摘要 · 证据在「测试报告」页签'
     : 'AI 开发后自动冒烟测试 · 说「测试一下」触发全量验证（语义树/截图/网络断言）';
@@ -108,7 +160,7 @@ export default function LeftPanel({ issues = [], testState }) {
           {TABS.map((t, i) => (
             <div key={t} className={'tab' + (tab === i ? ' active' : '')} onClick={() => setTab(i)}>
               {t}
-              {i === 3 && issues.length > 0 && <span className="tag err" style={{ marginLeft: 4, fontSize: 9, padding: '0 6px' }}>{issues.length}</span>}
+              {i === 3 && openIssueTasks.length > 0 && <span className="tag err" style={{ marginLeft: 4, fontSize: 9, padding: '0 6px' }}>{openIssueTasks.length}</span>}
             </div>
           ))}
         </div>
@@ -141,9 +193,30 @@ export default function LeftPanel({ issues = [], testState }) {
           )}
           {tab === 1 && (
             <div className="tl-scroll">
-              <div style={{ color: 'var(--faint)', fontSize: 11.5, textAlign: 'center', marginTop: 30, lineHeight: 2 }}>
-                测试时间线（P2）<br />AI 操作 App 的步骤与断言将实时呈现
-              </div>
+              {testLog.length === 0 ? (
+                <div style={{ color: 'var(--faint)', fontSize: 11.5, textAlign: 'center', marginTop: 30, lineHeight: 2 }}>
+                  测试时间线<br />AI 操作 App 的每一步（点击/输入/截图/断言）实时呈现
+                </div>
+              ) : (
+                <>
+                  <div style={{ display: 'flex', gap: 10, fontSize: 10, color: 'var(--faint)', padding: '2px 2px 6px' }}>
+                    <span>{testLog.length} 步</span>
+                    <span>✓ {testLog.filter((s) => s.ok).length}</span>
+                    <span style={{ color: testLog.some((s) => !s.ok) ? 'var(--err, #e55)' : undefined }}>
+                      ✗ {testLog.filter((s) => !s.ok).length}
+                    </span>
+                  </div>
+                  {testLog.map((s, i) => (
+                    <div key={i} className="tl-step">
+                      <span className="tl-ts">{s.ts}</span>
+                      <span className={'tl-ic ' + (s.ok ? 'ok' : 'err')}>{s.ok ? '✓' : '✗'}</span>
+                      <span className="tl-tool">{TOOL_LABELS[s.tool] || s.tool}</span>
+                      <span className="tl-arg">{testLogArg(s)}</span>
+                      {s.ms > 800 ? <span className="tl-ms">{(s.ms / 1000).toFixed(1)}s</span> : null}
+                    </div>
+                  ))}
+                </>
+              )}
             </div>
           )}
           {tab === 2 && (
@@ -174,23 +247,39 @@ export default function LeftPanel({ issues = [], testState }) {
           )}
           {tab === 3 && (
             <div className="issue-list">
-              {issues.length === 0 ? (
+              {issueTasks.length === 0 ? (
                 <div style={{ color: 'var(--faint)', fontSize: 11.5, textAlign: 'center', marginTop: 30, lineHeight: 2 }}>
-                  暂无缺陷卡<br />analyze error / 测试失败将回流到此
+                  暂无缺陷卡<br />AI 测试中发现问题会记录到此处（IssueReport）
                 </div>
-              ) : issues.map((i, k) => (
-                <div key={k} className={'issue-item' + (i.sev === 'error' ? ' sev-high' : '')}>
-                  <div className="iss-head">
-                    <span className={'tag ' + (sevTag[i.sev] || 'muted')}>{i.sev}</span>
-                    <span className="iss-title">{i.rule}</span>
+              ) : (
+                <>
+                  <div style={{ fontSize: 10, color: 'var(--faint)', padding: '4px 2px 6px' }}>
+                    AI 记录的问题 · {openIssueTasks.length} 待修复
                   </div>
-                  <div className="iss-desc">{i.msg}</div>
-                  <div className="iss-meta">
-                    <span>{i.file.split(/[\\/]/).pop()}:{i.line}</span>
-                    <span>来源：flutter analyze</span>
-                  </div>
-                </div>
-              ))}
+                  {issueTasks.map((t) => (
+                    <div key={'it-' + t.id} className={'issue-item' + (t.metadata.issue === 'error' ? ' sev-high' : '')}
+                      style={t.status === 'completed' ? { opacity: 0.55 } : undefined}>
+                      <div className="iss-head">
+                        <span className={'tag ' + (sevTag[t.metadata.issue] || 'muted')}>{t.metadata.issue}</span>
+                        <span className="iss-title">{t.subject}</span>
+                        <span className={'tag ' + (t.status === 'completed' ? 'ok' : 'warn')}
+                          style={{ marginLeft: 'auto', fontSize: 9 }}>
+                          {t.status === 'completed' ? '已解决' : '待修复'}
+                        </span>
+                      </div>
+                      {t.description ? <div className="iss-desc">{t.description}</div> : null}
+                      <div className="iss-meta"><span>来源：IssueReport</span></div>
+                    </div>
+                  ))}
+                </>
+              )}
+            </div>
+          )}
+          {tab === 4 && (
+            <div className="ftree">
+              {tree
+                ? tree.map((n) => <TreeFileNode key={n.path} node={n} dir={project.dir} onOpen={onOpenFile} />)
+                : <div style={{ color: 'var(--faint)' }}>加载中…</div>}
             </div>
           )}
         </div>

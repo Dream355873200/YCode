@@ -93,4 +93,55 @@ async function filetree(dir) {
   return walk('');
 }
 
-module.exports = { run, projectStats, filetree, flutterBin, gitBin, adbBin };
+// Git 面板数据：分支/上游/变更清单/最近提交（右栏一次取全）
+async function gitStatus(dir) {
+  const [head, count, st, log] = await Promise.all([
+    run('git', ['-C', dir, 'rev-parse', '--short', 'HEAD']),
+    run('git', ['-C', dir, 'rev-list', '--count', 'HEAD']),
+    run('git', ['-C', dir, 'status', '--porcelain=v1', '-b']),
+    run('git', ['-C', dir, 'log', '--pretty=format:%h%x09%s%x09%cr', '-n', '8']),
+  ]);
+  if (!st.ok) return { ok: false, error: st.stderr || st.error || 'git 不可用' };
+  let branch = '';
+  let upstream = '';
+  let ahead = 0;
+  let behind = 0;
+  const changes = [];
+  for (const line of st.stdout.split('\n').filter((l) => l.trim())) {
+    if (line.startsWith('## ')) {
+      const m = line.slice(3).match(/^(.+?)(?:\.\.\.(\S+))?(\s+\[(.+)\])?$/);
+      if (!m) continue;
+      branch = m[1];
+      upstream = m[2] || '';
+      const ab = (m[4] || '').match(/ahead (\d+)/);
+      const bd = (m[4] || '').match(/behind (\d+)/);
+      ahead = ab ? parseInt(ab[1], 10) : 0;
+      behind = bd ? parseInt(bd[1], 10) : 0;
+    } else {
+      const x = line[0];
+      const y = line[1];
+      let p = line.slice(3);
+      let orig;
+      const rm = p.match(/^(.+?)\s+->\s+(.+)$/); // 重命名：old -> new
+      if (rm) { orig = rm[1]; p = rm[2]; }
+      changes.push({ x, y, path: p.replace(/"/g, ''), orig });
+    }
+  }
+  const commits = count.ok ? parseInt(count.stdout.trim(), 10) || 0 : 0;
+  return {
+    ok: true,
+    branch: branch || null,
+    upstream: upstream || null,
+    ahead, behind,
+    head: head.ok ? head.stdout.trim() : null,
+    commits,
+    dirty: changes.length > 0,
+    changes,
+    log: (log.stdout || '').split('\n').filter(Boolean).map((l) => {
+      const [sha, subject, when] = l.split('\t');
+      return { sha, subject, when };
+    }),
+  };
+}
+
+module.exports = { run, projectStats, filetree, gitStatus, flutterBin, gitBin, adbBin };

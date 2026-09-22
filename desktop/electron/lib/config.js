@@ -18,6 +18,9 @@ function defaultConfig() {
     engine: {
       binary: path.join(projectRoot(), 'engine', 'flai-engine.exe'),
       addr: '127.0.0.1:8420',
+      // 产品模式（modes/ 目录下的模式包 id）：决定引擎侧工具集/领域规范/
+      // 技能目录，桌面壳按 GET /modes 渲染对应 UI。缺省 flutter 兼容老项目。
+      mode: 'flutter',
       model: 'DeepSeek-V4-Flash',
       baseUrl: 'http://localhost:11434/v1',
       apiKey: '',
@@ -26,6 +29,7 @@ function defaultConfig() {
     },
     knowledgeDir: path.join(projectRoot(), 'knowledge', 'skills'),
     theme: 'dark',
+    uiVersion: 'v2', // v2 重构期开关：v2 = 新三帧 UI，v1 = legacy（P4 清理）
   };
 }
 

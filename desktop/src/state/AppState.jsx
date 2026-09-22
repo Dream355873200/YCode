@@ -26,13 +26,19 @@ export function AppProvider({ children }) {
     return () => { off(); clearInterval(t); };
   }, []);
 
+  // 会话 ID 规则：每项目一个持久会话（amc-<目录名>），重开项目可恢复历史
+  const sessionIdOf = (p) =>
+    p && p.dir ? 'amc-' + p.dir.split(/[\\/]/).filter(Boolean).pop() : null;
+
   const openProject = useCallback((p) => {
     setProject(p);
-    setSessionId(null);
+    const sid = sessionIdOf(p);
+    setSessionId(sid);
     setUsage({ input: 0, output: 0 });
     setScreen(2);
-    // 引擎工作区切到项目目录（文件工具必须在项目内工作）
-    if (p && p.dir) window.amc.engine.bindProject(p.dir);
+    // 登记 session→项目映射：引擎按会话扎根项目目录（session-map.json），
+    // 引擎不重启——切项目只是切会话，另一项目的对话可并行执行互不干扰。
+    if (sid && p && p.dir) window.amc.engine.bindProject(sid, p.dir);
   }, []);
 
   return (

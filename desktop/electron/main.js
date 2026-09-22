@@ -1,25 +1,29 @@
 // amobileCreater 桌面壳主进程装配：
 // 窗口管理 · 各子系统模块接线 · IPC 注册
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, Menu } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
 const { loadConfig, saveConfig, loadRegistry, saveRegistry } = require('./lib/config');
 const engine = require('./lib/engine');
-const { run, projectStats, filetree } = require('./lib/tools');
+const { run, projectStats, filetree, gitStatus } = require('./lib/tools');
 const devices = require('./lib/devices');
 const flutter = require('./lib/flutter');
 
 let win = null;
 
 // ---------- 窗口 ----------
+// v2 自绘标题栏：无边框 + 无系统菜单；legacy 保留系统边框（平行运行期）
 function createWindow() {
+  const uiVersion = loadConfig().uiVersion;
+  if (uiVersion === 'v2') Menu.setApplicationMenu(null);
   win = new BrowserWindow({
     width: 1480,
     height: 940,
     minWidth: 1180,
     minHeight: 720,
     backgroundColor: '#17181C',
+    frame: uiVersion !== 'v2',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -27,9 +31,14 @@ function createWindow() {
     },
   });
   if (process.env.VITE_DEV_SERVER_URL) {
-    win.loadURL(process.env.VITE_DEV_SERVER_URL);
+    // 双入口：按 uiVersion 加载 legacy（index.html）或 v2（v2/index.html）
+    const base = process.env.VITE_DEV_SERVER_URL.replace(/\/$/, '');
+    win.loadURL(loadConfig().uiVersion === 'v2' ? `${base}/v2/index.html` : base);
   } else {
-    win.loadFile(path.join(__dirname, '..', 'dist', 'index.html'));
+    const page = loadConfig().uiVersion === 'v2'
+      ? path.join(__dirname, '..', 'dist', 'v2', 'index.html')
+      : path.join(__dirname, '..', 'dist', 'index.html');
+    win.loadFile(page);
   }
   win.on('closed', () => (win = null));
 
@@ -48,22 +57,50 @@ ipcMain.handle('engine:post', (_e, apiPath, body) => engine.httpJSON('POST', eng
 ipcMain.handle('engine:chat', (_e, payload) => engine.streamChat(payload).then(() => ({ ok: true })).catch((err) => ({ ok: false, error: String(err) })));
 ipcMain.handle('engine:restart', async () => {
   engine.kill();
-  return engine.ensure(loadConfig(), engine.state.projectDir);
+  return engine.ensure(loadConfig());
 });
-ipcMain.handle('engine:status', () => ({ status: engine.state.status, addr: engine.state.addr, projectDir: engine.state.projectDir }));
-// 打开项目：把引擎工作区切到项目目录（复用中且目录不符时重启引擎）
-ipcMain.handle('engine:bindProject', async (_e, dir) => {
-  if (engine.state.projectDir === dir && engine.state.status === 'running') return { ok: true, restarted: false };
-  engine.kill();
-  const ok = await engine.ensure(loadConfig(), dir);
-  return { ok, restarted: true };
+ipcMain.handle('engine:status', () => ({ status: engine.state.status, addr: engine.state.addr }));
+// 模型列表：OpenAI 兼容端点的 GET {baseUrl}/models（composer 模型选择器数据源）。
+ipcMain.handle('engine:listModels', async () => {
+  const cfg = loadConfig().engine || {};
+  const base = String(cfg.baseUrl || '').replace(/\/$/, '');
+  if (!base) return [];
+  try {
+    const res = await fetch(`${base}/models`, {
+      headers: cfg.apiKey ? { Authorization: `Bearer ${cfg.apiKey}` } : {},
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return (data.data || []).map((m) => m.id).filter(Boolean);
+  } catch {
+    return [];
+  }
 });
+// 打开项目：登记 session→项目映射（引擎按会话扎根项目目录，不重启）。
+// 多项目并行：一边执行中切到另一边，引擎继续跑互不干扰。
+ipcMain.handle('engine:bindProject', async (_e, sessionId, dir) => {
+  const ok = engine.bindSession(sessionId, dir);
+  // 引擎可能还没起（如开机首次进项目）：顺手拉起，不等它就绪（非阻塞路径）
+  if (engine.state.status !== 'running') engine.ensure(loadConfig());
+  return { ok, restarted: false };
+});
+
+// ---------- IPC：窗口控制（v2 自绘标题栏） ----------
+ipcMain.handle('win:minimize', () => { if (win) win.minimize(); });
+ipcMain.handle('win:maximize', () => { if (win) (win.isMaximized() ? win.unmaximize() : win.maximize()); });
+ipcMain.handle('win:close', () => { if (win) win.close(); });
 
 // ---------- IPC：配置 / 文件 ----------
 ipcMain.handle('config:get', () => loadConfig());
 ipcMain.handle('config:save', (_e, cfg) => { saveConfig(cfg); return true; });
 ipcMain.handle('fs:readFile', (_e, p) => {
   try { return { ok: true, content: fs.readFileSync(p, 'utf-8') }; }
+  catch (e) { return { ok: false, error: e.message }; }
+});
+// 编辑器写回：CodeEditor Ctrl+S 保存。写的是引擎管理的项目目录，
+// 落盘后前端再通知引擎（POST /notify/user-edit）让 AI 重读该文件。
+ipcMain.handle('fs:writeFile', (_e, p, content) => {
+  try { fs.writeFileSync(p, content, 'utf-8'); return { ok: true }; }
   catch (e) { return { ok: false, error: e.message }; }
 });
 // 列目录（测试报告页签扫描 .yume/test-reports/）
@@ -144,6 +181,7 @@ ipcMain.handle('projects:remove', (_e, dir) => {
   return { ok: true };
 });
 ipcMain.handle('projects:filetree', (_e, dir) => filetree(dir));
+ipcMain.handle('git:status', (_e, dir) => gitStatus(dir));
 
 // ---------- IPC：设备与投屏 ----------
 ipcMain.handle('devices:list', () => devices.listDevices());

@@ -76,12 +76,13 @@ export function renderMD(src) {
       out.push(t);
       continue;
     }
-    // 图片：![alt](path) → 占位块（真图由宿主组件的 shots 区展示，
-    // md 渲染器无法安全引用本地文件路径）
+    // 图片：![alt](path) → 占位块。带 data-img 属性——宿主组件（有文件
+    // 访问能力的，如报告详情页）渲染后可按属性就地替换为真图；
+    // 无宿主处理时退化为占位提示（md 渲染器无法安全引用本地文件路径）
     const img = l.match(/^\s*!\[([^\]]*)\]\(([^)]+)\)\s*$/);
     if (img) {
       closeList();
-      out.push('<div class="md-img-note">📸 ' + esc(img[1] || '截图') + '</div>');
+      out.push('<div class="md-img-note" data-img="' + esc(img[2]) + '">📸 ' + esc(img[1] || '截图') + '</div>');
       continue;
     }
     if (/^### /.test(l)) { closeList(); out.push('<h3>' + inline(esc(l.slice(4))) + '</h3>'); }

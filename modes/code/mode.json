@@ -1,0 +1,13 @@
+{
+  "id": "code",
+  "name": "代码开发",
+  "description": "通用代码工作台：打开工作目录，直接对话开发（无移动端设备能力）",
+  "engine": {
+    "domainRules": "domain-rules.md",
+    "skillsDir": "skills",
+    "toolsets": []
+  },
+  "projectFields": [
+    { "id": "dir", "label": "工作目录", "type": "folder", "required": true, "placeholder": "选择要打开的项目文件夹" }
+  ]
+}

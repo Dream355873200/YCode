@@ -1,96 +1,11 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useApp } from '../../state/AppState.jsx';
-import { renderMD, highlightCode, esc } from '../../lib/markdown.js';
+import { renderMD } from '../../lib/markdown.js';
+import { on, debounce } from '../../lib/refreshBus.js';
 import MirrorCanvas from './MirrorCanvas.jsx';
+import CodeEditor from './CodeEditor.jsx';
 
-const TABS = ['开发直播', 'SPEC 规范', 'Agent 计划', '文件树', '测试报告'];
-
-// 按文件扩展名给 highlight.js 挑语言
-const LANG_BY_EXT = {
-  dart: 'dart', go: 'go', yaml: 'yaml', yml: 'yaml', json: 'json',
-  md: 'markdown', js: 'javascript', ts: 'typescript', tsx: 'typescript',
-  jsx: 'javascript', html: 'xml', xml: 'xml', css: 'css', sh: 'bash',
-  bat: 'bash', cmd: 'bash', ps1: 'bash', sql: 'sql', java: 'java',
-  kt: 'kotlin', swift: 'swift', py: 'python', toml: 'ini', cfg: 'ini',
-};
-const langOf = (file) => LANG_BY_EXT[(file || '').split('.').pop().toLowerCase()];
-
-// highlight.js 输出的是整段 HTML（token 可能跨行）。要按行渲染就得把 HTML
-// 按 <br> 边界切开 —— 简单做法：逐行独立高亮（Dart/Go 代码行内 token 居多，
-// 跨行字符串/注释会退化成纯文本，可接受）。
-const splitLine = (wholeHtml, lineIdx) => wholeHtml;
-
-// 按行独立高亮（行号内联、跨行 token 退化）
-function highlightLines(code, lang) {
-  return code.split('\n').map((l) => highlightCode(l || ' ', lang));
-}
-
-// ---- 行级 diff（开发直播：AI 改动后新增绿底 / 删除红底叠加在语法高亮上）----
-// 简单 LCS（最长公共子序列）按行对比 —— 文件规模（几百行）下完全够用。
-// 返回 [{ type: 'same'|'add'|'del', text, oldNo, newNo }]
-export function diffLines(oldText, newText) {
-  const a = (oldText || '').split('\n');
-  const b = (newText || '').split('\n');
-  const n = a.length, m = b.length;
-  // LCS 表（限制规模防卡顿：超大文件退化为整段替换）
-  if (n * m > 4_000_000) {
-    return [
-      ...a.map((t, i) => ({ type: 'del', text: t, oldNo: i + 1 })),
-      ...b.map((t, i) => ({ type: 'add', text: t, newNo: i + 1 })),
-    ];
-  }
-  const dp = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0));
-  for (let i = n - 1; i >= 0; i--) {
-    for (let j = m - 1; j >= 0; j--) {
-      dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
-    }
-  }
-  const out = [];
-  let i = 0, j = 0;
-  while (i < n && j < m) {
-    if (a[i] === b[j]) { out.push({ type: 'same', text: a[i], oldNo: i + 1, newNo: j + 1 }); i++; j++; }
-    else if (dp[i + 1][j] >= dp[i][j + 1]) { out.push({ type: 'del', text: a[i], oldNo: i + 1 }); i++; }
-    else { out.push({ type: 'add', text: b[j], newNo: j + 1 }); j++; }
-  }
-  while (i < n) { out.push({ type: 'del', text: a[i], oldNo: i + 1 }); i++; }
-  while (j < m) { out.push({ type: 'add', text: b[j], newNo: j + 1 }); j++; }
-  return out;
-}
-
-function FileNode({ node, dir, depth = 0 }) {
-  const [open, setOpen] = useState(depth < 1);
-  const [content, setContent] = useState(null);
-  const stCls = { A: 'new', '??': 'new', M: 'mod' }[node.st?.trim()] || null;
-
-  const preview = async () => {
-    const r = await window.amc.fs.readFile(dir + '/' + node.path);
-    if (r.ok) setContent(r.content);
-  };
-
-  if (node.type === 'dir') {
-    return (
-      <>
-        <div className="ft-dir" style={{ paddingLeft: depth * 14, cursor: 'pointer' }} onClick={() => setOpen(!open)}>
-          {open ? '▾' : '▸'} {node.name}/
-        </div>
-        {open && node.children.map((c) => <FileNode key={c.path} node={c} dir={dir} depth={depth + 1} />)}
-      </>
-    );
-  }
-  return (
-    <>
-      <div className="ft-file" style={{ paddingLeft: depth * 14 + 16 }} onClick={() => (content ? setContent(null) : preview())}>
-        {node.name}
-        {stCls && <span className={'ft-st ' + stCls}>{stCls === 'new' ? 'NEW' : 'MOD'}</span>}
-      </div>
-      {content && (
-        <div className="a-detail" style={{ display: 'block', margin: '2px 8px 4px 26px', maxHeight: 320, overflow: 'auto' }}>
-          {content.slice(0, 8000)}
-        </div>
-      )}
-    </>
-  );
-}
+const TABS = ['编辑器', 'SPEC 规范', 'Agent 计划', '测试报告'];
 
 // 测试报告页签：扫 .yume/test-reports/ 目录（test_report 工具落盘的 Markdown，
 // frontmatter 含结构化元数据），列表 → 详情（条目表格 + 截图证据）。
@@ -133,51 +48,74 @@ function TestReportTab() {
       if (alive) setReports(files.map((f, i) => ({ file: f, meta: metas[i] || {} })));
     };
     load();
-    const t = setInterval(load, 6000);
-    return () => { alive = false; clearInterval(t); };
+    const off = on('report', debounce(load));
+    const t = setInterval(load, 30000);
+    return () => { alive = false; off(); clearInterval(t); };
   }, [project]);
 
-  // 打开详情：读全文 + 截图转 dataUrl
+  // 打开详情：读全文 → 图片路径就地从正文解析（每个条目块内嵌自己的截图，
+  // 见 report 工具的卡片式格式）→ 渲染后替换占位块为真图
+  const [inlineImgs, setInlineImgs] = useState({}); // 归一化路径 → dataUrl
+  // normImg 报告正文图片路径归一化：剥 ../ 前缀（相对报告文件 → 相对项目根）。
+  // data-img 属性里是原始路径，替换时也要过同一归一化才能对上 key。
+  const normImg = (p) => {
+    let s = p;
+    while (s.startsWith('../') || s.startsWith('..\\')) s = s.slice(3);
+    return s;
+  };
   useEffect(() => {
     const entry = typeof reports[openIdx] === 'string' ? { file: reports[openIdx] } : reports[openIdx];
-    if (openIdx < 0 || !entry || !entry.file) { setDetail(null); return; }
+    if (openIdx < 0 || !entry || !entry.file) { setDetail(null); setInlineImgs({}); return; }
     let alive = true;
     window.amc.fs.readFile(entry.file).then((r) => {
       if (!alive || !r.ok) return;
       const { meta, body } = parseFM(r.content);
-      const shotPaths = (meta.shots || '').split('\n').filter(Boolean);
+      setDetail({ file: entry.file, meta, body });
+      // 正文里的 ![alt](path) 引用 → 读图转 dataUrl（就地渲染用）。
+      // 相对路径按项目根解析；兼容绝对路径（旧报告）。
+      const paths = [];
+      for (const m of body.matchAll(/!\[[^\]]*\]\(([^)]+)\)/g)) {
+        paths.push(normImg(m[1]));
+      }
+      const uniq = [...new Set(paths)];
       Promise.all(
-        shotPaths.map((p) => window.amc.fs.readImage(p).then((ir) => (ir.ok ? ir.dataUrl : null)).catch(() => null))
-      ).then((urls) => { if (alive) setDetail({ file: entry.file, meta, body, shots: urls.filter(Boolean) }); });
+        uniq.map((p) => {
+          const abs = /^[E-Za-z]:[\\/]/.test(p) ? p : (project && project.dir ? project.dir + '/' + p : p);
+          return window.amc.fs.readImage(abs)
+            .then((ir) => (ir.ok ? [p, ir.dataUrl] : null))
+            .catch(() => null);
+        })
+      ).then((pairs) => {
+        if (!alive) return;
+        const map = {};
+        for (const pr of pairs) if (pr) map[pr[0]] = pr[1];
+        setInlineImgs(map);
+      });
     }).catch(() => {});
     return () => { alive = false; };
-  }, [openIdx, reports]);
+  }, [openIdx, reports, project]);
+
+  // 渲染正文并把图片占位块替换为真图（data-img 原始路径过 normImg 归一化后对 key）
+  const renderedBody = detail
+    ? renderMD(detail.body).replace(/<div class="md-img-note" data-img="([^"]*)">[^<]*<\/div>/g,
+        (whole, p) => inlineImgs[normImg(p)]
+          ? `<img class="tr-shot-inline" src="${inlineImgs[normImg(p)]}" alt="${p}">`
+          : whole)
+    : '';
 
   if (!project) return null;
 
   // 详情视图
   if (openIdx >= 0 && detail) {
     return (
-      <div className="tr-detail">
+      <div className="tr-detail" onClick={(e) => {
+        // 事件委托：点正文里的内嵌截图 → 放大
+        if (e.target.classList && e.target.classList.contains('tr-shot-inline')) setZoom(e.target.src);
+      }}>
         <div className="tr-back" onClick={() => { setOpenIdx(-1); setZoom(null); }}>← 返回报告列表</div>
-        <div className="md-body" dangerouslySetInnerHTML={{ __html: renderMD(detail.body) }} />
-        {detail.shots.length > 0 && (
-          <>
-            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)', margin: '14px 0 6px' }}>证据截图（{detail.shots.length}）</div>
-            <div className="tr-shots">
-              {detail.shots.map((u, i) => (
-                <img key={i} src={u} className="tr-shot" onClick={() => setZoom(u)} />
-              ))}
-            </div>
-          </>
-        )}
-        {detail.meta.shots && detail.shots.length === 0 && (
-          <div style={{ fontSize: 10.5, color: 'var(--faint)', marginTop: 10 }}>
-            截图路径 {detail.meta.shots.split('\n').length} 条，加载失败（文件可能已被清理或路径失效）
-          </div>
-        )}
+        <div className="md-body" dangerouslySetInnerHTML={{ __html: renderedBody }} />
         {zoom && (
-          <div onClick={() => setZoom(null)} style={{ position: 'fixed', inset: 0, zIndex: 100, background: 'rgba(0,0,0,.82)', display: 'grid', placeItems: 'center', cursor: 'zoom-out' }}>
+          <div onClick={() => setZoom(null)} style={{ position: 'fixed', inset: 0, zIndex: 100, background: 'var(--scrim-strong)', display: 'grid', placeItems: 'center', cursor: 'zoom-out' }}>
             <img src={zoom} style={{ maxWidth: '92%', maxHeight: '92%', borderRadius: 10 }} />
           </div>
         )}
@@ -233,7 +171,8 @@ function MirrorSlot({ deviceId, active }) {
 }
 
 // 设备栏 + 手机占位区：adb 自动检测、投屏开关、flutter run 部署 + Hot Reload（P2-1/2/3）
-function DevicePanel({ onMirrorState }) {
+// 极简模式嵌在「开发直播」页签；专业模式迁入 PhoneWindow 浮动窗（本组件导出共用）。
+export function DevicePanel({ onMirrorState }) {
   const { project } = useApp();
   const [devices, setDevices] = useState([]);
   const [adbOk, setAdbOk] = useState(true);
@@ -346,12 +285,11 @@ function DevicePanel({ onMirrorState }) {
   );
 }
 
-export default function StagePanel({ editingFile }) {
+export default function StagePanel({ editingFile, editor }) {
   const { project, engine } = useApp();
   const [tab, setTab] = useState(0);
   const [spec, setSpec] = useState('');
   const [plan, setPlan] = useState(null);
-  const [tree, setTree] = useState(null);
 
   // SPEC.md：轮询 + 切到该页签时立即刷新。
   // SPEC 是 AI 与用户对话敲定后更新的「范围契约」，必须反映最新内容，
@@ -364,8 +302,9 @@ export default function StagePanel({ editingFile }) {
       .then((r) => { if (alive) setSpec(r.ok ? r.content : '（SPEC.md 尚未生成 — 与 AI 对话后创建）'); })
       .catch(() => {});
     load();
-    const t = setInterval(load, 5000);
-    return () => { alive = false; clearInterval(t); };
+    const off = on(['spec', 'files'], debounce(load));
+    const t = setInterval(load, 20000);
+    return () => { alive = false; off(); clearInterval(t); };
   }, [project]);
 
   // 切到 SPEC 页签时立即拉最新（不等轮询周期）
@@ -383,53 +322,10 @@ export default function StagePanel({ editingFile }) {
       window.amc.engine.get('/plan').then((r) => { if (alive) setPlan(r && r.body); }).catch(() => {});
     };
     load();
-    const t = setInterval(load, 5000);
-    return () => { alive = false; clearInterval(t); };
+    const off = on('plan', debounce(load));
+    const t = setInterval(load, 15000);
+    return () => { alive = false; off(); clearInterval(t); };
   }, [engine.status]);
-
-  // 文件树
-  useEffect(() => {
-    if (!project) return;
-    window.amc.projects.filetree(project.dir).then(setTree);
-    const t = setInterval(() => window.amc.projects.filetree(project.dir).then(setTree), 8000);
-    return () => clearInterval(t);
-  }, [project]);
-
-  // 开发直播：当前编辑文件内容 + 与上一版的行级 diff（新增绿底/删除红底）
-  // - 切换文件：旧文件内容存进 prevFilesRef，diff 清零
-  // - 轮询（4s）拉最新内容：与当前不同 → 旧内容成为 diff 基准，渲染行级差异
-  const [liveCode, setLiveCode] = useState(null);
-  const [liveDiff, setLiveDiff] = useState(null); // [{type,text,oldNo,newNo}] | null
-  const prevFiles = useRef({}); // path -> last seen content
-  const liveFile = useRef(null);
-
-  useEffect(() => {
-    // 切文件：重置 diff，记录当前内容为新基线
-    if (liveFile.current && liveFile.current !== editingFile && liveCode) {
-      prevFiles.current[liveFile.current] = liveCode;
-    }
-    liveFile.current = editingFile || null;
-    setLiveDiff(null);
-    if (!editingFile) { setLiveCode(null); return; }
-    let alive = true;
-    const load = () => {
-      window.amc.fs.readFile(editingFile).then((r) => {
-        if (!alive || !r.ok) return;
-        setLiveCode((prev) => {
-          if (prev == null) { prevFiles.current[editingFile] = r.content; return r.content; }
-          if (prev !== r.content) {
-            // 内容变了 → 上一版作为 diff 基准
-            setLiveDiff(diffLines(prevFiles.current[editingFile] ?? prev, r.content));
-            prevFiles.current[editingFile] = r.content;
-          }
-          return r.content;
-        });
-      }).catch(() => {});
-    };
-    load();
-    const t = setInterval(load, 4000);
-    return () => { alive = false; clearInterval(t); };
-  }, [editingFile]);
 
   return (
     <div className="card stage">
@@ -444,73 +340,26 @@ export default function StagePanel({ editingFile }) {
         ))}
       </div>
       <div className="tab-body">
-        {tab === 0 && (
-          <div className="code-side" style={{ flex: 1 }}>
-            <DevicePanel />
-            <div className="code-tabs">
-              <div className="code-tab active">{editingFile ? editingFile.split(/[\\/]/).pop() : '（暂无编辑中文件）'}
-                <span className="dirty" style={{ display: editingFile ? '' : 'none' }} />
+        {/* 所有页签常驻渲染，非激活用 CSS 隐藏 —— 报告等重内容不随切 tab 卸载 */}
+        {TABS.map((t, i) => (
+          <div key={t} style={{ display: tab === i ? 'flex' : 'none', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+            {t === '编辑器' && editor && <CodeEditor {...editor} />}
+            {t === 'SPEC 规范' && (
+              <div className="doc-scroll">
+                <div className="md-body" dangerouslySetInnerHTML={{ __html: renderMD(spec) }} />
               </div>
-            </div>
-            <div className="code-body code-highlight">
-              {liveCode
-                ? (() => {
-                    if (liveDiff) {
-                      // diff 视图：删除红底（旧行号）+ 新增绿底（新行号），叠加语法高亮
-                      const lang = langOf(editingFile);
-                      return liveDiff.map((d, i) => (
-                        <div key={i} className={'cl cl-' + d.type}>
-                          <span className="cl-no">{d.type === 'add' ? d.newNo : d.oldNo ?? ''}</span>
-                          <span className="cl-sign">{d.type === 'add' ? '+' : d.type === 'del' ? '−' : ' '}</span>
-                          <span dangerouslySetInnerHTML={{ __html: highlightCode(d.text || ' ', lang) }} />
-                        </div>
-                      ));
-                    }
-                    const lines = liveCode.split('\n');
-                    const shown = lines.slice(-200);
-                    const hl = highlightLines(shown.join('\n'), langOf(editingFile));
-                    const offset = Math.max(0, lines.length - 200);
-                    return hl.map((h, i) => (
-                      <div key={i} className="cl">
-                        <span className="cl-no">{offset + i + 1}</span>
-                        <span dangerouslySetInnerHTML={{ __html: h || '&nbsp;' }} />
-                      </div>
-                    ));
-                  })()
-                : <div className="cl" style={{ color: 'var(--faint)' }}>AI 开始写代码后此处实时显示（scrcpy 手机预览 P2 接入）</div>}
-            </div>
-            <div className="mini-log">
-              <span className="l-tool">{editingFile || '待命'}</span>
-              {liveDiff && (
-                <span style={{ marginLeft: 'auto', fontSize: 10 }}>
-                  <span style={{ color: 'var(--ok)' }}>+{liveDiff.filter((d) => d.type === 'add').length}</span>{' '}
-                  <span style={{ color: 'var(--err)' }}>−{liveDiff.filter((d) => d.type === 'del').length}</span>
-                </span>
-              )}
-            </div>
+            )}
+            {t === 'Agent 计划' && (
+              <div className="doc-scroll" style={{ paddingTop: 10 }}>
+                <div style={{ fontSize: 10.5, color: 'var(--faint)', paddingBottom: 8, borderBottom: '1px dashed var(--border-subtle)', marginBottom: 10 }}>
+                  计划原文 · 由 AI 撰写 · 原样呈现，不加工
+                </div>
+                <div className="md-body" dangerouslySetInnerHTML={{ __html: renderMD(plan && (plan.content || plan.plan || plan.text || (typeof plan === 'string' ? plan : '')) || '（暂无计划 — AI 进入 Plan Mode 后显示）') }} />
+              </div>
+            )}
+            {t === '测试报告' && <TestReportTab />}
           </div>
-        )}
-        {tab === 1 && (
-          <div className="doc-scroll">
-            <div className="md-body" dangerouslySetInnerHTML={{ __html: renderMD(spec) }} />
-          </div>
-        )}
-        {tab === 2 && (
-          <div className="doc-scroll" style={{ paddingTop: 10 }}>
-            <div style={{ fontSize: 10.5, color: 'var(--faint)', paddingBottom: 8, borderBottom: '1px dashed var(--border-subtle)', marginBottom: 10 }}>
-              计划原文 · 由 AI 撰写 · 原样呈现，不加工
-            </div>
-            <div className="md-body" dangerouslySetInnerHTML={{ __html: renderMD(plan && (plan.content || plan.plan || plan.text || (typeof plan === 'string' ? plan : '')) || '（暂无计划 — AI 进入 Plan Mode 后显示）') }} />
-          </div>
-        )}
-        {tab === 3 && (
-          <div className="ftree">
-            {tree
-              ? tree.map((n) => <FileNode key={n.path} node={n} dir={project.dir} />)
-              : <div style={{ color: 'var(--faint)' }}>加载中…</div>}
-          </div>
-        )}
-        {tab === 4 && <TestReportTab />}
+        ))}
       </div>
     </div>
   );

@@ -33,14 +33,215 @@ import (
 	"time"
 
 	goagent "github.com/Dream355873200/GoAgent"
+	"github.com/Dream355873200/GoAgent/reminder"
 )
 
 // ---------- adb 基础 ----------
 
+// ---------- 设备独占锁（多会话并发排队 + run 结束释放） ----------
+// 手机是独占资源：多项目/多会话并行测试时，adb/scrcpy 同一时刻只能被一个
+// agent 使用。锁绑定「会话本轮 run」：会话调用测试工具时获取并持有，
+// run 结束（OnSessionEnd：正常完成/出错/被终止）立即释放、轮转给队首。
+// 思考间隙、跑 analyze、写代码期间锁不掉——测试流程不会被中途顶掉。
+// 拿不到锁的调用不阻塞——工具返回「设备忙，排队中」，agent 去做别的；
+// 轮转到它时经 DeviceFreeFn 通知引擎，引擎注入系统消息提醒它回来测试。
+// 闲置超时（2 分钟）只兜 run 挂死不回调的故障态。
+
 var (
-	adbMu      sync.Mutex // adb 设备操作串行：input 命令乱序会导致点击序列错乱
-	adbBinPath string
+	adbMu sync.Mutex // 短临界区：input 命令串行（点击序列不乱序）
+
+	deviceLock       sync.Mutex
+	deviceHolderSess string   // 当前占用设备锁的 sessionID；空=空闲
+	deviceQueue      []string // 排队等待的 sessionID（FIFO）
+	holderLastUse    time.Time // 占用者最后一次使用设备的时间（闲置检测）
+	holderTimer      *time.Timer
+
+	// 测试工具集合：这些工具调用时进入/刷新设备锁周期
+	deviceTools = map[string]bool{
+		"ui_tree": true, "tap": true, "swipe": true, "type": true, "back": true,
+		"wait_for": true, "screenshot": true, "screen_diff": true, "logcat": true,
+		"net": true,
+	}
+
+	// DeviceFreeFn 设备锁轮转给新会话时回调（引擎注入系统消息提醒回来测试）
+	DeviceFreeFn func(sessionID string)
+	// DeviceBusyFn 会话排队时回调（引擎记录排队关系）
+	DeviceBusyFn func(sessionID string)
+	// DeviceAutoTimeout 闲置自动释放时长（崩溃兜底），默认 2 分钟。
+	// 锁的常规释放走 OnSessionEnd（会话 run 结束立即释放轮转），
+	// 这里只回收 run 挂死/回调丢失的极端故障态，不该在日常触发。
+	DeviceAutoTimeout = 2 * time.Minute
 )
+
+// touchWrap 测试工具的 Execute 包装：进锁/刷新占用 + 时间线落盘。
+// 获取到锁立即执行；拿不到锁返回「设备忙」让 agent 先做别的，
+// 锁释放（run 结束 / 故障超时）时经 DeviceFreeFn 通知该会话回来。
+// 注：锁在本轮 run 期间持续持有（OnSessionEnd 才释放）——一个测试
+// 流程（tap→wait_for→screenshot…）连同中间的思考时间都不会被打断。
+// 时间线：每次调用（含被拒的排队尝试）都追加 .yume/test-log.jsonl，
+// 前端「测试」页签按它实时渲染步骤流。
+func touchWrap(ctx goagent.Context, toolName string, input any, fn func() (string, error)) (string, error) {
+	sid := ctx.SessionID
+	start := time.Now()
+	holder, queuePos := touchDevice(sid, toolName)
+	if holder != sid {
+		msg := fmt.Sprintf("设备被其他 Agent 占用中（排队位置 %d）——先去执行其他任务（写代码/看代码/整理报告），"+
+			"设备空闲时系统会自动通知你回来继续测试", queuePos)
+		testLogAppend(ctx, toolName, input, msg, false, time.Since(start).Milliseconds())
+		// 统一 system-reminder 通道（source=tool）：拒绝原因是环境提醒，
+		// 打标记后模型可辨识其非业务错误性质（时间线日志仍记原文）
+		return "", fmt.Errorf("%s", reminder.Wrap(reminder.SourceTool, msg))
+	}
+	out, err := fn()
+	testLogAppend(ctx, toolName, input, out, err == nil, time.Since(start).Milliseconds())
+	return out, err
+}
+
+// ReleaseDevice 显式释放设备锁（引擎在会话测试阶段结束时调用，加快轮转）。
+func ReleaseDevice(sessionID string) {
+	releaseDevice(sessionID)
+}
+
+// TouchDeviceKeepAlive 刷新持锁会话的闲置计时（不获取锁、不排队）。
+// 供 OnSessionStart 钩子使用：上一轮结束回调丢失时刷新计时，
+// 交给超时兜底回收，避免双重持锁。非持锁会话调用无副作用。
+func TouchDeviceKeepAlive(sessionID string) {
+	if sessionID == "" {
+		return
+	}
+	deviceLock.Lock()
+	defer deviceLock.Unlock()
+	if deviceHolderSess == sessionID {
+		holderLastUse = time.Now()
+		resetHolderTimerLocked()
+	}
+}
+
+// ---------- 测试时间线落盘（工具层日志） ----------
+//
+// 每个测试工具调用的「意图 + 参数 + 结果」在 touchWrap 层捕获，追加到
+// 项目的 .yume/test-log.jsonl（JSONL，每行 {ts, tool, input, result, ok}）。
+// 前端「测试」页签轮询此文件实时呈现 AI 操作 App 的步骤与断言——
+// 不依赖 SSE 事件流（切页面/重开应用不丢），与网络页签同构。
+
+// testLogAppend 追加一条测试时间线记录（失败静默：日志不影响主流程）。
+func testLogAppend(ctx context.Context, toolName string, input any, result string, ok bool, ms int64) {
+	root := projectRootFrom(ctx)
+	if root == "" {
+		return
+	}
+	entry := map[string]any{
+		"ts":    time.Now().Format("15:04:05"),
+		"tool":  toolName,
+		"input": input,
+		"ok":    ok,
+		"ms":    ms,
+	}
+	if len(result) > 300 {
+		entry["result"] = result[:300] + "…"
+	} else {
+		entry["result"] = result
+	}
+	b, err := json.Marshal(entry)
+	if err != nil {
+		return
+	}
+	f, err := os.OpenFile(filepath.Join(root, ".yume", "test-log.jsonl"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	_, _ = f.Write(append(b, '\n'))
+}
+
+// 返回 (获取到锁的 sessionID, 排队位置)。sessionID 为空（无会话上下文）直接放行。
+func touchDevice(sessionID, toolName string) (string, int) {
+	if sessionID == "" || !deviceTools[toolName] {
+		return sessionID, 0
+	}
+	deviceLock.Lock()
+	defer deviceLock.Unlock()
+	if deviceHolderSess == "" {
+		deviceHolderSess = sessionID
+		holderLastUse = time.Now()
+		resetHolderTimerLocked()
+		return sessionID, 0
+	}
+	if deviceHolderSess == sessionID {
+		holderLastUse = time.Now() // 同会话复用，刷新计时
+		return sessionID, 0
+	}
+	// 被其他会话占用：进队
+	for _, s := range deviceQueue {
+		if s == sessionID {
+			return "", queuePosLocked(sessionID)
+		}
+	}
+	deviceQueue = append(deviceQueue, sessionID)
+	if DeviceBusyFn != nil {
+		DeviceBusyFn(sessionID)
+	}
+	return "", queuePosLocked(sessionID)
+}
+
+// releaseDevice 显式释放（引擎「终止测试」或投屏交互时调用）。
+func releaseDevice(sessionID string) {
+	deviceLock.Lock()
+	defer deviceLock.Unlock()
+	if deviceHolderSess != sessionID {
+		return
+	}
+	if holderTimer != nil {
+		holderTimer.Stop()
+		holderTimer = nil
+	}
+	rotateLocked()
+}
+
+// rotateLocked 把锁轮转给队首；调用方必须已持有 deviceLock。
+func rotateLocked() {
+	deviceHolderSess = ""
+	if len(deviceQueue) > 0 {
+		next := deviceQueue[0]
+		deviceQueue = deviceQueue[1:]
+		deviceHolderSess = next
+		holderLastUse = time.Now()
+		resetHolderTimerLocked()
+		if DeviceFreeFn != nil {
+			DeviceFreeFn(next)
+		}
+	}
+}
+
+// resetHolderTimerLocked 重置闲置释放定时器；调用方必须已持有 deviceLock。
+func resetHolderTimerLocked() {
+	if holderTimer != nil {
+		holderTimer.Stop()
+	}
+	holderTimer = time.AfterFunc(DeviceAutoTimeout, func() {
+		deviceLock.Lock()
+		defer deviceLock.Unlock()
+		if deviceHolderSess == "" {
+			return
+		}
+		if time.Since(holderLastUse) >= DeviceAutoTimeout {
+			rotateLocked()
+		}
+	})
+}
+
+// queuePosLocked 当前会话在队列中的位置；调用方必须已持有 deviceLock。
+func queuePosLocked(sessionID string) int {
+	for i, s := range deviceQueue {
+		if s == sessionID {
+			return i + 1
+		}
+	}
+	return 0
+}
+
+// adbName 返回"s=xxx"形式串行参数（多设备时用）
+var adbBinPath string
 
 // adbPath 解析 adb：FLAI_ADB > 项目内 tools/scrcpy/adb.exe（1.0.41，已验证）> PATH。
 // 老版 adb（1.0.26）shell 通道行为异常，必须避开。
@@ -91,6 +292,16 @@ func projectRoot() string {
 		}
 	}
 	return ""
+}
+
+// projectRootFrom 按会话解析项目根：优先 ctx 注入的会话工作目录
+//（单引擎多项目下每个 session 扎根各自的项目目录，见 WithSessionWorkDir），
+// 无会话上下文时回退 projectRoot()（env/cwd，旧行为）。
+func projectRootFrom(ctx context.Context) string {
+	if wd := goagent.WorkDirFromContext(ctx); wd != "" {
+		return wd
+	}
+	return projectRoot()
 }
 
 // DeviceStatus 探测当前 adb 设备，生成会话上下文用的状态文本。
@@ -186,25 +397,27 @@ func NewUITreeTool() (string, goagent.ToolDef) {
 		Permission: goagent.ReadOnly,
 		Concurrent: false,
 		Execute: func(ctx goagent.Context, in UITreeInput) (string, error) {
-			cctx, cancel := context.WithTimeout(ctx.Context, 15*time.Second)
-			defer cancel()
-			// dump 到设备侧文件再拉取（uiautomator 直接输出不走 stdout）
-			if _, err := adbRun(cctx, "shell", "uiautomator", "dump", "/sdcard/amc-ui.xml"); err != nil {
-				return "", fmt.Errorf("uiautomator dump 失败（画面可能被安全策略遮挡）: %v", err)
-			}
-			xmlOut, err := adbRun(cctx, "shell", "cat", "/sdcard/amc-ui.xml")
-			if err != nil {
-				return "", fmt.Errorf("读取 dump 失败: %v", err)
-			}
-			xml := extractXML(xmlOut)
-			if in.Grep != "" {
-				xml = filterXMLNodes(xml, in.Grep)
-			}
-			const max = 16000
-			if len(xml) > max {
-				xml = xml[:max] + "\n...（截断，用 grep 参数缩小范围）"
-			}
-			return xml, nil
+			return touchWrap(ctx, "ui_tree", in, func() (string, error) {
+				cctx, cancel := context.WithTimeout(ctx.Context, 15*time.Second)
+				defer cancel()
+				// dump 到设备侧文件再拉取（uiautomator 直接输出不走 stdout）
+				if _, err := adbRun(cctx, "shell", "uiautomator", "dump", "/sdcard/amc-ui.xml"); err != nil {
+					return "", fmt.Errorf("uiautomator dump 失败（画面可能被安全策略遮挡）: %v", err)
+				}
+				xmlOut, err := adbRun(cctx, "shell", "cat", "/sdcard/amc-ui.xml")
+				if err != nil {
+					return "", fmt.Errorf("读取 dump 失败: %v", err)
+				}
+				xml := extractXML(xmlOut)
+				if in.Grep != "" {
+					xml = filterXMLNodes(xml, in.Grep)
+				}
+				const max = 16000
+				if len(xml) > max {
+					xml = xml[:max] + "\n...（截断，用 grep 参数缩小范围）"
+				}
+				return xml, nil
+			})
 		},
 	}
 }
@@ -241,27 +454,112 @@ func filterXMLNodes(xml, pattern string) string {
 type TapInput struct {
 	X int `json:"x" desc:"x 坐标（像素）" required:"true"`
 	Y int `json:"y" desc:"y 坐标（像素）" required:"true"`
+	// Expect 硬断言：点击后轮询语义树验证期望文本出现（默认 5s）。
+	// 不填 = 只点击不校验（旧行为）。填了且超时未见 → 返回失败 +
+	// 当前屏幕可见文本摘要（当场定位「点了但没跳转」还是「跳了但没标注」）。
+	Expect string `json:"expect,omitempty" desc:"点击后期望出现的文本（页面标题/关键元素）。点击后自动轮询验证——失败会附当前屏幕可见文本"`
 }
 
 func NewTapTool() (string, goagent.ToolDef) {
 	return "tap", goagent.ToolDef{
 		Description: "点击设备屏幕坐标（adb input tap）。坐标来自 ui_tree 节点的 bounds 或截图目测。" +
-			"点击后如需确认结果，用 ui_tree 或 screenshot 验证。",
+			"【推荐带 expect】点击后自动验证期望文本出现（等价 tap+wait_for 一步完成），" +
+			"验证失败时返回当前屏幕文本摘要，当场区分「没跳转」和「跳转了但无语义标注」。",
 		Input:      TapInput{},
 		Permission: goagent.ReadOnly,
 		Concurrent: false,
 		Execute: func(ctx goagent.Context, in TapInput) (string, error) {
-			adbMu.Lock()
-			defer adbMu.Unlock()
-			cctx, cancel := context.WithTimeout(ctx.Context, 10*time.Second)
-			defer cancel()
-			if _, err := adbRun(cctx, "shell", "input", "tap",
-				strconv.Itoa(in.X), strconv.Itoa(in.Y)); err != nil {
-				return "", fmt.Errorf("tap 失败: %v", err)
-			}
-			return fmt.Sprintf("已点击 (%d,%d)", in.X, in.Y), nil
+			return touchWrap(ctx, "tap", in, func() (string, error) {
+				adbMu.Lock()
+				cctx, cancel := context.WithTimeout(ctx.Context, 30*time.Second)
+				if _, err := adbRun(cctx, "shell", "input", "tap",
+					strconv.Itoa(in.X), strconv.Itoa(in.Y)); err != nil {
+					cancel()
+					adbMu.Unlock()
+					return "", fmt.Errorf("tap 失败: %v", err)
+				}
+				adbMu.Unlock()
+				if in.Expect == "" {
+					cancel()
+					return fmt.Sprintf("已点击 (%d,%d)", in.X, in.Y), nil
+				}
+				// expect 校验：轮询语义树至多 5s
+				ok, visText := waitForText(cctx, in.Expect, 5*time.Second)
+				cancel()
+				if ok {
+					return fmt.Sprintf("已点击 (%d,%d)，✓ 验证通过：%q 已出现", in.X, in.Y, in.Expect), nil
+				}
+				return "", fmt.Errorf("点击 (%d,%d) 后 5s 未见 %q。当前屏幕可见文本（前 15 条）：%s\n"+
+					"判断：文本在列表里 → 语义标注缺失/慢；不在 → 未跳转（点击目标可能错了）",
+					in.X, in.Y, in.Expect, visText)
+			})
 		},
 	}
+}
+
+// waitForText 轮询语义树等待文本出现（tap 的 expect 校验 / wait_for 共用）。
+// 返回 (是否出现, 超时时屏幕可见文本摘要)。
+func waitForText(ctx context.Context, text string, timeout time.Duration) (bool, string) {
+	start := time.Now()
+	for {
+		if xml, ok := dumpUI(ctx); ok {
+			if strings.Contains(xml, text) {
+				return true, ""
+			}
+		}
+		if time.Since(start) >= timeout {
+			return false, visibleTexts(dumpUIBestEffort(ctx), 15)
+		}
+		select {
+		case <-ctx.Done():
+			return false, ""
+		case <-time.After(400 * time.Millisecond):
+		}
+	}
+}
+
+// dumpUI 抓一次语义树（uiautomator dump + cat，失败返回 ok=false）。
+func dumpUI(ctx context.Context) (string, bool) {
+	if _, err := adbRun(ctx, "shell", "uiautomator", "dump", "/sdcard/amc-ui.xml"); err != nil {
+		return "", false
+	}
+	out, err := adbRun(ctx, "shell", "cat", "/sdcard/amc-ui.xml")
+	if err != nil {
+		return "", false
+	}
+	return extractXML(out), true
+}
+
+// dumpUIBestEffort 尽力抓一次（失败返回空串）。
+func dumpUIBestEffort(ctx context.Context) string {
+	xml, _ := dumpUI(ctx)
+	return xml
+}
+
+// visibleTexts 从语义树提取可见文本列表（text/content-desc 非空节点），
+// 失败诊断用（「当前屏幕上到底有什么」）。
+func visibleTexts(xml string, limit int) string {
+	if xml == "" {
+		return "（语义树抓取失败——Flutter 页面可能无语义标注，改用 screenshot 判断）"
+	}
+	re := regexp.MustCompile(`(?:text|content-desc)="([^"]+)"`)
+	seen := map[string]bool{}
+	var out []string
+	for _, m := range re.FindAllStringSubmatch(xml, -1) {
+		t := strings.TrimSpace(m[1])
+		if t == "" || seen[t] {
+			continue
+		}
+		seen[t] = true
+		out = append(out, fmt.Sprintf("%q", t))
+		if len(out) >= limit {
+			break
+		}
+	}
+	if len(out) == 0 {
+		return "（无文本节点——自绘页面无语义标注，改用 screenshot 判断）"
+	}
+	return strings.Join(out, ", ")
 }
 
 type SwipeInput struct {
@@ -280,20 +578,22 @@ func NewSwipeTool() (string, goagent.ToolDef) {
 		Permission: goagent.ReadOnly,
 		Concurrent: false,
 		Execute: func(ctx goagent.Context, in SwipeInput) (string, error) {
-			adbMu.Lock()
-			defer adbMu.Unlock()
-			d := in.DurationMs
-			if d <= 0 {
-				d = 300
-			}
-			cctx, cancel := context.WithTimeout(ctx.Context, 10*time.Second)
-			defer cancel()
-			if _, err := adbRun(cctx, "shell", "input", "swipe",
-				strconv.Itoa(in.X1), strconv.Itoa(in.Y1), strconv.Itoa(in.X2), strconv.Itoa(in.Y2),
-				strconv.Itoa(d)); err != nil {
-				return "", fmt.Errorf("swipe 失败: %v", err)
-			}
-			return fmt.Sprintf("已滑动 (%d,%d)→(%d,%d) %dms", in.X1, in.Y1, in.X2, in.Y2, d), nil
+			return touchWrap(ctx, "swipe", in, func() (string, error) {
+				adbMu.Lock()
+				defer adbMu.Unlock()
+				d := in.DurationMs
+				if d <= 0 {
+					d = 300
+				}
+				cctx, cancel := context.WithTimeout(ctx.Context, 10*time.Second)
+				defer cancel()
+				if _, err := adbRun(cctx, "shell", "input", "swipe",
+					strconv.Itoa(in.X1), strconv.Itoa(in.Y1), strconv.Itoa(in.X2), strconv.Itoa(in.Y2),
+					strconv.Itoa(d)); err != nil {
+					return "", fmt.Errorf("swipe 失败: %v", err)
+				}
+				return fmt.Sprintf("已滑动 (%d,%d)→(%d,%d) %dms", in.X1, in.Y1, in.X2, in.Y2, d), nil
+			})
 		},
 	}
 }
@@ -310,16 +610,17 @@ func NewTypeTool() (string, goagent.ToolDef) {
 		Permission: goagent.ReadOnly,
 		Concurrent: false,
 		Execute: func(ctx goagent.Context, in TypeTextInput) (string, error) {
-			adbMu.Lock()
-			defer adbMu.Unlock()
-			cctx, cancel := context.WithTimeout(ctx.Context, 15*time.Second)
-			defer cancel()
-			// adb input text 的空格处理：用 %s；转义特殊字符
-			safe := strings.ReplaceAll(in.Text, " ", "%s")
-			if _, err := adbRun(cctx, "shell", "input", "text", safe); err != nil {
-				return "", fmt.Errorf("输入失败: %v", err)
-			}
-			return fmt.Sprintf("已输入 %q", in.Text), nil
+			return touchWrap(ctx, "type", in, func() (string, error) {
+				adbMu.Lock()
+				defer adbMu.Unlock()
+				cctx, cancel := context.WithTimeout(ctx.Context, 15*time.Second)
+				defer cancel()
+				safe := strings.ReplaceAll(in.Text, " ", "%s")
+				if _, err := adbRun(cctx, "shell", "input", "text", safe); err != nil {
+					return "", fmt.Errorf("输入失败: %v", err)
+				}
+				return fmt.Sprintf("已输入 %q", in.Text), nil
+			})
 		},
 	}
 }
@@ -330,15 +631,17 @@ func NewBackTool() (string, goagent.ToolDef) {
 		Input:       struct{}{},
 		Permission:  goagent.ReadOnly,
 		Concurrent:  false,
-		Execute: func(ctx goagent.Context, _ struct{}) (string, error) {
-			adbMu.Lock()
-			defer adbMu.Unlock()
-			cctx, cancel := context.WithTimeout(ctx.Context, 10*time.Second)
-			defer cancel()
-			if _, err := adbRun(cctx, "shell", "input", "keyevent", "4"); err != nil {
-				return "", fmt.Errorf("back 失败: %v", err)
-			}
-			return "已按返回", nil
+		Execute: func(ctx goagent.Context, in struct{}) (string, error) {
+			return touchWrap(ctx, "back", in, func() (string, error) {
+				adbMu.Lock()
+				defer adbMu.Unlock()
+				cctx, cancel := context.WithTimeout(ctx.Context, 10*time.Second)
+				defer cancel()
+				if _, err := adbRun(cctx, "shell", "input", "keyevent", "4"); err != nil {
+					return "", fmt.Errorf("back 失败: %v", err)
+				}
+				return "已按返回", nil
+			})
 		},
 	}
 }
@@ -360,33 +663,36 @@ func NewWaitForTool() (string, goagent.ToolDef) {
 		Permission: goagent.ReadOnly,
 		Concurrent: false,
 		Execute: func(ctx goagent.Context, in WaitInput) (string, error) {
-			timeout := time.Duration(in.TimeoutS) * time.Second
-			if timeout <= 0 {
-				timeout = 10 * time.Second
-			}
-			if in.Text == "" {
-				return "", fmt.Errorf("text 不能为空")
-			}
-			cctx, cancel := context.WithTimeout(ctx.Context, timeout+20*time.Second)
-			defer cancel()
-			start := time.Now()
-			for {
-				if _, err := adbRun(cctx, "shell", "uiautomator", "dump", "/sdcard/amc-ui.xml"); err == nil {
-					if xmlOut, err := adbRun(cctx, "shell", "cat", "/sdcard/amc-ui.xml"); err == nil {
-						if strings.Contains(extractXML(xmlOut), in.Text) {
-							return fmt.Sprintf("已出现 %q（等待 %s）", in.Text, time.Since(start).Round(time.Millisecond)), nil
-						}
+			return touchWrap(ctx, "wait_for", in, func() (string, error) {
+				timeout := time.Duration(in.TimeoutS) * time.Second
+				if timeout <= 0 {
+					timeout = 10 * time.Second
+				}
+				if in.Text == "" {
+					return "", fmt.Errorf("text 不能为空")
+				}
+				cctx, cancel := context.WithTimeout(ctx.Context, timeout+20*time.Second)
+				defer cancel()
+				start := time.Now()
+				for {
+					if xml, ok := dumpUI(cctx); ok && strings.Contains(xml, in.Text) {
+						return fmt.Sprintf("已出现 %q（等待 %s）", in.Text, time.Since(start).Round(time.Millisecond)), nil
+					}
+					if time.Since(start) >= timeout {
+						// 失败附证据：当前屏幕可见文本摘要（当场定位问题，
+						// 不用模型再跑一轮 ui_tree 诊断）
+						return "", fmt.Errorf("超时（%s）未见 %q。当前屏幕可见文本（前 15 条）：%s\n"+
+							"判断：文本在列表里 → 已在页面但文本形式不同（部分匹配/含空格）；"+
+							"不在 → 页面未到达或无语义标注（Flutter 自绘页面常见，改用 screenshot 判断）",
+							timeout, in.Text, visibleTexts(dumpUIBestEffort(cctx), 15))
+					}
+					select {
+					case <-ctx.Context.Done():
+						return "", ctx.Context.Err()
+					case <-time.After(500 * time.Millisecond):
 					}
 				}
-				if time.Since(start) >= timeout {
-					return fmt.Sprintf("超时（%s）未见 %q——页面未跳转或文本无语义标注", timeout, in.Text), nil
-				}
-				select {
-				case <-ctx.Context.Done():
-					return "", ctx.Context.Err()
-				case <-time.After(500 * time.Millisecond):
-				}
-			}
+			})
 		},
 	}
 }
@@ -399,8 +705,9 @@ type ScreenshotInput struct {
 }
 
 // shotDir 截图存放目录（项目内 .yume/shots，随会话可见）。
-func shotDir() string {
-	root := projectRoot()
+// 按会话工作目录落位（单引擎多项目互不混目录）。
+func shotDir(ctx context.Context) string {
+	root := projectRootFrom(ctx)
 	if root == "" {
 		root = os.TempDir()
 	}
@@ -409,8 +716,22 @@ func shotDir() string {
 	return d
 }
 
+var pngMagic = []byte{0x89, 'P', 'N', 'G'}
+
 // grabFrame 截一帧到本地路径。
+// 首选 adb exec-out screencap -p：二进制安全通道。adb shell 会把输出里的
+// \n (0x0A) 重写成 \r\n，而 PNG 压缩数据里到处是 0x0A——这是「截图文件
+// 打不开/不支持的格式」的根因（魔数/IEND 校验测不出这种损坏，因为首尾
+// 恰好不含 0x0A）。老 adb 无 exec-out 时回退 shell cat + adb pull。
 func grabFrame(ctx context.Context) (string, []byte, error) {
+	if bin, err := adbPath(); err == nil {
+		if dev, err := adbDevice(ctx); err == nil {
+			if out, err := exec.CommandContext(ctx, bin, "-s", dev, "exec-out", "screencap", "-p").Output(); err == nil && validPNG(out) {
+				return writeShot(ctx, out)
+			}
+		}
+	}
+	// 回退：设备端落盘再取回（shell cat 损坏时用 adb pull 兜底）
 	if _, err := adbRun(ctx, "shell", "screencap", "-p", "/sdcard/amc-shot.png"); err != nil {
 		return "", nil, fmt.Errorf("screencap 失败: %v", err)
 	}
@@ -418,24 +739,34 @@ func grabFrame(ctx context.Context) (string, []byte, error) {
 	if err != nil {
 		return "", nil, fmt.Errorf("读取截图失败: %v", err)
 	}
-	// adb shell 可能做 \r\n → \n 破坏 PNG：以 PNG 魔数定位起点，失败时提示用 pull
 	data := []byte(out)
-	idx := bytes.Index(data, []byte{0x89, 'P', 'N', 'G'})
-	if idx < 0 || !bytes.HasSuffix(bytes.TrimSpace(data), []byte("IEND\xaeB`\x82")) {
+	if idx := bytes.Index(data, pngMagic); idx < 0 || !validPNG(data) {
 		// 数据被 shell 损坏：改用 adb pull（二进制安全）
-		local := filepath.Join(shotDir(), "tmp.png")
+		local := filepath.Join(shotDir(ctx), "tmp.png")
 		bin, _ := adbPath()
 		dev, _ := adbDevice(ctx)
 		if err := exec.CommandContext(ctx, bin, "-s", dev, "pull", "/sdcard/amc-shot.png", local).Run(); err != nil {
 			return "", nil, fmt.Errorf("截图传输失败: %v", err)
 		}
-		data, err = os.ReadFile(local)
-		if err != nil {
+		if data, err = os.ReadFile(local); err != nil {
 			return "", nil, err
 		}
+	} else if idx > 0 {
+		data = data[idx:] // 剥掉 shell 混入的前导输出
 	}
+	return writeShot(ctx, data)
+}
+
+// validPNG 完整解码校验：只有真正解得开才算好图。
+func validPNG(data []byte) bool {
+	_, err := png.Decode(bytes.NewReader(data))
+	return err == nil
+}
+
+// writeShot 落盘截图文件，返回路径和数据。
+func writeShot(ctx context.Context, data []byte) (string, []byte, error) {
 	name := fmt.Sprintf("shot-%s.png", time.Now().Format("150405.000"))
-	p := filepath.Join(shotDir(), name)
+	p := filepath.Join(shotDir(ctx), name)
 	if err := os.WriteFile(p, data, 0o644); err != nil {
 		return "", nil, err
 	}
@@ -471,53 +802,91 @@ func sampleGray(img image.Image, x, y, n int) int {
 	return int((r>>8 + g>>8 + bl>>8) / 3)
 }
 
+// ---------- 同画面截图去重（会话级最近一张缓存） ----------
+
+type shotCacheEntry struct {
+	path string
+	data []byte
+}
+
+var (
+	shotMu    sync.Mutex
+	lastShots = map[string]shotCacheEntry{} // sessionID → 最近截图
+)
+
+// rememberShot 记录会话最近一次落盘的截图（去重比较用）。
+func rememberShot(sessionID, path string, data []byte) {
+	shotMu.Lock()
+	defer shotMu.Unlock()
+	lastShots[sessionID] = shotCacheEntry{path: path, data: data}
+}
+
+// lastShot 取会话最近一次截图；没有则 ok=false。
+func lastShot(sessionID string) (shotCacheEntry, bool) {
+	shotMu.Lock()
+	defer shotMu.Unlock()
+	e, ok := lastShots[sessionID]
+	return e, ok
+}
+
 func NewScreenshotTool() (string, goagent.ToolDef) {
 	return "screenshot", goagent.ToolDef{
 		Description: "截图当前屏幕，返回本地文件路径。默认做画面稳定检测（动画/滚动中自动等 0.3-3 秒到稳定）。" +
 			"用途：目视检查布局/白屏/错位；配合 screen_diff 做前后对比断言。" +
-			"截图文件可直接交给 vision_ask（若可用）做语义判断。",
+			"截图文件可直接交给 vision_ask（若可用）做语义判断。" +
+			"【同画面复用】画面与最近一次截图相同时返回已有文件（不重复落盘）——" +
+			"同一页面验证多个点时，第一次截图后页面没变就别再截，直接用返回的那个路径。",
 		Input:      ScreenshotInput{},
 		Permission: goagent.ReadOnly,
 		Concurrent: false,
 		Execute: func(ctx goagent.Context, in ScreenshotInput) (string, error) {
-			cctx, cancel := context.WithTimeout(ctx.Context, 20*time.Second)
-			defer cancel()
-			_, cur, err := grabFrame(cctx)
-			if err != nil {
-				return "", err
-			}
-			animating := false
-			if in.Stable { // 稳定检测：两帧一致才算稳定，上限 3s
-				deadline := time.Now().Add(3 * time.Second)
-				for time.Now().Before(deadline) {
-					select {
-					case <-ctx.Context.Done():
-						return "", ctx.Context.Err()
-					case <-time.After(300 * time.Millisecond):
-					}
-					_, next, err := grabFrame(cctx)
-					if err != nil {
-						break
-					}
-					if framesEqual(cur, next) {
-						cur = next
-						break
-					}
-					cur = next
-					animating = true
+			return touchWrap(ctx, "screenshot", in, func() (string, error) {
+				cctx, cancel := context.WithTimeout(ctx.Context, 20*time.Second)
+				defer cancel()
+				_, cur, err := grabFrame(cctx)
+				if err != nil {
+					return "", err
 				}
-			}
-			h := sha1.Sum(cur)
-			name := fmt.Sprintf("shot-%d-%s.png", time.Now().Unix(), hex.EncodeToString(h[:4]))
-			p := filepath.Join(shotDir(), name)
-			if err := os.WriteFile(p, cur, 0o644); err != nil {
-				return "", err
-			}
-			status := "画面稳定"
-			if animating {
-				status = "仍在运动（3s 未稳定，此帧不可用于像素断言，仅供粗看）"
-			}
-			return fmt.Sprintf("截图: %s（%s）", p, status), nil
+				animating := false
+				if in.Stable { // 稳定检测：两帧一致才算稳定，上限 3s
+					deadline := time.Now().Add(3 * time.Second)
+					for time.Now().Before(deadline) {
+						select {
+						case <-ctx.Context.Done():
+							return "", ctx.Context.Err()
+						case <-time.After(300 * time.Millisecond):
+						}
+						_, next, err := grabFrame(cctx)
+						if err != nil {
+							break
+						}
+						if framesEqual(cur, next) {
+							cur = next
+							break
+						}
+						cur = next
+						animating = true
+					}
+				}
+				// 同画面去重：与该会话最近一次截图逐像素相同 → 复用已落盘
+				// 文件。同一页面验证多个条目（标题/金额/按钮各一条）时，
+				// 页面没变就不重复截图——省时且报告不堆重复图。
+				if last, ok := lastShot(ctx.SessionID); ok && bytes.Equal(last.data, cur) {
+					return fmt.Sprintf("截图: %s（画面与最近一次相同，已复用——同页面验证多个点时共用此图即可）", last.path), nil
+				}
+				h := sha1.Sum(cur)
+				name := fmt.Sprintf("shot-%d-%s.png", time.Now().Unix(), hex.EncodeToString(h[:4]))
+				p := filepath.Join(shotDir(ctx), name)
+				if err := os.WriteFile(p, cur, 0o644); err != nil {
+					return "", err
+				}
+				rememberShot(ctx.SessionID, p, cur)
+				status := "画面稳定"
+				if animating {
+					status = "仍在运动（3s 未稳定，此帧不可用于像素断言，仅供粗看）"
+				}
+				return fmt.Sprintf("截图: %s（%s）", p, status), nil
+			})
 		},
 	}
 }
@@ -525,6 +894,27 @@ func NewScreenshotTool() (string, goagent.ToolDef) {
 type DiffInput struct {
 	Before string `json:"before" desc:"第一张截图路径" required:"true"`
 	After  string `json:"after" desc:"第二张截图路径" required:"true"`
+	// 基线管理（可选动作）：save 把 after 存为命名基线；check 把当前屏幕
+	// 与命名基线对比（截图+diff 一步完成）。Before 字段此时填 tag 名。
+	Action string `json:"action,omitempty" desc:"save=把 after 截图存为基线（before 填 tag 名）；check=截当前屏幕与基线对比（before 填 tag 名）。不填=普通两图对比"`
+}
+
+// baselineDir 基线存放目录（.yume/baselines/<tag>.png）。基线是「该页面
+// 应该长这样」的黄金截图：UI 重构后 save 刷新，回归测试 check 复用。
+func baselineDir(ctx context.Context) string {
+	root := projectRootFrom(ctx)
+	if root == "" {
+		root = os.TempDir()
+	}
+	d := filepath.Join(root, ".yume", "baselines")
+	_ = os.MkdirAll(d, 0o755)
+	return d
+}
+
+// baselinePath tag → 基线文件路径（tag 消毒：只留安全字符）。
+func baselinePath(ctx context.Context, tag string) string {
+	safe := regexp.MustCompile(`[^\w.-]`).ReplaceAllString(tag, "_")
+	return filepath.Join(baselineDir(ctx), safe+".png")
 }
 
 // NewScreenDiffTool 像素 diff（L4 零模型断言）：降采样网格对比，
@@ -532,51 +922,95 @@ type DiffInput struct {
 func NewScreenDiffTool() (string, goagent.ToolDef) {
 	return "screen_diff", goagent.ToolDef{
 		Description: "对比两张截图的像素差异（降采样网格）。用途：改动前后是否生效（diff≈0 = 无变化）、" +
-			"白屏/崩溃检测（整屏单色）。差异率 >3% 通常代表可见变化。",
+			"白屏/崩溃检测（整屏单色）。差异率 >3% 通常代表可见变化。\n" +
+			"【基线模式】action=save：把 after 截图存为命名基线（before 填 tag，如 \"home\"）——" +
+			"该页面的黄金截图。action=check：截当前屏幕与基线对比（before 填 tag）——" +
+			"回归测试的标准姿势：改动前 save，改动后 check，diff≈0 即 UI 未被破坏。" +
+			"基线存 .yume/baselines/<tag>.png，UI 故意改版后重新 save 刷新。",
 		Input:      DiffInput{},
 		Permission: goagent.ReadOnly,
 		Concurrent: true,
 		Execute: func(ctx goagent.Context, in DiffInput) (string, error) {
-			da, err := os.ReadFile(in.Before)
-			if err != nil {
-				return "", fmt.Errorf("读 %s 失败: %v", in.Before, err)
-			}
-			db, err := os.ReadFile(in.After)
-			if err != nil {
-				return "", fmt.Errorf("读 %s 失败: %v", in.After, err)
-			}
-			ia, erra := png.Decode(bytes.NewReader(da))
-			ib, errb := png.Decode(bytes.NewReader(db))
-			if erra != nil || errb != nil {
-				return "", fmt.Errorf("PNG 解码失败")
-			}
-			const n = 24
-			diff := 0
-			var regions []string
-			for y := 0; y < n; y++ {
-				rowDiff := 0
-				for x := 0; x < n; x++ {
-					if abs(sampleGray(ia, x, y, n)-sampleGray(ib, x, y, n)) > 12 {
-						diff++
-						rowDiff++
-					}
+			// ---- 基线管理动作 ----
+			if in.Action == "save" {
+				if in.Before == "" || in.After == "" {
+					return "", fmt.Errorf("save 需要 before=tag名 和 after=截图路径")
 				}
-				if rowDiff > n/3 {
-					regions = append(regions, fmt.Sprintf("第%d/%d行带", y+1, n))
+				data, err := os.ReadFile(in.After)
+				if err != nil {
+					return "", fmt.Errorf("读 %s 失败: %v", in.After, err)
 				}
+				dst := baselinePath(ctx, in.Before)
+				if err := os.WriteFile(dst, data, 0o644); err != nil {
+					return "", fmt.Errorf("写基线失败: %v", err)
+				}
+				return fmt.Sprintf("已保存基线 %q → %s（后续用 action=check 对比）", in.Before, dst), nil
 			}
-			rate := float64(diff) / float64(n*n) * 100
-			verdict := "无可见变化"
-			if rate > 3 {
-				verdict = "有可见变化"
+			if in.Action == "check" {
+				if in.Before == "" {
+					return "", fmt.Errorf("check 需要 before=tag名")
+				}
+				baseFile := baselinePath(ctx, in.Before)
+				if _, err := os.Stat(baseFile); err != nil {
+					return "", fmt.Errorf("基线 %q 不存在（%s）——先 action=save 创建", in.Before, baseFile)
+				}
+				// 截当前屏幕
+				curFile, _, err := grabFrame(ctx)
+				if err != nil {
+					return "", fmt.Errorf("截屏失败: %v", err)
+				}
+				out, err := diffPNGs(baseFile, curFile)
+				if err != nil {
+					return "", err
+				}
+				return fmt.Sprintf("基线 %q vs 当前屏幕（%s）：%s", in.Before, curFile, out), nil
 			}
-			out := fmt.Sprintf("差异率 %.1f%%（%s）", rate, verdict)
-			if len(regions) > 0 && len(regions) <= 6 {
-				out += "；变化集中: " + strings.Join(regions[:3], ", ")
-			}
-			return out, nil
+			// ---- 普通两图对比 ----
+			return diffPNGs(in.Before, in.After)
 		},
 	}
+}
+
+// diffPNGs 对比两张 PNG，返回人话结论（复用 24x24 降采样网格）。
+func diffPNGs(a, b string) (string, error) {
+	da, err := os.ReadFile(a)
+	if err != nil {
+		return "", fmt.Errorf("读 %s 失败: %v", a, err)
+	}
+	db, err := os.ReadFile(b)
+	if err != nil {
+		return "", fmt.Errorf("读 %s 失败: %v", b, err)
+	}
+	ia, erra := png.Decode(bytes.NewReader(da))
+	ib, errb := png.Decode(bytes.NewReader(db))
+	if erra != nil || errb != nil {
+		return "", fmt.Errorf("PNG 解码失败")
+	}
+	const n = 24
+	diff := 0
+	var regions []string
+	for y := 0; y < n; y++ {
+		rowDiff := 0
+		for x := 0; x < n; x++ {
+			if abs(sampleGray(ia, x, y, n)-sampleGray(ib, x, y, n)) > 12 {
+				diff++
+				rowDiff++
+			}
+		}
+		if rowDiff > n/3 {
+			regions = append(regions, fmt.Sprintf("第%d/%d行带", y+1, n))
+		}
+	}
+	rate := float64(diff) / float64(n*n) * 100
+	verdict := "无可见变化"
+	if rate > 3 {
+		verdict = "有可见变化"
+	}
+	out := fmt.Sprintf("差异率 %.1f%%（%s）", rate, verdict)
+	if len(regions) > 0 && len(regions) <= 6 {
+		out += "；变化集中: " + strings.Join(regions[:3], ", ")
+	}
+	return out, nil
 }
 
 func abs(i int) int {
@@ -603,32 +1037,34 @@ func NewLogcatTool() (string, goagent.ToolDef) {
 		Permission: goagent.ReadOnly,
 		Concurrent: false,
 		Execute: func(ctx goagent.Context, in LogcatInput) (string, error) {
-			cctx, cancel := context.WithTimeout(ctx.Context, 15*time.Second)
-			defer cancel()
-			if in.Clear {
-				if _, err := adbRun(cctx, "logcat", "-c"); err != nil {
-					return "", fmt.Errorf("清空 logcat 失败: %v", err)
+			return touchWrap(ctx, "logcat", in, func() (string, error) {
+				cctx, cancel := context.WithTimeout(ctx.Context, 15*time.Second)
+				defer cancel()
+				if in.Clear {
+					if _, err := adbRun(cctx, "logcat", "-c"); err != nil {
+						return "", fmt.Errorf("清空 logcat 失败: %v", err)
+					}
+					return "已清空 logcat 缓冲——现在做操作，然后再调 logcat（不带 clear）抓增量", nil
 				}
-				return "已清空 logcat 缓冲——现在做操作，然后再调 logcat（不带 clear）抓增量", nil
-			}
-			args := []string{"logcat", "-d"}
-			// -t 接行数（近 N 秒按 ~100 行/秒估算上限，取尾部）
-			if in.Tag != "" {
-				args = append(args, "-s", in.Tag+levelSuffix(in.Level))
-			} else if in.Level != "" {
-				args = append(args, "*:"+strings.ToUpper(in.Level[:1]))
-			}
-			args = append(args, "-t", strconv.Itoa(in.secondsOrDefault()*100))
-			out, err := adbRun(cctx, args...)
-			if err != nil {
-				return "", fmt.Errorf("logcat 失败: %v", err)
-			}
-			const max = 12000
-			s := out
-			if len(s) > max {
-				s = s[len(s)-max:]
-			}
-			return s, nil
+				args := []string{"logcat", "-d"}
+				// -t 接行数（近 N 秒按 ~100 行/秒估算上限，取尾部）
+				if in.Tag != "" {
+					args = append(args, "-s", in.Tag+levelSuffix(in.Level))
+				} else if in.Level != "" {
+					args = append(args, "*:"+strings.ToUpper(in.Level[:1]))
+				}
+				args = append(args, "-t", strconv.Itoa(in.secondsOrDefault()*100))
+				out, err := adbRun(cctx, args...)
+				if err != nil {
+					return "", fmt.Errorf("logcat 失败: %v", err)
+				}
+				const max = 12000
+				s := out
+				if len(s) > max {
+					s = s[len(s)-max:]
+				}
+				return s, nil
+			})
 		},
 	}
 }
@@ -668,14 +1104,22 @@ type netRecord struct {
 	backend  string
 	mocks    []mockRule
 	requests []string
+	logRoot  string // 网络日志落盘根（启动录制的会话的项目目录）
 }
 
 var netState = &netRecord{}
 
 // netLogPath 网络日志落盘（前端「网络」页签轮询此文件实时展示）。
 // JSONL：每行 {ts, method, path, status, mock}。
+// logRoot 由 record_start 时按会话工作目录确定——录制代理的 goroutine
+// 拿不到会话 ctx，落盘位置跟着「谁启动了录制」走。
 func netLogPath() string {
-	root := projectRoot()
+	netState.mu.Lock()
+	root := netState.logRoot
+	netState.mu.Unlock()
+	if root == "" {
+		root = projectRoot()
+	}
 	if root == "" {
 		root = os.TempDir()
 	}
@@ -684,7 +1128,14 @@ func netLogPath() string {
 
 // appendNetLog 追加一条请求记录到落盘文件（失败静默：不影响录制主流程）。
 func appendNetLog(method, path string, status int, isMock bool) {
-	root := projectRoot()
+	root := func() string {
+		netState.mu.Lock()
+		defer netState.mu.Unlock()
+		return netState.logRoot
+	}()
+	if root == "" {
+		root = projectRoot()
+	}
 	if root == "" {
 		return
 	}
@@ -724,14 +1175,19 @@ func NewNetTool() (string, goagent.ToolDef) {
 			defer cancel()
 			switch in.Action {
 			case "reverse":
-				port := in.portOrDefault()
-				if _, err := adbRun(cctx, "reverse", fmt.Sprintf("tcp:%d", port), fmt.Sprintf("tcp:%d", port)); err != nil {
-					return "", fmt.Errorf("adb reverse 失败: %v", err)
-				}
-				return fmt.Sprintf("设备 localhost:%d → 本机 %d（app 的 API 基址用 http://localhost:%d）", port, port, port), nil
+				// reverse 操作 adb，需持设备锁（本机录制代理类操作不碰设备，不进锁）
+				return touchWrap(ctx, "net", in, func() (string, error) {
+					port := in.portOrDefault()
+					if _, err := adbRun(cctx, "reverse", fmt.Sprintf("tcp:%d", port), fmt.Sprintf("tcp:%d", port)); err != nil {
+						return "", fmt.Errorf("adb reverse 失败: %v", err)
+					}
+					return fmt.Sprintf("设备 localhost:%d → 本机 %d（app 的 API 基址用 http://localhost:%d）", port, port, port), nil
+				})
 			case "unreverse":
-				_, _ = adbRun(cctx, "reverse", "--remove-all")
-				return "已移除全部端口映射", nil
+				return touchWrap(ctx, "net", in, func() (string, error) {
+					_, _ = adbRun(cctx, "reverse", "--remove-all")
+					return "已移除全部端口映射", nil
+				})
 			case "backend":
 				if in.Backend == "" {
 					return "", fmt.Errorf("backend 不能为空（如 http://127.0.0.1:8080）")
@@ -741,6 +1197,10 @@ func NewNetTool() (string, goagent.ToolDef) {
 				netState.mu.Unlock()
 				return fmt.Sprintf("后端已设为 %s", in.Backend), nil
 			case "record_start":
+				// 落盘目录锚定到本会话的项目根（代理 goroutine 无会话 ctx）
+				netState.mu.Lock()
+				netState.logRoot = projectRootFrom(ctx)
+				netState.mu.Unlock()
 				if err := startRecProxy(); err != nil {
 					return "", err
 				}

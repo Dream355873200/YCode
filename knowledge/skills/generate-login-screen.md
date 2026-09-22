@@ -1,3 +1,9 @@
+---
+name: generate-login-screen
+description: 生成符合安全规范与团队 UI 规范的完整 Flutter 登录页（校验/三态/token 安全存储）
+when-to-use: 新建项目需要登录页，或用户要求生成登录界面时
+allowed-tools: Read, Glob, Grep, Write, Edit, Bash, flutter
+---
 生成符合安全规范与团队 UI 规范的完整 Flutter 登录页。
 
 你是资深 Flutter 工程师。请为目标项目生成一个生产级登录页面，严格遵循以下规范。

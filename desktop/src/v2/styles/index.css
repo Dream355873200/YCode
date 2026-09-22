@@ -1,0 +1,194 @@
+/* v2 样式地基：Tailwind v4 + shadcn/radix-mira 组件体系。
+   token 结构移植自 ZCode（Apache-2.0，见 desktop/THIRD-PARTY-NOTICES.md）：
+   浅色值在 @theme，暗色在 .dark 下整组覆盖；主题切换 = <html> 挂/摘 .dark class。
+   语义 token 分三层：表面（background/panel/sidebar/card/popover/input）→
+   描边（border/border-hover/input-border*）→ 前景（foreground*，按深浅三档）。
+   禁止任意色值写进组件；新增语义色先在这里定义再消费。 */
+@import 'tailwindcss';
+@import 'tw-animate-css';
+@import 'shadcn/tailwind.css';
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --ui-font-size: 14px; /* 用户可调基准：只改这里，图标/间距不随动 */
+}
+
+@theme {
+  /* Windows 的 Consolas 不含中文字形，默认栈会让中文落到宋体；
+     通用 monospace 前显式加入各平台 CJK 无衬线字体。 */
+  --font-mono:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
+    "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", monospace;
+  --font-ui: "IBM Plex Sans", "SF Pro Text", "PingFang SC", "Microsoft YaHei UI", "Segoe UI", system-ui, sans-serif;
+
+  --text-ui-xl: calc(var(--ui-font-size) + 4px);
+  --text-ui-lg: calc(var(--ui-font-size) + 2px);
+  --text-ui-base: var(--ui-font-size);
+  --text-ui-caption: calc(var(--ui-font-size) - 1px);
+  --text-ui-sm: calc(var(--ui-font-size) - 2px);
+  --text-ui-xs: calc(var(--ui-font-size) - 4px);
+  --text-ui-2xs: calc(var(--ui-font-size) - 5px);
+
+  /* ---------- 浅色主题 ---------- */
+  --color-background: var(--color-neutral-50);
+  --color-background-alt: color-mix(in oklab, var(--color-neutral-100) 60%, transparent);
+  --color-background-win-alt: var(--color-neutral-200);
+  --color-brand: var(--color-sky-400);
+  --color-border: color-mix(in oklab, var(--color-neutral-950) 10%, transparent);
+  --color-border-hover: color-mix(in oklab, var(--color-neutral-950) 20%, transparent);
+  --color-hover: var(--color-neutral-200);
+  --color-selected: color-mix(in oklab, var(--color-neutral-950) 10%, transparent);
+  --color-header: var(--color-neutral-100);
+  --color-panel: var(--color-neutral-100);
+  --color-sidebar: var(--color-neutral-100);
+  --color-surface: color-mix(in oklab, var(--color-neutral-950) 3%, transparent);
+  --color-surface-hover: color-mix(in oklab, var(--color-neutral-950) 5%, transparent);
+  --color-card: var(--color-white);
+  --color-card-selected: var(--color-neutral-200);
+  --color-popover: var(--color-white);
+  --color-popover-foreground: var(--color-foreground);
+  --color-popover-border: var(--color-border);
+  --color-input: var(--color-white);
+  --color-input-focused: var(--color-neutral-50);
+  --color-input-border: var(--color-border);
+  --color-input-border-hover: var(--color-border-hover);
+  --color-input-border-focused: var(--color-brand);
+  --color-tab: var(--color-neutral-100);
+  --color-tab-active: var(--color-white);
+  --color-menu: var(--color-white);
+  --color-menu-hover: var(--color-neutral-100);
+  --color-primary: var(--color-neutral-950);
+  --color-primary-foreground: var(--color-neutral-50);
+  --color-secondary: var(--color-neutral-300);
+  --color-foreground: var(--color-neutral-700);
+  --color-foreground-subtle: color-mix(in oklab, var(--color-neutral-700) 60%, transparent);
+  --color-foreground-subtlest: color-mix(in oklab, var(--color-neutral-700) 40%, transparent);
+  --color-foreground-inverse: var(--color-white);
+  --color-success: var(--color-green-600);
+  --color-destructive: var(--color-red-600);
+  --color-warning: var(--color-yellow-600);
+  --color-info: #0550AE; /* 深蓝：浅色面上保对比度 */
+  --color-diff-added: var(--color-green-600);
+  --color-diff-removed: var(--color-red-600);
+  --color-tooltip: var(--color-neutral-100);
+  --color-tooltip-foreground: var(--color-neutral-950);
+  --color-tag: var(--color-neutral-200);
+  --color-accent: var(--color-sky-50);
+  --color-trajectory-user: #2563eb;
+  --color-trajectory-assistant: #0f766e;
+  --color-trajectory-reasoning: #7c3aed;
+  --color-trajectory-tool-call: #d97706;
+  --color-trajectory-tool-result: #0284c7;
+  /* 上游模板残留类的兜底（bg-muted / text-muted-foreground / ring） */
+  --color-muted: color-mix(in oklab, var(--color-neutral-950) 5%, transparent);
+  --color-muted-foreground: var(--color-foreground-subtle);
+  --color-ring: var(--color-brand);
+}
+
+.dark {
+  --color-background: var(--color-neutral-900);
+  --color-background-alt: color-mix(in oklab, var(--color-neutral-800) 60%, transparent);
+  --color-background-win-alt: var(--color-neutral-800);
+  --color-brand: var(--color-sky-500);
+  --color-border: color-mix(in oklab, var(--color-neutral-50) 10%, transparent);
+  --color-border-hover: color-mix(in oklab, var(--color-neutral-50) 30%, transparent);
+  --color-hover: color-mix(in oklab, var(--color-white) 10%, transparent);
+  --color-selected: color-mix(in oklab, var(--color-white) 10%, transparent);
+  --color-header: var(--color-neutral-900);
+  --color-panel: var(--color-neutral-900);
+  --color-sidebar: var(--color-neutral-950);
+  --color-surface: color-mix(in oklab, var(--color-white) 5%, transparent);
+  --color-surface-hover: color-mix(in oklab, var(--color-white) 10%, transparent);
+  --color-card: var(--color-neutral-800);
+  --color-card-selected: var(--color-neutral-700);
+  --color-popover: var(--color-neutral-800);
+  --color-popover-foreground: var(--color-foreground);
+  --color-popover-border: var(--color-border);
+  --color-input: var(--color-neutral-800);
+  --color-input-focused: var(--color-neutral-950);
+  --color-input-border: var(--color-border);
+  --color-input-border-hover: var(--color-border-hover);
+  --color-input-border-focused: var(--color-brand);
+  --color-tab: var(--color-neutral-800);
+  --color-tab-active: var(--color-neutral-950);
+  --color-menu: var(--color-neutral-950);
+  --color-menu-hover: var(--color-neutral-900);
+  --color-primary: var(--color-neutral-50);
+  --color-primary-foreground: var(--color-neutral-950);
+  --color-secondary: var(--color-neutral-700);
+  --color-foreground: var(--color-neutral-200);
+  --color-foreground-subtle: color-mix(in oklab, var(--color-neutral-200) 60%, transparent);
+  --color-foreground-subtlest: color-mix(in oklab, var(--color-neutral-200) 30%, transparent);
+  --color-foreground-inverse: var(--color-white);
+  --color-success: var(--color-green-500);
+  --color-destructive: var(--color-red-500);
+  --color-warning: var(--color-yellow-500);
+  --color-info: var(--color-sky-300);
+  --color-diff-added: var(--color-green-500);
+  --color-diff-removed: var(--color-red-500);
+  --color-tooltip: var(--color-neutral-900);
+  --color-tooltip-foreground: var(--color-neutral-50);
+  --color-tag: var(--color-neutral-700);
+  --color-accent: color-mix(in oklab, var(--color-sky-950) 50%, transparent);
+  --color-trajectory-user: #60a5fa;
+  --color-trajectory-assistant: #2dd4bf;
+  --color-trajectory-reasoning: #a78bfa;
+  --color-trajectory-tool-call: #f59e0b;
+  --color-trajectory-tool-result: #38bdf8;
+  --color-muted: color-mix(in oklab, var(--color-white) 6%, transparent);
+  --color-muted-foreground: var(--color-foreground-subtle);
+  --color-ring: var(--color-brand);
+}
+
+html, body, #root { height: 100%; }
+body {
+  font-family: var(--font-ui);
+  font-size: var(--text-ui-base);
+  background: var(--color-background);
+  color: var(--color-foreground);
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---------- 自绘标题栏拖拽区 ---------- */
+.drag { -webkit-app-region: drag; }
+.no-drag { -webkit-app-region: no-drag; }
+
+/* ---------- markdown（renderMD 产出的受控 HTML） ---------- */
+.v2-md { line-height: 1.65; }
+.v2-md p { margin: .35em 0; }
+.v2-md h1, .v2-md h2, .v2-md h3, .v2-md h4 { margin: .8em 0 .35em; font-weight: 600; line-height: 1.35; }
+.v2-md h1 { font-size: var(--text-ui-lg); }
+.v2-md h2 { font-size: var(--text-ui-base); }
+.v2-md h3, .v2-md h4 { font-size: var(--text-ui-sm); }
+.v2-md ul, .v2-md ol { margin: .35em 0; padding-left: 1.5em; }
+.v2-md ul { list-style: disc; }
+.v2-md ol { list-style: decimal; }
+.v2-md li { margin: .15em 0; }
+.v2-md code {
+  font-family: var(--font-mono);
+  font-size: .92em;
+  background: var(--color-tag);
+  border-radius: 4px;
+  padding: .1em .35em;
+}
+.v2-md pre {
+  background: var(--color-tag);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  padding: .7em .9em;
+  overflow-x: auto;
+  margin: .5em 0;
+}
+.v2-md pre code { background: none; padding: 0; font-size: var(--text-ui-sm); }
+.v2-md blockquote {
+  border-left: 2px solid var(--color-border);
+  margin: .5em 0;
+  padding: .1em 0 .1em .8em;
+  color: var(--color-foreground-subtle);
+}
+.v2-md table { border-collapse: collapse; margin: .5em 0; }
+.v2-md th, .v2-md td { border: 1px solid var(--color-border); padding: .3em .7em; }
+.v2-md a { color: var(--color-brand); }
+.v2-md hr { border: none; border-top: 1px solid var(--color-border); margin: 1em 0; }

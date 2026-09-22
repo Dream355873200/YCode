@@ -1,0 +1,26 @@
+{
+  "name": "goagent-client",
+  "version": "0.1.0",
+  "description": "GoAgent HTTP/SSE 协议的 TypeScript 客户端（零依赖，Node 18+ / 浏览器 / Electron 通用）。vendored：源仓库 goagent/sdk/typescript 的仓库内副本，改动需同步回去并在其 GOAGENT_CHANGES.md 留档。",
+  "type": "module",
+  "main": "./dist/cjs/index.cjs",
+  "module": "./dist/esm/index.js",
+  "types": "./dist/esm/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/esm/index.d.ts",
+      "import": "./dist/esm/index.js",
+      "require": "./dist/cjs/index.cjs"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.esm.json && tsc -p tsconfig.cjs.json && node scripts/fixcjs.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}

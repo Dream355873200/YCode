@@ -182,8 +182,8 @@ async function connectMirror(deviceId) {
     socket.write(Buffer.from([0]));
     if (hello.length > 1) {
       // dummy 后已附带 meta（罕见但处理）：先缓存，socket data 事件接上后补发
-      entry = state.mirrors.get(deviceId);
-      if (entry) entry.pending = hello.subarray(1);
+      const cur = state.mirrors.get(deviceId);
+      if (cur) cur.pending = hello.subarray(1);
     }
     console.log('[mirror] video 通道握手完成');
 
