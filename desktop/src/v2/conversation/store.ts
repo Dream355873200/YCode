@@ -204,15 +204,19 @@ export const useConversation = create<ConversationStore>((set, get) => {
         ]);
         const running = ((r.body as Array<{ id: string; state: string }> | undefined) || [])
           .some((x) => x.id === sid && x.state === 'running');
-        // 引擎历史是唯一真源：轮询期间整体重放（busy 时不动，避免撕裂直播流）
-        if (!get().sessions[sid]?.busy && Array.isArray(msgs.body)) {
+        // 引擎历史是唯一真源：轮询期间整体重放。resuming 时没有直播流
+        // 可撕裂，busy 不挡重放——否则回答恢复出的提问卡后，run 续跑的
+        // 产出永远不可见（busy 只在 SSE 直播时防撕裂）
+        const st = get().sessions[sid];
+        if ((!st?.busy || st?.resuming) && Array.isArray(msgs.body)) {
           const rows = historyToRows(msgs.body as never);
           patch(set, sid, (s) => ({ ...s, rows }));
         }
         // 队列对账（引擎侧 bg 任务也会入队，轮询兜底可见）
         void refreshQueue(sid, patch, set);
-        // 未决提问对账：轮询恢复路径没有直播流，帧丢失的 ask_user 在这里补
-        void reconcilePendingAsk(sid, patch, set);
+        // 未决提问对账：轮询恢复路径没有直播流，帧丢失的 ask_user 在这里补。
+        // 仅 run 仍在跑时查——run 恰好收尾的竞态下不复活死卡
+        if (running) void reconcilePendingAsk(sid, patch, set);
         if (!running) { stopResume(sid); handleFrame({ type: 'done', session_id: sid } as Envelope); }
       } catch { /* 引擎暂不可达，下个周期再试 */ }
     }, 3000);
