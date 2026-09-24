@@ -147,7 +147,12 @@ async function handle(msg) {
       try {
         const r = await tool.handler(params.arguments || {});
         if (r && r.__image) {
-          return { id, result: textResult(`[IMAGE jpeg ${r.b64}]\n截图 ${r.path}`) };
+          // 防御：b64 缺失/过短说明截屏失败，绝不发出毒标记（会永久卡死会话）
+          const img = r.__image;
+          if (!img.b64 || img.b64.length < 100) {
+            return { id, result: textResult("截图失败：画面数据为空", true) };
+          }
+          return { id, result: textResult(`[IMAGE jpeg ${img.b64}]\n网页截图已附上: ${img.path}`) };
         }
         return { id, result: textResult(typeof r === "string" ? r : JSON.stringify(r, null, 2)) };
       } catch (e) {

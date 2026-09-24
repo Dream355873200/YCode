@@ -205,3 +205,59 @@ body {
 .v2-md th, .v2-md td { border: 1px solid var(--color-border); padding: .3em .7em; }
 .v2-md a { color: var(--color-brand); }
 .v2-md hr { border: none; border-top: 1px solid var(--color-border); margin: 1em 0; }
+
+/* ---------- highlight.js 语法高亮（v2 文件预览/代码卡）----------
+   颜色对齐应用令牌：亮色直接定义，暗色在 .dark 下覆盖。 */
+.hljs-keyword, .hljs-selector-tag, .hljs-literal, .hljs-section, .hljs-doctag,
+.hljs-type, .hljs-name, .hljs-strong {
+  color: #7c3aed;
+  font-weight: 500;
+}
+.hljs-string, .hljs-regexp, .hljs-addition, .hljs-attribute, .hljs-meta .hljs-string {
+  color: #16a34a;
+}
+.hljs-number, .hljs-symbol, .hljs-bullet, .hljs-variable,
+.hljs-template-variable, .hljs-link, .hljs-selector-attr {
+  color: #d97706;
+}
+.hljs-title, .hljs-title.function_, .hljs-title.class_, .hljs-property {
+  color: #2563eb;
+}
+.hljs-comment, .hljs-quote, .hljs-deletion {
+  color: #6b7280;
+  font-style: italic;
+}
+.hljs-built_in, .hljs-class .hljs-title, .hljs-params {
+  color: #0ea5e9;
+}
+.hljs-attr, .hljs-selector-class, .hljs-selector-id {
+  color: #db2777;
+}
+.hljs-emphasis { font-style: italic; }
+.hljs-meta { color: #6b7280; }
+
+.dark .hljs-keyword, .dark .hljs-selector-tag, .dark .hljs-literal, .dark .hljs-section,
+.dark .hljs-doctag, .dark .hljs-type, .dark .hljs-name, .dark .hljs-strong {
+  color: #c4b5fd;
+}
+.dark .hljs-string, .dark .hljs-regexp, .dark .hljs-addition, .dark .hljs-attribute,
+.dark .hljs-meta .hljs-string {
+  color: #86efac;
+}
+.dark .hljs-number, .dark .hljs-symbol, .dark .hljs-bullet, .dark .hljs-variable,
+.dark .hljs-template-variable, .dark .hljs-link, .dark .hljs-selector-attr {
+  color: #fcd34d;
+}
+.dark .hljs-title, .dark .hljs-title.function_, .dark .hljs-title.class_, .dark .hljs-property {
+  color: #93c5fd;
+}
+.dark .hljs-comment, .dark .hljs-quote, .dark .hljs-deletion {
+  color: #9ca3af;
+}
+.dark .hljs-built_in, .dark .hljs-class .hljs-title, .dark .hljs-params {
+  color: #67e8f9;
+}
+.dark .hljs-attr, .dark .hljs-selector-class, .dark .hljs-selector-id {
+  color: #f9a8d4;
+}
+.dark .hljs-meta { color: #9ca3af; }

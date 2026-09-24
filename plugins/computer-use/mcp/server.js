@@ -161,7 +161,11 @@ def("get_app_state", "读取目标应用的 UI 语义元素树（辅助功能树
   let text = lines.join("\n");
   if (a.include_screenshot) {
     const shot = await ps("screenshot.ps1", { hwnd: r.hwnd }, 60_000);
-    text = `[IMAGE jpeg ${shot.b64}]\n` + text + `\n（附图: ${shot.path} ${shot.w}x${shot.h}）`;
+    if (shot.b64 && shot.b64.length >= 100) {
+      text = `[IMAGE jpeg ${shot.b64}]\n` + text + `\n（附图: ${shot.path} ${shot.w}x${shot.h}）`;
+    } else {
+      text += "\n（附图失败：画面数据为空，可单独调用 screenshot 重试）";
+    }
   }
   return { __text: text };
 });
@@ -318,8 +322,13 @@ async function handle(msg) {
       try {
         const r = await tool.handler(params.arguments || {});
         if (r && r.__image) {
-          // [IMAGE jpeg <b64>] 前缀：provider 把工具结果转成多模态消息（与 vision_ask 同通道）
-          return { id, result: textResult(`[IMAGE jpeg ${r.b64}]\n截图 ${r.w}x${r.h}: ${r.path}（画面已附上）`) };
+          // [IMAGE jpeg <b64>] 前缀：provider 把工具结果转成多模态消息（与 vision_ask 同通道）。
+          // 防御：b64 缺失/过短说明截屏失败，绝不发出毒标记（会永久卡死会话）。
+          const img = r.__image;
+          if (!img.b64 || img.b64.length < 100) {
+            return { id, result: textResult("截图失败：画面数据为空——检查窗口是否最小化", true) };
+          }
+          return { id, result: textResult(`[IMAGE jpeg ${img.b64}]\n截图 ${img.w}x${img.h}: ${img.path}（画面已附上）`) };
         }
         if (r && r.__text !== undefined) return { id, result: textResult(r.__text) };
         return { id, result: textResult(typeof r === "string" ? r : JSON.stringify(r, null, 2)) };
