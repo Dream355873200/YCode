@@ -13,11 +13,15 @@ import { Collapse } from '../components/ui/collapse';
 
 // ---------- 工具结果产物（ZCode 式）----------
 
-// 图片标记：截图类工具（电脑控制/浏览器/设备）的结果内联缩略图
-const IMG_MARKER_RE = /\[IMAGE (?:jpeg|png) ([A-Za-z0-9+/=]{100,})\]/;
+// 图片标记：截图类工具（电脑控制/浏览器/设备）的结果内联缩略图。
+// 不要求闭合 ]——结果文本被截断时也能提取。
+const IMG_MARKER_RE = /\[IMAGE (?:jpeg|png) ([A-Za-z0-9+/=]{100,})/;
+// 展示层剥离完整图片标记（巨型 base64 不进正文）
+const IMG_MARKER_STRIP_RE = /\[IMAGE (?:jpeg|png)[^\]]*\]\n?/g;
 
-// 产物路径：文档/表格/演示/PDF/网页 生成后渲染「打开」卡片，一键进右栏查看器
-const ARTIFACT_RE = /(?:[A-Za-z]:[\\/][^\s"'）)，。]{2,200}|\/[^\s"'）)，。]{2,200})\.(?:pptx|pdf|xlsx|docx|html?)(?![\w.])/g;
+// 产物路径：文档/表格/演示/PDF/网页 生成后渲染「打开」卡片。
+// 只认 Windows 盘符绝对路径——网页快照里的 .html URL（//x.y/a.html）不是本地文件。
+const ARTIFACT_RE = /[A-Za-z]:\\[^\s"'）)，。<>]{2,200}\.(?:pptx|pdf|xlsx|docx|html?)(?![\w.])/g;
 
 function basename(p: string) { return p.split(/[\\/]/).pop() || p; }
 
@@ -130,7 +134,7 @@ function ToolCard({ row }: { row: Extract<Row, { kind: 'tool' }> }) {
       <Collapse open={expandable && open} className="border-t border-border px-3 py-2">
         {R.Detail
           ? <R.Detail act={{ verb: row.name, input, obj, st: row.state === 'running' ? '…' : row.state === 'err' ? 'err' : 'ok', detail: row.result || '', toolUseId: row.toolUseId, expand: true }} />
-          : <pre className="scroll-fine max-h-72 overflow-auto whitespace-pre-wrap text-ui-xs text-foreground-subtle">{row.result}</pre>}
+          : <pre className="scroll-fine max-h-72 overflow-auto whitespace-pre-wrap text-ui-xs text-foreground-subtle">{(row.result || '').replace(IMG_MARKER_STRIP_RE, '')}</pre>}
       </Collapse>
     </div>
   );
