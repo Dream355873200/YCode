@@ -11,20 +11,18 @@ const http = require("http");
 const PORT = () => process.env.FLAI_BROWSER_PORT || "";
 const TOKEN = () => process.env.FLAI_BROWSER_TOKEN || "";
 
-function call(path, body) {
+function call(path, body, method = "POST") {
   return new Promise((resolve, reject) => {
     if (!PORT() || !TOKEN()) {
       return reject(new Error("浏览器控制端点未配置（缺少 FLAI_BROWSER_PORT/TOKEN）——从桌面壳重启引擎后可用"));
     }
-    const payload = JSON.stringify(body || {});
+    const isGet = method === "GET" || body === undefined;
+    const payload = isGet ? null : JSON.stringify(body || {});
+    const headers = { Authorization: `Bearer ${TOKEN()}` };
+    if (!isGet) headers["Content-Type"] = "application/json";
     const req = http.request({
-      hostname: "127.0.0.1", port: PORT(), path, method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${TOKEN()}`,
-        "Content-Length": Buffer.byteLength(payload),
-      },
-      timeout: 60_000,
+      hostname: "127.0.0.1", port: PORT(), path, method: isGet ? "GET" : "POST",
+      headers, timeout: 60_000,
     }, (res) => {
       let data = "";
       res.on("data", (c) => (data += c));
@@ -38,7 +36,7 @@ function call(path, body) {
     });
     req.on("error", (e) => reject(new Error(`浏览器控制端点不可达（桌面壳未运行？）: ${e.message}`)));
     req.on("timeout", () => { req.destroy(new Error("端点超时")); });
-    req.write(payload);
+    if (payload) req.write(payload);
     req.end();
   });
 }
@@ -52,7 +50,7 @@ const def = (name, description, inputSchema, handler) =>
 const BROWSER = { type: "string", description: "实例 id（browser_list/browser_new 返回）；省略 = 当前激活实例" };
 
 def("browser_list", "列出全部浏览器实例（id/URL/标题/激活/挂起状态）。并行会话各有自己的实例。", { type: "object", properties: {} },
-  async () => call("/browser/status"));
+  async () => call("/browser/status", undefined, "GET"));
 
 def("browser_new", "新开一个浏览器实例并激活（右栏可见）。并行任务、隔离登录态时用它。", {
   type: "object", properties: { url: { type: "string", description: "初始 URL（可省略=空白页）" } },

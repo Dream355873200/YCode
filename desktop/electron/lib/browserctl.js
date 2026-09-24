@@ -412,6 +412,18 @@ async function screenshot(inst, { fullPage } = {}) {
   inst.lastUsed = Date.now();
   await restore(inst);
   return enqueue(inst, async () => {
+    // 强制合成两帧：导航后立刻截图会拿到未绘制的黑帧
+    await cdp(inst, 'Runtime.evaluate', {
+      expression: 'new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))',
+      awaitPromise: true,
+    }).catch(() => {});
+    if (fullPage) {
+      // 预滚动整页触发懒加载，再回顶部，避免 beyondViewport 截出大片黑区
+      await cdp(inst, 'Runtime.evaluate', {
+        expression: '(async () => { const s = Math.max(0, document.body.scrollHeight - innerHeight); for (let y = 0; y <= s; y += 600) { scrollTo(0, y); await new Promise(r => setTimeout(r, 30)); } scrollTo(0, 0); await new Promise(r => requestAnimationFrame(r)); })()',
+        awaitPromise: true,
+      }).catch(() => {});
+    }
     const r = await cdp(inst, 'Page.captureScreenshot', { format: 'jpeg', quality: 60, captureBeyondViewport: !!fullPage });
     const b64 = r.data;
     const p = path.join(os.tmpdir(), 'ycode-cua', `browser-${Date.now()}.jpg`);
