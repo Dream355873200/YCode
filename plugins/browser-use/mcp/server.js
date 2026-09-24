@@ -62,7 +62,7 @@ def("browser_close", "关闭一个浏览器实例。", {
   type: "object", properties: { browser: BROWSER },
 }, (a) => call("/browser/close", a));
 
-def("browser_navigate", "当前实例导航到 URL（http/https/about:blank；file: 等被拒绝）。等待加载完成后返回标题。", {
+def("browser_navigate", "在当前浏览器标签页打开 URL（http/https；搜索类请求直接拼搜索 URL，如 B 站 https://search.bilibili.com/all?keyword=关键词、百度 https://www.baidu.com/s?wd=关键词）。用户说「打开浏览器/搜一下/看看某网站」时，直接用本工具打开网址即可，不需要先开桌面浏览器。等待加载完成后返回标题。", {
   type: "object",
   properties: { url: { type: "string" }, browser: BROWSER }, required: ["url"],
 }, (a) => call("/browser/navigate", a));

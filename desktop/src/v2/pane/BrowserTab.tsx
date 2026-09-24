@@ -22,7 +22,9 @@ export default function BrowserTab({ inst }: { inst: BrowserInst }) {
     setUrlInput(inst.url);
   }, [inst.url, inst.id]);
 
-  // 挂载即激活（主进程 attach WebContentsView）+ 浏览区矩形跟随
+  // 挂载即激活（主进程 attach WebContentsView）+ 浏览区矩形跟随。
+  // 注意 deps 只有 inst.id：amc 对象每轮渲染都是新引用，若入 deps 会在
+  // 拖拽调宽等高频重渲染里反复 detach/attach，导致浏览器视图位置冻结。
   useEffect(() => {
     amc?.browser?.activate?.(inst.id);
     const host = hostRef.current;
@@ -33,9 +35,10 @@ export default function BrowserTab({ inst }: { inst: BrowserInst }) {
     if (host && ro) ro.observe(host);
     return () => {
       ro?.disconnect();
-      amc?.browser?.setRect?.(null); // 切走/关闭：隐藏视图
+      amc?.browser?.setRect?.(null); // 卸载（切走/关闭）：隐藏视图
     };
-  }, [inst.id, amc]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inst.id]);
 
   const navigate = useCallback((raw: string) => {
     const u = raw.trim();

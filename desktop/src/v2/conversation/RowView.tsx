@@ -2,13 +2,43 @@
 // 工具卡片复用 legacy 渲染器注册表（toolRender.jsx，P0 平移资产）；
 // 交互卡（审批/确认/提问）直接挂 store 回传。
 import { memo, useEffect, useRef, useState } from 'react';
-import { Bot, Brain } from 'lucide-react';
+import { Bot, Brain, FileTextIcon } from 'lucide-react';
 import type { Row, ToolRow } from './projection/rows';
 import { useConversation } from './store';
+import { useApp } from '../app/appState';
 import { resolveRenderer, actObj, actVerbPlain, toolStats } from '../../lib/toolRender';
 import { renderMD } from '../../lib/markdown';
 import { Button } from '../components/ui/button';
 import { Collapse } from '../components/ui/collapse';
+
+// ---------- 工具结果产物（ZCode 式）----------
+
+// 图片标记：截图类工具（电脑控制/浏览器/设备）的结果内联缩略图
+const IMG_MARKER_RE = /\[IMAGE (?:jpeg|png) ([A-Za-z0-9+/=]{100,})\]/;
+
+// 产物路径：文档/表格/演示/PDF/网页 生成后渲染「打开」卡片，一键进右栏查看器
+const ARTIFACT_RE = /(?:[A-Za-z]:[\\/][^\s"'）)，。]{2,200}|\/[^\s"'）)，。]{2,200})\.(?:pptx|pdf|xlsx|docx|html?)(?![\w.])/g;
+
+function basename(p: string) { return p.split(/[\\/]/).pop() || p; }
+
+function ArtifactChips({ text }: { text: string }) {
+  const { openViewerFile } = useApp();
+  const paths = Array.from(new Set(text?.match(ARTIFACT_RE) || []));
+  if (!paths.length) return null;
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {paths.map((p) => (
+        <button key={p} type="button" title={p}
+          className="flex items-center gap-1.5 rounded-lg border border-border bg-card px-2.5 py-1.5 text-ui-xs text-foreground transition-colors hover:border-brand/50 hover:bg-hover"
+          onClick={() => openViewerFile(p)}>
+          <FileTextIcon className="size-3.5 text-brand" />
+          <span className="max-w-48 truncate">{basename(p)}</span>
+          <span className="text-brand">打开</span>
+        </button>
+      ))}
+    </div>
+  );
+}
 
 // ---------- 正文 / 思考 ----------
 
@@ -83,6 +113,20 @@ function ToolCard({ row }: { row: Extract<Row, { kind: 'tool' }> }) {
         )}
         <span className={`${stats ? '' : 'ml-auto'} shrink-0 text-ui-xs ${stCls}`}>{stIcon}</span>
       </button>
+      {/* 截图类工具：结果图片直接内联（ZCode 式） */}
+      {(() => {
+        const m = (row.result || '').match(IMG_MARKER_RE);
+        if (!m || row.state === 'running') return null;
+        return (
+          <div className="px-3 pb-2">
+            <img src={`data:image/jpeg;base64,${m[1]}`} alt="截图"
+              className="max-h-64 cursor-zoom-in rounded-md border border-border object-contain"
+              onClick={() => setOpen(true)} />
+          </div>
+        );
+      })()}
+      {/* 产物卡片：检测生成的文档/表格/演示/PDF/网页 */}
+      {row.state !== 'running' && row.result && <div className="px-3 pb-2"><ArtifactChips text={row.result} /></div>}
       <Collapse open={expandable && open} className="border-t border-border px-3 py-2">
         {R.Detail
           ? <R.Detail act={{ verb: row.name, input, obj, st: row.state === 'running' ? '…' : row.state === 'err' ? 'err' : 'ok', detail: row.result || '', toolUseId: row.toolUseId, expand: true }} />

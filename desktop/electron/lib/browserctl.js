@@ -280,7 +280,7 @@ async function snapshot(inst, max = 400) {
       return t;
     };
     const INTERACTIVE = new Set(['a', 'button', 'input', 'select', 'textarea', 'label', 'summary', 'option']);
-    const refs = []; const lines = [];
+    const refs = []; const lines = []; let refSeq = 0;
     const walk = (i, depth) => {
       if (refs.length >= max || depth > 18) return;
       const tag = S[N.nodeName[i]] || '';
@@ -301,9 +301,13 @@ async function snapshot(inst, max = 400) {
       const heading = /^h[1-4]$/i.test(tag);
       const img = tag.toLowerCase() === 'img' && (attrs.alt || attrs.src);
       if (interactive || heading || img) {
-        const ref = `@e${refs.length + 1}`;
-        if (b && !offscreen) refs.push({ ref, x: b[0] + b[2] / 2, y: b[1] + b[3] / 2, w: b[2], h: b[3], tag, i });
-        const bits = [`@e${refs.length}`, `<${tag.toLowerCase()}>`];
+        const ref = `@e${++refSeq}`;
+        const cx = b ? b[0] + b[2] / 2 : NaN;
+        const cy = b ? b[1] + b[3] / 2 : NaN;
+        if (Number.isFinite(cx) && Number.isFinite(cy)) {
+          refs.push({ ref, x: cx, y: cy, w: b[2], h: b[3], tag, i });
+        }
+        const bits = [ref, `<${tag.toLowerCase()}>`];
         const label = attrs['aria-label'] || ownText || attrs.placeholder || attrs.alt || attrs.value || value || (img ? attrs.src?.slice(0, 60) : '');
         if (label) bits.push(`"${label.replace(/\s+/g, ' ').slice(0, 80)}"`);
         if (tag.toLowerCase() === 'a' && attrs.href) bits.push(`→ ${String(attrs.href).slice(0, 80)}`);
