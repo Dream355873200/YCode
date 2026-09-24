@@ -16,9 +16,11 @@ try {
   $el = $null; $idx = 0
   $walker = [System.Windows.Automation.TreeWalker]::ControlViewWalker
   $stack = New-Object System.Collections.Stack
-  $stack.Push($root)
+  $depths = New-Object System.Collections.Stack
+  $stack.Push($root); $depths.Push(0)
   while ($stack.Count -gt 0 -and -not $el) {
-    $cur = $stack.Pop()
+    $cur = $stack.Pop(); $depth = $depths.Pop()
+    if ($depth -gt 20) { continue }
     if ($idx -eq [int]$in.expect_i) {
       $rt = ($cur.GetRuntimeId() | ForEach-Object { $_ }) -join ','
       if ($rt -ne $in.runtime_id) {
@@ -32,9 +34,9 @@ try {
       $el = $cur; break
     }
     $idx++
-    try { if ($cur.Current.IsOffscreen) { continue } } catch { continue }
-    $child = $walker.GetFirstChild($cur); $n = 0
-    while ($child -ne $null -and $n -lt 60) { $stack.Push($child); $child = $walker.GetNextSibling($child); $n++ }
+    $child = $walker.GetFirstChild($cur); $kids = @(); $n = 0
+    while ($child -ne $null -and $n -lt 80) { $kids += $child; $child = $walker.GetNextSibling($child); $n++ }
+    for ($k = $kids.Count - 1; $k -ge 0; $k--) { $stack.Push($kids[$k]); $depths.Push($depth + 1) }
   }
   if (-not $el) { throw "STALE_STATE: 元素已不存在——重新 get_app_state" }
 

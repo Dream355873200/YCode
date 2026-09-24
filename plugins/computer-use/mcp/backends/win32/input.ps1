@@ -41,7 +41,9 @@ function Send-Chord([string]$combo) {
 }
 
 function Resolve-Point([object]$in) {
-  # 带元素目标：按 runtimeId 在 hwnd 窗口重枚举复核身份（fail-closed）
+  # 带元素目标：按 runtimeId 在 hwnd 窗口重枚举复核身份（fail-closed）。
+  # 遍历算法必须与 state.ps1 完全一致：逆序压栈的 DFS + 深度上限 20 + 全量计数，
+  # 否则 @eN 序号在两侧错位，会误判 STALE 或点错元素。
   if ($in.runtime_id) {
     Add-Type -AssemblyName UIAutomationClient
     Add-Type -AssemblyName UIAutomationTypes
@@ -49,9 +51,11 @@ function Resolve-Point([object]$in) {
     $el = $null; $idx = 0
     $walker = [System.Windows.Automation.TreeWalker]::ControlViewWalker
     $stack = New-Object System.Collections.Stack
-    $stack.Push($root)
+    $depths = New-Object System.Collections.Stack
+    $stack.Push($root); $depths.Push(0)
     while ($stack.Count -gt 0 -and -not $el) {
-      $cur = $stack.Pop()
+      $cur = $stack.Pop(); $depth = $depths.Pop()
+      if ($depth -gt 20) { continue }
       if ($idx -eq [int]$in.expect.i) {
         $rt = ($cur.GetRuntimeId() | ForEach-Object { $_ }) -join ','
         if ($rt -ne $in.runtime_id -or (($cur.Current.ControlType.ProgrammaticName -replace '^ControlType\.','') -ne $in.expect.t)) {
@@ -60,9 +64,9 @@ function Resolve-Point([object]$in) {
         $el = $cur; break
       }
       $idx++
-      try { if ($cur.Current.IsOffscreen) { continue } } catch { continue }
-      $child = $walker.GetFirstChild($cur); $n = 0
-      while ($child -ne $null -and $n -lt 60) { $stack.Push($child); $child = $walker.GetNextSibling($child); $n++ }
+      $child = $walker.GetFirstChild($cur); $kids = @(); $n = 0
+      while ($child -ne $null -and $n -lt 80) { $kids += $child; $child = $walker.GetNextSibling($child); $n++ }
+      for ($k = $kids.Count - 1; $k -ge 0; $k--) { $stack.Push($kids[$k]); $depths.Push($depth + 1) }
     }
     if (-not $el) { throw "STALE_STATE: 元素 [$($in.expect.i)] 已不存在——重新 get_app_state" }
     $pt = $null

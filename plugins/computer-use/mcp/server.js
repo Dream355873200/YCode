@@ -251,7 +251,19 @@ def("set_value", "用辅助功能 ValuePattern 直接设置可设置元素的值
   required: ["target", "value"],
 }, async (a) => {
   const { state, el } = resolveTarget(undefined, a.target);
-  const r = await ps("value.ps1", { hwnd: state.hwnd, runtime_id: el.rt, expect_i: el.i, expect: { i: el.i, t: el.t, n: el.n || "" }, value: a.value }, 120_000);
+  const call = { hwnd: state.hwnd, runtime_id: el.rt, expect_i: el.i, expect: { i: el.i, t: el.t, n: el.n || "" }, value: a.value };
+  // STALE 自愈：重观察 + 重解析后重试一次
+  try {
+    await ps("value.ps1", call, 120_000);
+  } catch (e) {
+    if (!/STALE_STATE/.test(String(e.message))) throw e;
+    const fresh = await refreshStateByHwnd(state.hwnd);
+    const el2 = (fresh.elements || []).find((x) => x.i === el.i);
+    if (!el2) throw e;
+    call.runtime_id = el2.rt;
+    call.expect = { i: el2.i, t: el2.t, n: el2.n || "" };
+    await ps("value.ps1", { hwnd: fresh.hwnd, runtime_id: el2.rt, expect_i: el2.i, value: a.value }, 120_000);
+  }
   return { __text: `已设置 [${a.target}] "${el.n || el.t}" = ${a.value}——观察确认结果` };
 });
 
@@ -293,8 +305,27 @@ async function act(action, a) {
       else { payload.to_x = to.x; payload.to_y = to.y; }
     }
   }
-  await ps("input.ps1", payload, 150_000);
+  // STALE 自愈（对齐 ZCode：失败先重观察再重试一次，而不是让模型干等）
+  try {
+    await ps("input.ps1", payload, 150_000);
+  } catch (e) {
+    if (!/STALE_STATE/.test(String(e.message)) || !payload.runtime_id) throw e;
+    const fresh = await refreshStateByHwnd(payload.hwnd);
+    const el = (fresh.elements || []).find((x) => x.i === payload.expect.i);
+    if (!el) throw e;
+    payload.runtime_id = el.rt;
+    payload.expect = { i: el.i, t: el.t, n: el.n || "" };
+    await ps("input.ps1", payload, 150_000);
+  }
   return { __text: `已执行 ${action}${a.click_count === 2 ? "（双击）" : ""}${a.mouse_button && a.mouse_button !== "left" ? `（${a.mouse_button}）` : ""}——观察确认结果` };
+}
+
+// 重新观察指定窗口并刷新缓存（STALE 自愈用）
+async function refreshStateByHwnd(hwnd) {
+  const r = await ps("state.ps1", { app: { hwnd }, max: 400 }, 120_000);
+  lastState.set(`hwnd:${hwnd}`, r);
+  lastState.set("foreground", r);
+  return r;
 }
 
 // ---------- MCP stdio ----------

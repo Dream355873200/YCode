@@ -43,8 +43,7 @@ try {
 
   # ---- DFS ----
   $walker = [System.Windows.Automation.TreeWalker]::ControlViewWalker
-  $max = [int]$in.max; if ($max -le 0) { $max = 250 }
-  $skip = @('ControlType.MenuItem','ControlType.Thumb','ControlType.TitleBar','ControlType.ScrollBar')
+  $max = [int]$in.max; if ($max -le 0) { $max = 400 }
   $elements = New-Object System.Collections.ArrayList
   $truncated = $false
   $stack = New-Object System.Collections.Stack      # 元素栈
@@ -52,15 +51,13 @@ try {
   $stack.Push($root); $depths.Push(0)
   while ($stack.Count -gt 0) {
     $el = $stack.Pop(); $depth = $depths.Pop()
-    if ($depth -gt 16) { continue }
+    if ($depth -gt 20) { continue }
     $c = $null
     try { $c = $el.Current } catch { continue }
     $tname = ''
     try { $tname = $c.ControlType.ProgrammaticName -replace '^ControlType\.', '' } catch {}
-    if ($elements.Count -gt 0) {
-      if ($skip -contains $tname) { continue }
-      if ($c.IsOffscreen -and $depth -gt 1) { continue }
-    }
+    # 规范遍历：每个节点都有序号（无任何跳过）——input/value 校验脚本的
+    # 枚举顺序与此完全一致，@eN 序号跨调用稳定，这是 fail-closed 的前提。
     $idx = $elements.Count
     $name = $c.Name; if ($name) { $name = $name.Trim() }
     $val = $null
@@ -94,10 +91,10 @@ try {
     })
     if ($elements.Count -ge $max) { $truncated = $true; break }
 
-    # 子元素压栈（逆序保证 DFS 顺序）
+    # 子元素压栈（逆序保证 DFS 顺序）；子节点上限 80 与校验脚本一致
     $child = $walker.GetFirstChild($el)
     $kids = @()
-    while ($child -ne $null -and $kids.Count -lt 60) { $kids += $child; $child = $walker.GetNextSibling($child) }
+    while ($child -ne $null -and $kids.Count -lt 80) { $kids += $child; $child = $walker.GetNextSibling($child) }
     for ($k = $kids.Count - 1; $k -ge 0; $k--) { $stack.Push($kids[$k]); $depths.Push($depth + 1) }
   }
 
