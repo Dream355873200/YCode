@@ -43,7 +43,7 @@ export function Composer({ sid, variant = 'docked', seed = '' }: {
   const interrupt = useConversation((s) => s.interrupt);
   const consumeDraftRestore = useConversation((s) => s.consumeDraftRestore);
   const busy = useConversation((s) => s.sessions[sid]?.busy ?? false);
-  const { engineStatus, project } = useApp();
+  const { engineStatus, project, composerSeed } = useApp();
   const [draft, setDraft] = useState('');
   const [focused, setFocused] = useState(false);
   const taRef = useRef<HTMLTextAreaElement>(null);
@@ -119,6 +119,17 @@ export function Composer({ sid, variant = 'docked', seed = '' }: {
       taRef.current?.focus();
     }
   }, [seed]);
+
+  // 外部注入（ZCode 式「选网页元素加入对话」）：追加到草稿并聚焦
+  const seedTick = composerSeed.tick;
+  useEffect(() => {
+    if (seedTick > 0) {
+      const text = composerSeed.text;
+      setDraft((d) => (d ? `${d}\n${text}` : text));
+      taRef.current?.focus();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seedTick]);
 
   // 队列项「撤回编辑」：store 的草稿回填请求落到输入框
   useEffect(() => {

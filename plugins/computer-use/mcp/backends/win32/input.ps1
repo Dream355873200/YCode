@@ -17,7 +17,7 @@ $VK = @{
   'up'=0x26; 'down'=0x28; 'left'=0x25; 'right'=0x27; 'win'=0x5B; 'super'=0x5B;
   'ctrl'=0x11; 'control'=0x11; 'alt'=0x12; 'shift'=0x10; 'capslock'=0x14; 'menu'=0x5D
 }
-0..25 | ForEach-Object { $VK[[char](97 + $_).ToString()] = 0x41 + $_ }   # a-z
+0..25 | ForEach-Object { $VK[([char](97 + $_)).ToString()] = 0x41 + $_ }   # a-z
 0..9  | ForEach-Object { $VK["$_"] = 0x30 + $_ }                        # 0-9
 1..24 | ForEach-Object { $VK["f$_"] = 0x6F + $_ }                       # F1-F24
 

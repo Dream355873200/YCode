@@ -3,11 +3,12 @@
 // 开合动画：容器常驻挂载做宽度过渡，全量内容与 rail 双层交叉渐隐
 // （隐藏层 visibility 延迟到过渡结束才生效，不挡焦点/点击）。
 import { useState } from 'react';
-import { PlusIcon, Settings2Icon, SearchIcon } from 'lucide-react';
+import { ArrowLeftIcon, FolderTreeIcon, PlusIcon, Settings2Icon, SearchIcon } from 'lucide-react';
 import { useApp, sessionIdOf } from './appState';
 import { useConversation } from '../conversation/store';
 import { Button } from '../components/ui/button';
 import { cn } from '../components/lib/utils';
+import FileTree from '../pane/FileTree';
 
 function EngineDot({ status }: { status: string }) {
   const cls = status === 'running'
@@ -19,7 +20,7 @@ function EngineDot({ status }: { status: string }) {
 }
 
 export function Sidebar() {
-  const { projects, project, openProject, engineStatus, setCreateDialogOpen, setSettingsOpen, sidebarOpen, setSidebarOpen } = useApp();
+  const { projects, project, openProject, engineStatus, setCreateDialogOpen, setSettingsOpen, sidebarOpen, setSidebarOpen, fileTreeOpen, setFileTreeOpen } = useApp();
   const sessions = useConversation((s) => s.sessions);
   const [filter, setFilter] = useState('');
 
@@ -39,10 +40,10 @@ export function Sidebar() {
       'relative shrink-0 overflow-hidden border-r border-border bg-sidebar transition-[width] duration-200 ease-out',
       sidebarOpen ? 'w-66' : 'w-12',
     )}>
-      {/* 全量内容层：固定 w-66 防回流，随开合交叉渐隐 */}
-      <div aria-hidden={!sidebarOpen} className={cn(
+      {/* 全量内容层（项目列表）：固定 w-66 防回流，随开合/文件树模式交叉渐隐 */}
+      <div aria-hidden={!sidebarOpen || fileTreeOpen} className={cn(
         'absolute inset-y-0 left-0 flex w-66 flex-col transition-[opacity,visibility] duration-200',
-        sidebarOpen ? 'visible opacity-100' : 'invisible pointer-events-none opacity-0',
+        sidebarOpen && !fileTreeOpen ? 'visible opacity-100' : 'invisible pointer-events-none opacity-0',
       )}>
       {/* 顶部 logo 行（ZCode 式：点 logo 收起侧栏；高度对齐 Header h-12） */}
       <div className="flex h-12 shrink-0 items-center px-4">
@@ -81,9 +82,11 @@ export function Sidebar() {
           const sid = sessionIdOf(p);
           const running = !!(sid && sessions[sid]?.busy);
           return (
-            <button key={p.dir} type="button" onClick={() => openProject(p)}
+            <div key={p.dir} role="button" tabIndex={0}
+              onKeyDown={(e) => { if (e.key === 'Enter') openProject(p); }}
+              onClick={() => openProject(p)}
               className={cn(
-                'mb-0.5 flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left transition-colors',
+                'group mb-0.5 flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left transition-colors',
                 active ? 'bg-selected' : 'hover:bg-hover',
               )}>
               <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: p.color || 'var(--color-brand)' }} />
@@ -91,8 +94,17 @@ export function Sidebar() {
                 <span className="block truncate text-ui-sm font-medium text-foreground">{p.name}</span>
                 {p.idea && <span className="block truncate text-ui-xs text-foreground-subtlest">{p.idea}</span>}
               </span>
+              {/* 文件树入口：卡片内右侧（悬停显示；当前项目且树开着时常显） */}
+              <button type="button" title={`打开 ${p.name} 的文件树`} aria-label={`打开 ${p.name} 的文件树`}
+                className={cn(
+                  'shrink-0 rounded p-1 transition-opacity',
+                  active && fileTreeOpen ? 'text-brand opacity-100' : 'text-foreground-subtle opacity-0 hover:text-foreground group-hover:opacity-100',
+                )}
+                onClick={(e) => { e.stopPropagation(); openProject(p); setFileTreeOpen(true); }}>
+                <FolderTreeIcon className="size-3.5" />
+              </button>
               {running && <span className="inline-block h-2.5 w-2.5 shrink-0 animate-pulse rounded-full bg-brand" />}
-            </button>
+            </div>
           );
         })}
         {shown.length === 0 && (
@@ -114,6 +126,41 @@ export function Sidebar() {
           <Settings2Icon />
         </Button>
       </div>
+      </div>
+      {/* 文件树层：会话侧栏动画切换成工作目录文件树；顶部「返回任务列表」卡片 */}
+      <div aria-hidden={!sidebarOpen || !fileTreeOpen} className={cn(
+        'absolute inset-y-0 left-0 flex w-66 flex-col transition-[opacity,visibility] duration-200',
+        sidebarOpen && fileTreeOpen ? 'visible opacity-100' : 'invisible pointer-events-none opacity-0',
+      )}>
+        <div className="flex h-12 shrink-0 items-center px-4">
+          <button type="button" aria-label="返回任务列表"
+            className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-border bg-card px-2.5 py-2 text-left transition-colors hover:bg-hover"
+            onClick={() => setFileTreeOpen(false)}>
+            <ArrowLeftIcon className="size-4 shrink-0 text-foreground-subtle" />
+            <span className="min-w-0 flex-1 truncate text-ui-sm text-foreground">
+              {project ? `返回 ${project.name}` : '返回任务列表'}
+            </span>
+          </button>
+        </div>
+        {project
+          ? <FileTree />
+          : (
+            <div className="flex flex-1 items-center justify-center px-6 text-center text-ui-xs text-foreground-subtlest">
+              先选择一个项目，再查看它的文件
+            </div>
+          )}
+        {/* 底部：引擎状态卡（与项目层一致） */}
+        <div className="m-2 mt-0 flex items-center gap-2.5 rounded-lg border border-border bg-card px-2.5 py-2">
+          <EngineDot status={engineStatus.status} />
+          <span className="min-w-0 flex-1 truncate text-ui-sm text-foreground-subtle">
+            {engineStatus.model || engineStatus.status}
+          </span>
+          <Button type="button" variant="ghost" size="icon-sm" aria-label="设置"
+            className="text-foreground-subtle hover:bg-hover hover:text-foreground"
+            onClick={() => setSettingsOpen(true)}>
+            <Settings2Icon />
+          </Button>
+        </div>
       </div>
       {/* 窄轨层：与全量内容交叉渐隐 */}
       <div aria-hidden={sidebarOpen} className={cn(

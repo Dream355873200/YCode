@@ -126,10 +126,9 @@ function createInstance(url) {
     refs: null, // 最近一次快照的 ref → 坐标（点击解析）
   };
   state.instances.set(id, inst);
-  // 同步建 view + 装事件（restore 异步加载不阻塞创建返回）
+  // 同步建 view + 装事件（导航由调用方 await，保证返回时页面已就绪）
   inst.view = createView();
   wireEvents(inst);
-  if (url) navigate(inst, url, { newTab: true }).catch(() => {});
   return inst;
 }
 
@@ -176,14 +175,18 @@ async function ensureDebugger(inst) {
         if (inst.console.length > CONSOLE_TAIL) inst.console.shift();
       }
     });
-    try { inst.dbg.attach('1.3'); } catch { /* 已附加 */ }
-    try { inst.dbg.sendCommand('Runtime.enable'); inst.dbg.sendCommand('Page.enable'); } catch { /* */ }
+    try { await inst.dbg.attach('1.3'); } catch { /* 已附加 */ }
+    try { await inst.dbg.sendCommand('Runtime.enable'); } catch { /* */ }
+    try { await inst.dbg.sendCommand('Page.enable'); } catch { /* */ }
   }
   return inst.dbg;
 }
 
 function cdp(inst, method, params) {
-  return ensureDebugger(inst).then((dbg) => dbg.sendCommand(method, params || {}));
+  return ensureDebugger(inst).then((dbg) => Promise.race([
+    dbg.sendCommand(method, params || {}),
+    new Promise((_, rej) => setTimeout(() => rej(new Error(`CDP 超时: ${method}`)), 15_000)),
+  ]));
 }
 
 // 等待加载完成（loadEventFired 或超时）
@@ -200,7 +203,7 @@ function waitLoad(inst, timeout = LOAD_TIMEOUT) {
 
 // ---------- 导航/动作 ----------
 
-const SCHEME_OK = /^https?:$|^about:$/;
+const SCHEME_OK = /^https?$|^about$/;
 
 function checkUrl(url) {
   let u;
@@ -215,7 +218,7 @@ async function navigate(inst, url, opts = {}) {
   checkUrl(url);
   inst.lastUsed = Date.now();
   await restore(inst); // 挂起态先恢复
-  enqueue(inst, async () => {
+  await enqueue(inst, async () => {
     const wc = inst.view.webContents;
     if (opts.newTab) wc.loadURL(url); else await wc.loadURL(url).catch((e) => { throw new Error(`导航失败: ${e.message}`); });
     await waitLoad(inst);
@@ -239,21 +242,50 @@ async function snapshot(inst, max = 400) {
     } catch (e) {
       throw new Error(`快照失败: ${e.message}`);
     }
+    if (!snap || !snap.documents || !snap.documents.length) {
+      throw new Error(`快照为空（keys=${snap ? Object.keys(snap).join(',') : 'null'}）`);
+    }
     const S = snap.strings;
     const doc = snap.documents[0];
-    const N = doc.nodes, L = doc.layout;
+    const N = doc.nodes, L = doc.layout || { nodeIndex: [], bounds: [] };
+    if (process.env.YCODE_SNAP_DEBUG) console.log('[snap] node keys:', Object.keys(N).join(','), 'layout keys:', Object.keys(L).join(','), 'nodes:', N.nodeName?.length);
     const n = N.nodeName.length;
+    // CDP 字段名：本 Chromium 的 DOMSnapshot 用 parentIndex（父指针）反向建树；
+    // attributes 为每节点的扁平 key-value 对
+    const childIdx = N.childNodeIndexes || N.childNodes || [];
     const children = Array.from({ length: n }, () => []);
-    for (let i = 0; i < n; i++) for (const c of N.childNodes[i] || []) children[i].push(c);
+    if (N.parentIndex) {
+      for (let i = 1; i < n; i++) {
+        const p = N.parentIndex[i];
+        if (p !== undefined && p >= 0 && p < n) children[p].push(i);
+      }
+    } else {
+      for (let i = 0; i < n; i++) children[i] = childIdx[i] || [];
+    }
     const boundsOf = new Map(); // nodeIndex → [x,y,w,h]
     (L.nodeIndex || []).forEach((ni, k) => boundsOf.set(ni, [L.bounds[k * 4], L.bounds[k * 4 + 1], L.bounds[k * 4 + 2], L.bounds[k * 4 + 3]]));
+    // 元素文本聚合：可见文本在 layout.text（每布局节点一段），textValue 只
+    // 覆盖个别文本节点；元素标签 = 自身 layout.text + 子树聚合
+    const layoutText = new Map();
+    (L.nodeIndex || []).forEach((ni, k) => {
+      const ti = L.text?.[k];
+      if (ti !== undefined && ti >= 0) layoutText.set(ni, S[ti]);
+    });
+    const textOf = new Array(n).fill(null);
+    const gatherText = (i, d) => {
+      if (textOf[i] !== null) return textOf[i];
+      let t = layoutText.get(i) || (N.textValue?.[i] >= 0 ? S[N.textValue[i]] : '');
+      if (d < 10) for (const c of children[i]) t += gatherText(c, d + 1);
+      textOf[i] = t;
+      return t;
+    };
     const INTERACTIVE = new Set(['a', 'button', 'input', 'select', 'textarea', 'label', 'summary', 'option']);
     const refs = []; const lines = [];
-    const walk = (i, depth, prefix) => {
+    const walk = (i, depth) => {
       if (refs.length >= max || depth > 18) return;
       const tag = S[N.nodeName[i]] || '';
       if (tag === '#text' || tag === '#document' || tag === 'HTML') {
-        for (const c of children[i]) walk(c, depth, prefix);
+        for (const c of children[i]) walk(c, depth);
         return;
       }
       if (tag === 'HEAD' || tag === 'SCRIPT' || tag === 'STYLE' || tag === 'NOSCRIPT' || tag === 'svg' || tag === 'path') return;
@@ -262,29 +294,26 @@ async function snapshot(inst, max = 400) {
       for (let k = 0; k + 1 < A.length; k += 2) attrs[S[A[k]]] = S[A[k + 1]];
       const b = boundsOf.get(i);
       const offscreen = !b || b[2] <= 0 || b[3] <= 0 || b[1] < -2000 || b[0] < -2000;
-      const text = N.textValue[i] >= 0 ? S[N.textValue[i]] : '';
       const value = N.inputValue && N.inputValue[i] >= 0 ? S[N.inputValue[i]] : '';
-      const ownText = (text || '').trim().slice(0, 80);
+      const ownText = (gatherText(i, 0) || '').trim().slice(0, 80);
       const interactive = INTERACTIVE.has(tag.toLowerCase()) || attrs.role || attrs.onclick !== undefined ||
         attrs['aria-label'] || attrs.placeholder !== undefined || N.isClickable[i];
       const heading = /^h[1-4]$/i.test(tag);
       const img = tag.toLowerCase() === 'img' && (attrs.alt || attrs.src);
-      let line = null;
       if (interactive || heading || img) {
         const ref = `@e${refs.length + 1}`;
         if (b && !offscreen) refs.push({ ref, x: b[0] + b[2] / 2, y: b[1] + b[3] / 2, w: b[2], h: b[3], tag, i });
-        const bits = [`${prefix}${ref}`, `<${tag.toLowerCase()}>`];
+        const bits = [`@e${refs.length}`, `<${tag.toLowerCase()}>`];
         const label = attrs['aria-label'] || ownText || attrs.placeholder || attrs.alt || attrs.value || value || (img ? attrs.src?.slice(0, 60) : '');
         if (label) bits.push(`"${label.replace(/\s+/g, ' ').slice(0, 80)}"`);
         if (tag.toLowerCase() === 'a' && attrs.href) bits.push(`→ ${String(attrs.href).slice(0, 80)}`);
         if (tag.toLowerCase() === 'input' && attrs.type && attrs.type !== 'text') bits.push(`[type=${attrs.type}]`);
         if (offscreen) bits.push('(离屏)');
-        line = bits.join(' ');
+        lines.push('  '.repeat(Math.min(depth, 8)) + bits.join(' '));
       }
-      if (line) lines.push('  '.repeat(Math.min(depth, 8)) + line);
-      for (const c of children[i]) walk(c, depth + 1, '');
+      for (const c of children[i]) walk(c, depth + 1);
     };
-    walk(0, 0, '');
+    walk(0, 0);
     inst.refs = refs;
     return {
       url, title,
@@ -424,8 +453,9 @@ async function activate(id) {
 const routes = {
   'GET /browser/status': () => summary(),
   'POST /browser/new': async (b) => {
-    const inst = createInstance(b.url ? checkUrl(b.url) : 'about:blank');
+    const inst = createInstance();
     await activate(inst.id);
+    if (b.url) await navigate(inst, b.url);
     return instSummary(inst);
   },
   'POST /browser/close': (b) => {
@@ -505,11 +535,65 @@ function handle(req, res) {
     Promise.resolve()
       .then(() => route(b))
       .then((data) => { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(data)); })
-      .catch((e) => { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: String(e.message || e) })); });
+      .catch((e) => { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: String(e.message || e), at: String(e.stack || '').split('\n').slice(1, 3).join(' | ') })); });
   });
 }
 
 // ---------- 面板 IPC（右栏浏览器 UI） ----------
+
+// 元素拾取脚本：注入页面后等待用户点击，返回元素信息 JSON；第二次进入前
+// 先经 pickCancel 调 __ycodePick.cancel()。悬停高亮 + 阻止点击默认行为。
+const PICKER_JS = `(() => new Promise((resolve) => {
+  if (window.__ycodePick) { window.__ycodePick.cancel(); }
+  let hover = null;
+  const cleanup = () => {
+    document.removeEventListener('click', onClick, true);
+    document.removeEventListener('mousemove', onMove, true);
+    if (hover) hover.remove();
+    delete window.__ycodePick;
+  };
+  const place = (el) => {
+    const r = el.getBoundingClientRect();
+    if (!hover) { hover = document.createElement('div'); document.documentElement.appendChild(hover); }
+    hover.style.cssText = 'position:fixed;pointer-events:none;z-index:2147483647;border:2px solid #4f8cff;background:rgba(79,140,255,.12)';
+    hover.style.left = r.left + 'px'; hover.style.top = r.top + 'px';
+    hover.style.width = r.width + 'px'; hover.style.height = r.height + 'px';
+  };
+  const selectorOf = (el) => {
+    const parts = [];
+    let e = el;
+    while (e && e.nodeType === 1 && parts.length < 6) {
+      let s = e.tagName.toLowerCase();
+      if (e.id) { parts.unshift('#' + e.id); break; }
+      const p = e.parentElement;
+      if (p) {
+        const sib = Array.from(p.children).filter((c) => c.tagName === e.tagName);
+        if (sib.length > 1) s += ':nth-of-type(' + (sib.indexOf(e) + 1) + ')';
+      }
+      parts.unshift(s);
+      e = p;
+    }
+    return parts.join(' > ');
+  };
+  const onClick = (e) => {
+    e.preventDefault(); e.stopPropagation();
+    const el = e.target;
+    const r = el.getBoundingClientRect();
+    const info = {
+      selector: selectorOf(el),
+      tag: el.tagName.toLowerCase(),
+      text: String(el.innerText || el.value || '').trim().slice(0, 120),
+      html: String(el.outerHTML || '').slice(0, 300),
+      rect: { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) },
+    };
+    cleanup();
+    resolve(JSON.stringify(info));
+  };
+  const onMove = (e) => place(e.target);
+  document.addEventListener('click', onClick, true);
+  document.addEventListener('mousemove', onMove, true);
+  window.__ycodePick = { cancel: () => { cleanup(); resolve(null); } };
+}))()`;
 
 function registerIpc() {
   ipcMain.handle('browser:list', () => summary());
@@ -524,21 +608,62 @@ function registerIpc() {
   ipcMain.handle('browser:reload', (_e, id) => routes['POST /browser/reload']({ browser: id }));
   ipcMain.handle('browser:close', (_e, id) => routes['POST /browser/close']({ browser: id }));
   ipcMain.handle('browser:rect', (_e, rect) => {
-    state.panelRect = rect;
     const win = state.getWin();
     const inst = state.instances.get(state.activeId);
+    // null/零尺寸 = 面板切到了非浏览器 tab：卸下视图（实例与状态保留）
+    if (!rect || !rect.width || !rect.height) {
+      if (inst && inst.view && win && !win.isDestroyed()) {
+        try { win.contentView.removeChildView(inst.view); } catch { /* */ }
+      }
+      state.panelRect = rect || null;
+      return true;
+    }
+    state.panelRect = rect;
     if (inst && inst.view && win && !win.isDestroyed()) {
       if (!win.contentView.children?.includes(inst.view)) win.contentView.addChildView(inst.view);
       inst.view.setBounds(rect);
     }
     return true;
   });
+  // 实例内导航（tab 地址栏回车）
+  ipcMain.handle('browser:navigate', (_e, id, url) => routes['POST /browser/navigate']({ browser: id, url }));
+  // DevTools（独立窗口）
+  ipcMain.handle('browser:devtools', (_e, id) => {
+    const inst = getInst(id);
+    if (inst.view) inst.view.webContents.openDevTools({ mode: 'detach' });
+    return true;
+  });
+  // 元素选取（ZCode 式）：注入拾取脚本，用户点击页面元素后返回
+  // { selector, tag, text, html }，供「加入对话」引用
+  ipcMain.handle('browser:pick', (_e, id) => {
+    const inst = getInst(id);
+    if (!inst.view) throw new Error('实例已挂起，先激活再选取');
+    return enqueue(inst, async () => {
+      const r = await cdp(inst, 'Runtime.evaluate', {
+        expression: PICKER_JS,
+        awaitPromise: true,
+        returnByValue: true,
+      });
+      if (r.exceptionDetails) throw new Error(`拾取失败: ${r.exceptionDetails.text || 'exception'}`);
+      const v = r.result?.value;
+      if (!v) return null; // 被取消
+      return JSON.parse(v);
+    });
+  });
+  // 取消选取（再次点击拾取按钮）
+  ipcMain.handle('browser:pickCancel', (_e, id) => {
+    const inst = getInst(id);
+    if (!inst.view) return false;
+    cdp(inst, 'Runtime.evaluate', { expression: 'window.__ycodePick && window.__ycodePick.cancel(); "ok"' }).catch(() => {});
+    return true;
+  });
 }
 
 // ---------- 生命周期 ----------
 
-function start({ getWin }) {
-  state.getWin = getWin;
+function start(opts) {
+  // 兼容两种键名（main.js 传 { win }，测试可传 { getWin }）
+  state.getWin = opts.getWin || opts.win;
   state.token = crypto.randomBytes(24).toString('hex');
   registerIpc();
   return new Promise((resolve) => {

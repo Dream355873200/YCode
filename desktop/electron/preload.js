@@ -104,6 +104,10 @@ contextBridge.exposeInMainWorld('amc', {
     back: (id) => ipcRenderer.invoke('browser:back', id),
     forward: (id) => ipcRenderer.invoke('browser:forward', id),
     reload: (id) => ipcRenderer.invoke('browser:reload', id),
+    navigate: (id, url) => ipcRenderer.invoke('browser:navigate', id, url),
+    devtools: (id) => ipcRenderer.invoke('browser:devtools', id),
+    pick: (id) => ipcRenderer.invoke('browser:pick', id),
+    pickCancel: (id) => ipcRenderer.invoke('browser:pickCancel', id),
     close: (id) => ipcRenderer.invoke('browser:close', id),
     setRect: (rect) => ipcRenderer.invoke('browser:rect', rect),
     onChanged: (cb) => {

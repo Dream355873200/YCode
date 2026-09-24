@@ -90,6 +90,21 @@ declare global {
         onChanged(cb: (x: unknown) => void): () => void;
       };
       flutter: Record<string, (...args: unknown[]) => unknown>;
+      browser: {
+        list(): Promise<unknown>;
+        open(url: string): Promise<unknown>;
+        activate(id: string): Promise<unknown>;
+        back(id: string): Promise<unknown>;
+        forward(id: string): Promise<unknown>;
+        reload(id: string): Promise<unknown>;
+        navigate(id: string, url: string): Promise<unknown>;
+        devtools(id: string): Promise<unknown>;
+        pick(id: string): Promise<unknown>;
+        pickCancel(id: string): Promise<unknown>;
+        close(id: string): Promise<unknown>;
+        setRect(rect: { x: number; y: number; width: number; height: number } | null): Promise<unknown>;
+        onChanged(cb: (x: unknown) => void): () => void;
+      };
     };
   }
 }

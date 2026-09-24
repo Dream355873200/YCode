@@ -68,7 +68,7 @@ function SessionFrame() {
   );
 
   return (
-    <main className="flex min-w-0 flex-1 flex-col bg-background">
+    <main className="relative flex min-w-0 flex-1 flex-col bg-background">
       {!sid || !project
         ? (
           <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 text-foreground-subtlest">

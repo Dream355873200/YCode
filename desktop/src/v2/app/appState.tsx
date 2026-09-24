@@ -50,6 +50,35 @@ interface AppCtxValue {
   setSidebarOpen(v: boolean): void;
   sidePaneOpen: boolean;
   setSidePaneOpen(v: boolean): void;
+  /** 会话左缘的文件树面板（ZCode 式：悬停左缘弹出开合钮）。 */
+  fileTreeOpen: boolean;
+  setFileTreeOpen(v: boolean): void;
+  /** 右栏文件查看器：打开的文件（绝对路径，tab 顺序）与当前聚焦文件。 */
+  viewerFiles: string[];
+  viewerActive: string | null;
+  /** 打开/聚焦文件：入 tab、聚焦、自动展开右栏并切到「文件」页。 */
+  openViewerFile(path: string): void;
+  closeViewerFile(path: string): void;
+  setViewerActive(path: string): void;
+  /** 查看器内容版本号（保存/外部刷新后 +1，FileViewer 据此重读）。 */
+  viewerTick: number;
+  bumpViewerTick(): void;
+  /** 对话注入通道（ZCode 式「选网页元素加入对话」等外部内容 → composer 草稿）。 */
+  composerSeed: { text: string; tick: number };
+  injectComposer(text: string): void;
+  /** 右栏动态标签页（ZCode 式：全部可 +/×，无固定 tab）。 */
+  paneTabs: PaneTabState[];
+  paneActive: string | null;
+  openPaneTab(t: PaneTabState): void;
+  closePaneTab(id: string): void;
+  setPaneActive(id: string): void;
+}
+
+/** 右栏标签页状态：kind 决定渲染器（file/browser/git/tasks/plan/mode）。 */
+export interface PaneTabState {
+  id: string;      // 'file:<path>' | 'browser:<instId>' | 'git' | 'tasks' | 'plan' | 'mode:<panelId>'
+  kind: 'file' | 'browser' | 'git' | 'tasks' | 'plan' | 'mode';
+  label: string;
 }
 
 const Ctx = createContext<AppCtxValue | null>(null);
@@ -68,6 +97,74 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [sidePaneOpen, setSidePaneOpen] = useState(true);
+  const [fileTreeOpen, setFileTreeOpen] = useState(false);
+  const [viewerTick, setViewerTick] = useState(0);
+  const bumpViewerTick = useCallback(() => setViewerTick((t) => t + 1), []);
+  const [composerSeed, setComposerSeed] = useState({ text: '', tick: 0 });
+  const injectComposer = useCallback((text: string) => {
+    if (!text) return;
+    setComposerSeed((s) => ({ text, tick: s.tick + 1 }));
+  }, []);
+
+  // 右栏标签页与文件查看器：按项目分桶存储——切项目/会话各看各的标签
+  //（浏览器实例是壳级全局资源，其 tab 跟随实例归属项目）
+  const [paneByProject, setPaneByProject] = useState<Record<string, { tabs: PaneTabState[]; active: string | null; files: string[]; fileActive: string | null }>>({});
+  const dir = project?.dir;
+  const curPane = (dir && paneByProject[dir]) || { tabs: [] as PaneTabState[], active: null as string | null, files: [] as string[], fileActive: null as string | null };
+  const paneTabs = curPane.tabs;
+  const paneActive = curPane.active;
+  const viewerFiles = curPane.files;
+  const viewerActive = curPane.fileActive;
+  const mutatePane = useCallback((fn: (p: { tabs: PaneTabState[]; active: string | null; files: string[]; fileActive: string | null }) => { tabs: PaneTabState[]; active: string | null; files: string[]; fileActive: string | null }) => {
+    if (!dir) return;
+    setPaneByProject((m) => {
+      const cur = m[dir] || { tabs: [] as PaneTabState[], active: null as string | null, files: [] as string[], fileActive: null as string | null };
+      return { ...m, [dir]: fn(cur) };
+    });
+  }, [dir]);
+
+  const openViewerFile = useCallback((path: string) => {
+    if (!path) return;
+    setSidePaneOpen(true);
+    const name = path.split(/[\\/]/).pop() || path;
+    mutatePane((p) => ({
+      tabs: p.tabs.some((t) => t.id === `file:${path}`) ? p.tabs : [...p.tabs, { id: `file:${path}`, kind: 'file' as const, label: name }],
+      active: `file:${path}`,
+      files: p.files.includes(path) ? p.files : [...p.files, path],
+      fileActive: path,
+    }));
+  }, [mutatePane]);
+  const closeViewerFile = useCallback((path: string) => {
+    mutatePane((p) => {
+      const files = p.files.filter((f) => f !== path);
+      return {
+        ...p,
+        files,
+        fileActive: p.fileActive === path ? files[files.length - 1] ?? null : p.fileActive,
+      };
+    });
+  }, [mutatePane]);
+  const setViewerActive = useCallback((path: string) => {
+    mutatePane((p) => ({ ...p, fileActive: path }));
+  }, [mutatePane]);
+
+  // 右栏动态标签页
+  const openPaneTab = useCallback((t: PaneTabState) => {
+    mutatePane((p) => ({
+      ...p,
+      tabs: p.tabs.some((x) => x.id === t.id) ? p.tabs.map((x) => (x.id === t.id ? t : x)) : [...p.tabs, t],
+      active: t.id,
+    }));
+  }, [mutatePane]);
+  const closePaneTab = useCallback((id: string) => {
+    mutatePane((p) => {
+      const tabs = p.tabs.filter((t) => t.id !== id);
+      return { ...p, tabs, active: p.active === id ? tabs[tabs.length - 1]?.id ?? null : p.active };
+    });
+  }, [mutatePane]);
+  const setPaneActive = useCallback((id: string) => {
+    mutatePane((p) => ({ ...p, active: id }));
+  }, [mutatePane]);
   const [modes, setModes] = useState<ModeDecl[]>([]);
   const [defaultMode, setDefaultMode] = useState('code');
 
@@ -143,6 +240,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       settingsOpen, setSettingsOpen,
       sidebarOpen, setSidebarOpen,
       sidePaneOpen, setSidePaneOpen,
+      fileTreeOpen, setFileTreeOpen,
+      viewerFiles, viewerActive, openViewerFile, closeViewerFile, setViewerActive,
+      viewerTick, bumpViewerTick,
+      composerSeed, injectComposer,
+      paneTabs, paneActive, openPaneTab, closePaneTab, setPaneActive,
     }}>
       {children}
     </Ctx.Provider>
