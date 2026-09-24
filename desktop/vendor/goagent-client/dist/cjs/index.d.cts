@@ -29,6 +29,8 @@ export interface ChatOptions {
     message: string;
     /** 会话 ID；不传由服务端生成。多轮对话请固定同一个 ID。 */
     sessionId?: string;
+    /** 空闲唤醒：message 为空时取该会话排队的队头作为本轮输入（后台任务终态通知等）。 */
+    resumeQueue?: boolean;
     /** AbortSignal——断开 SSE 连接。注意：任务在引擎侧继续后台执行， */
     /** 中止任务请改用 interrupt()。 */
     signal?: AbortSignal;

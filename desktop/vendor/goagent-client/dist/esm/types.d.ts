@@ -18,6 +18,7 @@ export declare const FrameType: {
     readonly Compaction: "compaction";
     readonly Retrieval: "retrieval";
     readonly Steer: "steer";
+    readonly QueueRun: "queue_run";
     readonly SubAgentProgress: "subagent_progress";
     readonly Interrupted: "interrupted";
     readonly Error: "error";

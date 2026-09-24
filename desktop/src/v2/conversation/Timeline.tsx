@@ -2,8 +2,8 @@
 // 内容居中列（max-width），左缘轮次轨（minimap 语义），底部工作计时。
 // 贴底跟随状态机（scrollAnchor 纯函数）：following 时内容追加自动滚底，
 // 用户上滚脱离、滚回底部恢复、detached 显示「回到底部」浮标。
-import { useEffect, useMemo, useRef, useState } from 'react';
-import type { Row } from './projection/rows';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { pendingBackgroundAgents, type Row } from './projection/rows';
 import { foldTurns, type TurnUnit } from './projection/turns';
 import {
   onUserScroll, shouldAutoScroll, showJumpBack, resetAnchor, type AnchorState,
@@ -179,7 +179,9 @@ function fmtDur(sec: number): string {
   return `${Math.floor(sec / 60)} 分 ${sec % 60} 秒`;
 }
 
-export function Timeline({ rows, sid }: { rows: Row[]; sid: string }) {
+/** 时间线。memo：外壳（侧栏/右栏开合等 appState 变化）重渲染时，
+ *  rows 引用不变就不重算整条对话。 */
+export const Timeline = memo(function Timeline({ rows, sid }: { rows: Row[]; sid: string }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [anchor, setAnchor] = useState<AnchorState>(resetAnchor);
   const units = useMemo(() => foldTurns(rows), [rows]);
@@ -203,6 +205,7 @@ export function Timeline({ rows, sid }: { rows: Row[]; sid: string }) {
       (r.kind === 'confirm' || r.kind === 'ask') && !r.resolved),
     [rows],
   );
+  const waiting = useMemo(() => pendingBackgroundAgents(rows).length, [rows]);
 
   const onScroll = (): void => {
     if (jumpingRef.current) return; // 程序化平滑滚动进行中：不翻锚状态（见 beginJump）
@@ -279,6 +282,13 @@ export function Timeline({ rows, sid }: { rows: Row[]; sid: string }) {
               <span>正在询问</span>
             </div>
           )}
+          {/* 主 agent 空闲但后台子 agent 仍在跑：完成后自动唤醒续跑 */}
+          {!busy && waiting > 0 && (
+            <div className="flex items-center gap-1.5 px-1 py-1 text-ui-xs text-foreground-subtlest">
+              <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-brand" />
+              <span>等待 {waiting} 个后台子代理完成…完成后自动继续</span>
+            </div>
+          )}
         </div>
       </div>
       {showJumpBack(anchor, bottomDist(scrollRef.current)) && (
@@ -289,7 +299,7 @@ export function Timeline({ rows, sid }: { rows: Row[]; sid: string }) {
       )}
     </div>
   );
-}
+});
 
 function bottomDist(el: HTMLElement | null): number {
   if (!el) return 0;

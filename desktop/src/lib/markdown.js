@@ -14,12 +14,32 @@ export function esc(t) {
   return t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
+// 有界文本缓存：高亮（无语言时 highlightAuto 逐语言试探）与 Markdown 渲染
+// 都很贵，对话重渲染时同一段文本会被反复计算，长对话足以卡住主线程。
+// 纯函数结果按输入缓存，超出上限按插入序淘汰最旧项。
+export function textCache(max, fn) {
+  const cache = new Map();
+  return (key, ...args) => {
+    const hit = cache.get(key);
+    if (hit !== undefined) return hit;
+    const v = fn(...args);
+    if (cache.size >= max) cache.delete(cache.keys().next().value);
+    cache.set(key, v);
+    return v;
+  };
+}
+
 // 高亮一段代码：识别语言则用之，识别不了 hljs 会标 plaintext
-export function highlightCode(code, lang) {
+function highlightRaw(code, lang) {
   if (lang && hljs.getLanguage(lang)) {
     try { return hljs.highlight(code, { language: lang, ignoreIllegals: true }).value; } catch { /* fallthrough */ }
   }
   try { return hljs.highlightAuto(code).value; } catch { return esc(code); }
+}
+const highlightCached = textCache(5000, highlightRaw);
+/** @param {string} code @param {string} [lang] @returns {string} */
+export function highlightCode(code, lang) {
+  return highlightCached(`${lang || ''}\0${code}`, code, lang);
 }
 
 function inline(t) {
@@ -35,8 +55,14 @@ const tableRow = (l) => l.replace(/^\s*\|/, '').replace(/\|\s*$/, '').split('|')
 
 // renderMD: 支持 #/##/### 标题、无序/有序列表、``` 代码块（高亮）、表格、
 // 图片语法（渲染为占位块——本地图片由宿主组件经 dataURL 渲染真图）、段落
+/** @param {string} src @returns {string} */
 export function renderMD(src) {
   if (!src) return '';
+  return renderCached(src, src);
+}
+const renderCached = textCache(500, renderRaw);
+
+function renderRaw(src) {
   const lines = src.split('\n');
   const out = [];
   let list = null; // 'ul' | 'ol'

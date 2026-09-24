@@ -12,7 +12,7 @@
 //	---
 //	你是代码探索助手……
 //
-// 约束（启动时校验，违反即拒绝启动）：
+// 约束（装配时校验，违反的子代理被跳过并记入目录错误）：
 //   - name 全局唯一，限 [A-Za-z0-9_-]；description、tools、正文必填
 //   - tools 逗号分隔；只能引用只读工具（子代理的工具调用不经主循环审批），
 //     且须是 base 工具或本插件工具集里的工具
@@ -116,41 +116,68 @@ func parseAgentDef(path string) (*AgentDef, error) {
 	return d, nil
 }
 
-// installAgents 把被模式引用的插件的子代理注册为 Agent_<name> 工具。
+// installedAgents 已注册进 app 的子代理工具名（跨 reload 对账用）。
+var installedAgents = map[string]bool{}
+
+// syncAgents 按目录对账插件子代理：被模式引用的插件的子代理注册（或覆盖）
+// 为 Agent_<name> 工具；上一版装过、这一版不在（插件移除 / 未被引用 /
+// 校验失败）的下线隐藏。校验失败的子代理记入返回的错误，不影响其他项。
 // 须在全部工具（base + 工具集）注册之后调用——引用的工具要已存在。
-func installAgents(app *goagent.App) error {
-	for _, p := range catalog.UsedPlugins() {
+// 调用方串行（启动 / reloadMu）。
+func syncAgents(app *goagent.App, c *Catalog) []LoadError {
+	var errs []LoadError
+	want := map[string]bool{}
+	for _, p := range c.UsedPlugins() {
 		for _, d := range p.AgentDefs {
-			for _, t := range d.Tools {
-				if ts, owned := catalog.toolOwner[t]; owned && !contains(p.Toolsets, ts) {
-					return fmt.Errorf("子代理 %s（插件 %s）: 工具 %s 属于工具集 %s，插件未引用该工具集", d.Name, p.ID, t, ts)
-				}
-				perm, ok := app.ToolPermission(t)
-				if !ok {
-					return fmt.Errorf("子代理 %s（插件 %s）: 工具 %s 未注册", d.Name, p.ID, t)
-				}
-				if perm != goagent.ReadOnly {
-					return fmt.Errorf("子代理 %s（插件 %s）: 工具 %s 不是只读工具——子代理的工具调用不经审批，只能交出只读工具", d.Name, p.ID, t)
-				}
-			}
-			tools, err := app.AgentTools(d.Tools...)
+			def, err := buildAgentTool(app, p, d)
 			if err != nil {
-				return fmt.Errorf("子代理 %s（插件 %s）: %w", d.Name, p.ID, err)
+				errs = append(errs, LoadError{Kind: "agent", ID: d.Name, File: d.File, Err: err.Error()})
+				continue
 			}
-			def := app.AgentTool(agent.Definition{
-				Name:         d.Name,
-				Description:  d.Description,
-				SystemPrompt: d.Prompt,
-				Tools:        tools,
-				MaxTurns:     d.MaxTurns,
-			})
-			// 工具已逐个校验为只读 → 子代理整体只读：计划模式可用、可与其他工具并行
-			def.Permission = goagent.ReadOnly
-			def.Effect = goagent.EffectReadOnly
-			app.Tool(d.ToolName(), def)
+			pluginTools.claim(d.ToolName(), p.ID) // 先登记归属，再注册
+			app.ReplaceTool(d.ToolName(), def)
+			want[d.ToolName()] = true
 		}
 	}
-	return nil
+	for name := range installedAgents {
+		if !want[name] {
+			pluginTools.hide(name)
+		}
+	}
+	installedAgents = want
+	return errs
+}
+
+// buildAgentTool 校验子代理引用的工具（已注册、只读、工具集工具须属于本插件
+// 引用的工具集）并构造工具定义。
+func buildAgentTool(app *goagent.App, p *Plugin, d *AgentDef) (goagent.ToolDef, error) {
+	for _, t := range d.Tools {
+		if ts, owned := toolsetOwner[t]; owned && !contains(p.Toolsets, ts) {
+			return goagent.ToolDef{}, fmt.Errorf("子代理 %s（插件 %s）: 工具 %s 属于工具集 %s，插件未引用该工具集", d.Name, p.ID, t, ts)
+		}
+		perm, ok := app.ToolPermission(t)
+		if !ok {
+			return goagent.ToolDef{}, fmt.Errorf("子代理 %s（插件 %s）: 工具 %s 未注册", d.Name, p.ID, t)
+		}
+		if perm != goagent.ReadOnly {
+			return goagent.ToolDef{}, fmt.Errorf("子代理 %s（插件 %s）: 工具 %s 不是只读工具——子代理的工具调用不经审批，只能交出只读工具", d.Name, p.ID, t)
+		}
+	}
+	tools, err := app.AgentTools(d.Tools...)
+	if err != nil {
+		return goagent.ToolDef{}, fmt.Errorf("子代理 %s（插件 %s）: %w", d.Name, p.ID, err)
+	}
+	def := app.AgentTool(agent.Definition{
+		Name:         d.Name,
+		Description:  d.Description,
+		SystemPrompt: d.Prompt,
+		Tools:        tools,
+		MaxTurns:     d.MaxTurns,
+	})
+	// 工具已逐个校验为只读 → 子代理整体只读：计划模式可用、可与其他工具并行
+	def.Permission = goagent.ReadOnly
+	def.Effect = goagent.EffectReadOnly
+	return def, nil
 }
 
 func contains(list []string, s string) bool {

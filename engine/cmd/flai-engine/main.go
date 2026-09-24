@@ -75,13 +75,18 @@ func main() {
 		IdleTTL: 10 * time.Minute,
 	})
 
-	// 能力目录：一次加载全部模式与插件（严格校验，清单写错拒绝启动）。
-	// 模式是会话级的——不同会话可同时运行在不同模式下。
+	// 能力目录：一次加载全部模式与插件（内置 + 用户资产根，逐项校验——
+	// 坏项跳过并记错，只有无可用模式时拒绝启动）。模式是会话级的——
+	// 不同会话可同时运行在不同模式下；POST /reload 热替换（见 reload.go）。
+	configuredDefaultMode = *modeID
 	cat, err := LoadCatalog(*modeID)
 	if err != nil {
 		log.Fatalf("加载模式/插件: %v", err)
 	}
-	catalog = cat
+	setCatalog(cat)
+	for _, e := range cat.Errors {
+		log.Printf("[catalog] %s %s: %s", e.Kind, e.ID, e.Err)
+	}
 
 	// 模式无关的通用装配 + 会话级能力解析（细节见下方 append 段注释）。
 	// ProviderConfig 本身实现 Option，进切片统一展开。
@@ -94,21 +99,21 @@ func main() {
 			ContextWindow:   *contextWindow, // 不设则 provider 默认 32768 → 压缩阈值 ~10K，历史被疯狂裁剪导致模型原地打转
 			MaxOutputTokens: *maxOutput,     // 不设则 provider 默认 4096 → 推理模型思考占满后正文为空，表现为「探索完就停」
 		},
-		goagent.WithSessionPromptDir(sessionPromptDir),                              // 会话模式的提示词组（空 = 内置通用 Agent 提示词；缺段回退内置）
-		goagent.WithSessionProjectContext(sessionContextFiles),                      // 会话模式的插件规范 + 工具集动态上下文（等同 CLAUDE.md 地位）
-		goagent.WithSessionToolFilter(sessionToolVisible),                           // 会话只看得到本模式启用的工具集（base 恒可见）
-		goagent.WithBuiltinTools(),                                                  // Read/Write/Edit/Glob/Grep/Bash/WebSearch 等（base）
-		goagent.WithTaskTools(),                                                     // TaskCreate/TaskUpdate/TaskList → 左栏任务流数据源
-		goagent.WithTaskStore(taskStore),                                            // 按会话隔离 + 落盘 + 闲置回收
-		goagent.WithPlanTools(),                                                     // EnterPlanMode/ExitPlanMode → Agent 计划页签（计划存 .yume/plans/）
-		goagent.WithBgTaskTools(),                                                   // TaskOutput/TaskStop → 长命令后台执行
-		goagent.WithSessionWorkDir(sessMap.resolve),                                 // 会话→项目目录（Bash/文件工具/领域工具按会话扎根）
-		goagent.WithAskTools(),                                                      // AskUser 工具（开放提问）+ confirm 工具的回调底座
-		goagent.WithSteering(),                                                      // 插话通道：对话「插话」按钮 / 编辑器写回通知走 guide 车道（工具批边界注入）
-		goagent.WithPostCompactReminder(builtin.NewReadStateRehydrater()),           // 压缩后重水合最近已读文件（防 Edit 凭摘要残句拼 old_string）
+		goagent.WithSessionPromptDir(sessionPromptDir),                             // 会话模式的提示词组（空 = 内置通用 Agent 提示词；缺段回退内置）
+		goagent.WithSessionProjectContext(sessionContextFiles),                     // 会话模式的插件规范 + 工具集动态上下文（等同 CLAUDE.md 地位）
+		goagent.WithSessionToolFilter(sessionToolVisible),                          // 会话只看得到本模式启用的工具集（base 恒可见）
+		goagent.WithBuiltinTools(),                                                 // Read/Write/Edit/Glob/Grep/Bash/WebSearch 等（base）
+		goagent.WithTaskTools(),                                                    // TaskCreate/TaskUpdate/TaskList → 左栏任务流数据源
+		goagent.WithTaskStore(taskStore),                                           // 按会话隔离 + 落盘 + 闲置回收
+		goagent.WithPlanTools(),                                                    // EnterPlanMode/ExitPlanMode → Agent 计划页签（计划存 .yume/plans/）
+		goagent.WithBgTaskTools(),                                                  // TaskOutput/TaskStop → 长命令后台执行
+		goagent.WithSessionWorkDir(sessMap.resolve),                                // 会话→项目目录（Bash/文件工具/领域工具按会话扎根）
+		goagent.WithAskTools(),                                                     // AskUser 工具（开放提问）+ confirm 工具的回调底座
+		goagent.WithSteering(),                                                     // 插话通道：对话「插话」按钮 / 编辑器写回通知走 guide 车道（工具批边界注入）
+		goagent.WithPostCompactReminder(builtin.NewReadStateRehydrater()),          // 压缩后重水合最近已读文件（防 Edit 凭摘要残句拼 old_string）
 		goagent.WithPostCompactReminder(assetRehydrater{resolve: sessMap.resolve}), // 压缩后重注 SPEC.md / 最新测试报告（范围契约与测试结论不失忆）
-		goagent.WithApprover(goagent.NewPermissionHandler()), // 异步审批：permission_request 帧 → 前端审批卡（/approve 回传）
-		goagent.WithPermissionMode(goagent.PermissionAcceptEdits), // 初始模式「自动编辑」：普通工具免问，危险操作问用户（UI 可切 plan/bypass）
+		goagent.WithApprover(goagent.NewPermissionHandler()),                       // 异步审批：permission_request 帧 → 前端审批卡（/approve 回传）
+		goagent.WithPermissionMode(goagent.PermissionAcceptEdits),                  // 初始模式「自动编辑」：普通工具免问，危险操作问用户（UI 可切 plan/bypass）
 		goagent.WithMaxTurns(80),
 		goagent.WithCostTracking(),
 		goagent.WithHTTPRoutes(userEditRoutes()), // 编辑器写回通知端点（/notify/user-edit，app 创建后经 engineApp 接线）
@@ -117,12 +122,14 @@ func main() {
 		goagent.WithHTTPRoutes(mcpRoutes()),      // MCP 服务器状态端点
 		goagent.WithHTTPRoutes(skillsRoutes()),   // 技能清单端点（按插件/全局归属）
 		goagent.WithHTTPRoutes(promptsRoutes()),  // 提示词组端点（设置页管理提示词组）
+		goagent.WithHTTPRoutes(reloadRoutes()),   // 能力目录热重载 + 目录错误
+		goagent.WithHTTPRoutes(debugRoutes()),    // 诊断端点（卡死时导出 goroutine 调用栈）
 	}
-	// 工具集装配：被任一模式引用的工具集进程内装一次（会话可见性由
-	// 工具过滤器按模式裁剪）。options 段并入装配列表（New 前），install
-	// 段待 app 创建后执行。工具集名已在插件加载时校验。
+	// 工具集装配：注册表内全部工具集进程内装一次（会话可见性由工具
+	// 过滤器按模式裁剪——reload 后新模式引用任意工具集即生效）。options
+	// 段并入装配列表（New 前），install 段待 app 创建后执行。
 	var installs []func(*goagent.App)
-	for _, ts := range catalog.Toolsets() {
+	for _, ts := range knownToolsets() {
 		installer := toolsetRegistry[ts]
 		if installer.options != nil {
 			opts = append(opts, installer.options()...)
@@ -177,17 +184,18 @@ func main() {
 	}
 
 	// 插件子代理：agents/*.md → Agent_<name>（只读工具集的独立 agent 循环，
-	// 归属插件、按模式可见）。须在全部工具注册之后——引用的工具要已存在。
-	if err := installAgents(app); err != nil {
-		log.Fatalf("装配插件子代理: %v", err)
-	}
+	// 归属插件、按模式可见）。须在全部工具注册之后——引用的工具要已存在；
+	// 校验失败的子代理跳过并记入目录错误。
+	reloadMu.Lock()
+	cat.Errors = append(cat.Errors, syncAgents(app, cat)...)
+	reloadMu.Unlock()
 
 	// 插件 MCP 服务器：后台并行连接，不阻塞启动；工具连上后按插件归属可见。
-	startPluginMCP(app)
+	syncPluginMCP(app, cat)
 	defer stopPluginMCP()
 
-	fmt.Printf("flai-engine 启动 · 默认模式 %s\n", catalog.DefaultMode)
-	for _, m := range catalog.Modes {
+	fmt.Printf("flai-engine 启动 · 默认模式 %s\n", cat.DefaultMode)
+	for _, m := range cat.Modes {
 		fmt.Printf("  模式 %s（%s）: 插件 %v · 工具集 %v · 子代理 %v\n", m.ID, m.Name, m.Plugins, m.Resolved.Toolsets, m.Resolved.Agents)
 	}
 	fmt.Printf("  模型: %s @ %s\n  监听: http://%s\n", *model, *baseURL, *addr)

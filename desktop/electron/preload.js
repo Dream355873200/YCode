@@ -53,6 +53,15 @@ contextBridge.exposeInMainWorld('amc', {
     listDir: (p) => ipcRenderer.invoke('fs:listDir', p),
     readImage: (p) => ipcRenderer.invoke('fs:readImage', p),
   },
+  // 用户资产目录（设置页编辑器：路径可相对用户资产根；写删限定在其内）
+  assets: {
+    root: () => ipcRenderer.invoke('assets:root'),
+    exists: (p) => ipcRenderer.invoke('assets:exists', p),
+    write: (p, content) => ipcRenderer.invoke('assets:write', p, content),
+    mkdir: (p) => ipcRenderer.invoke('assets:mkdir', p),
+    rm: (p) => ipcRenderer.invoke('assets:rm', p),
+    copy: (src, dest) => ipcRenderer.invoke('assets:copy', src, dest),
+  },
   // Android 设备与投屏（P2：Web 原生投屏，renderer WebCodecs 解码到 canvas）
   devices: {
     list: () => ipcRenderer.invoke('devices:list'),

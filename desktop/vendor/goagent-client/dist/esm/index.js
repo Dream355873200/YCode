@@ -25,7 +25,7 @@ export class GoAgentClient {
         const res = await fetch(`${this.baseUrl}/chat`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ message: req.message, session_id: req.sessionId }),
+            body: JSON.stringify({ message: req.message, session_id: req.sessionId, resume_queue: req.resumeQueue || undefined }),
             signal: req.signal,
         });
         if (!res.ok || !res.body) {

@@ -101,7 +101,7 @@ const CATALOG_SECTIONS: Partial<Record<Tab, { title: string; desc: string }>> = 
   modes: { title: '模式', desc: '模式把提示词组与能力插件组合成一种 Agent 形态，按项目生效、切换不重启引擎。' },
   plugins: {
     title: '插件',
-    desc: '能力包：打包原生工具集 + 领域规范 + 技能 + 子代理 + MCP + 右栏面板，供模式引用。清单在引擎启动时校验加载（改动需重启引擎），技能内容 30s 内自动重扫。',
+    desc: '能力包：打包原生工具集 + 领域规范 + 技能 + 子代理 + MCP + 右栏面板，供模式引用。设置页保存后引擎即时重载，坏清单只跳过该项并提示错误；技能内容 30s 内自动重扫。',
   },
   prompts: { title: '提示词', desc: '系统提示词（内置 + 提示词组分段覆盖）与插件携带的领域规范，决定模型的身份、做事方式与领域约束。' },
   toolsets: { title: '工具集', desc: '引擎原生元能力（Go 代码实现），模式与插件只能按 id 引用；新增工具集需改引擎。' },
@@ -126,6 +126,7 @@ export function SettingsPage() {
     prev: stack[stack.length - 2] ?? null,
     go: (t, id) => setStack((s) => [...s, { tab: t, id }]),
     back: () => setStack((s) => (s.length > 1 ? s.slice(0, -1) : [{ tab: s[0]?.tab ?? 'general' }])),
+    replace: (t, id) => setStack((s) => [...s.slice(0, -1), { tab: t, id }]),
   }), [route, stack]);
 
   // 换页回到顶部（详情页之间跳转时尤其需要）

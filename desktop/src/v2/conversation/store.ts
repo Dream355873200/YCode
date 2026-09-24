@@ -9,7 +9,7 @@
 //      支持撤回编辑 / 立即发送（停当前轮 + 该条立成新轮）
 import { create } from 'zustand';
 import {
-  applyFrame, resolvePermission, resolveAsk, pushUser, type Row,
+  applyFrame, resolvePermission, resolveAsk, pushUser, pendingBackgroundAgents, markAgentTasksLost, type Row,
 } from './projection/rows';
 import { ThinkTagSplitter } from './projection/thinkTags';
 import { historyToRows } from './projection/historyToRows';
@@ -57,6 +57,8 @@ const emptySession = (): SessionState => ({ rows: [], busy: false, runStartedAt:
 /** 会话级非响应式机器（splitter 状态 / 恢复轮询 timer）。 */
 const splitters = new Map<string, ThinkTagSplitter>();
 const resumeTimers = new Map<string, ReturnType<typeof setInterval>>();
+/** 后台子 agent 等待轮询（主 agent 空闲 + 有后台子 agent 在跑时启用）。 */
+const waitTimers = new Map<string, ReturnType<typeof setInterval>>();
 const lastActiveSid = { current: '' };
 
 /** 草稿回填请求（editQueued → Composer 消费；nonce 保证同文可重复触发）。 */
@@ -190,6 +192,55 @@ export const useConversation = create<ConversationStore>((set, get) => {
         runStartedAt: f.type === 'run_start' || f.type === 'queue_run' ? Date.now() : terminal ? null : s.runStartedAt,
       }));
     }
+    syncWait(sid);
+  };
+
+  // ---- 后台子 agent 等待 + 空闲唤醒 ----
+  // 主 agent 启动后台子 agent 后本轮即结束；子 agent 终态通知进引擎队列，
+  // 会话空闲时没人消费。这里在「空闲 + 仍有后台子 agent」期间轮询队列，
+  // 队头是引擎通知就发起唤醒轮（resume_queue），主 agent 读到结论接着干。
+
+  const syncWait = (sid: string): void => {
+    const s = get().sessions[sid];
+    const need = !!s && !s.busy && pendingBackgroundAgents(s.rows).length > 0;
+    const t = waitTimers.get(sid);
+    if (need && !t) waitTimers.set(sid, setInterval(() => void checkWake(sid), 3000));
+    else if (!need && t) { clearInterval(t); waitTimers.delete(sid); }
+  };
+
+  const checkWake = async (sid: string): Promise<void> => {
+    if (get().sessions[sid]?.busy) return;
+    try {
+      const r = await engine.get(`/queue?session_id=${encodeURIComponent(sid)}`);
+      const items = (r.body as { items?: QueueItem[] } | undefined)?.items;
+      if (!Array.isArray(items)) return;
+      patch(set, sid, (s) => ({ ...s, queue: items }));
+      // 只在队头是引擎通知时唤醒：队头若是用户中断后留下的消息，不替用户自动发
+      if (items[0]?.text.includes('<system-reminder')) {
+        if (!get().sessions[sid]?.busy) void wake(sid);
+        return;
+      }
+      // 引擎侧已查无此任务（引擎重启）→ 收口卡片，停止等待
+      const ids = pendingBackgroundAgents(get().sessions[sid]?.rows ?? []).filter(Boolean);
+      if (ids.length === 0) return;
+      const bg = await engine.get('/bgtasks');
+      if (!Array.isArray(bg.body)) return;
+      const known = new Set((bg.body as Array<{ id: string }>).map((x) => x.id));
+      const lost = ids.filter((id) => !known.has(id));
+      if (lost.length) {
+        patch(set, sid, (s) => ({ ...s, rows: markAgentTasksLost(s.rows, lost) }));
+        syncWait(sid);
+      }
+    } catch { /* 引擎暂不可达，下个周期再试 */ }
+  };
+
+  const wake = async (sid: string): Promise<void> => {
+    patch(set, sid, (s) => ({ ...s, busy: true, runStartedAt: Date.now() }));
+    syncWait(sid);
+    splitters.set(sid, new ThinkTagSplitter());
+    try {
+      await engine.chat({ message: '', sessionId: sid, resumeQueue: true });
+    } catch { /* 流断：onSseError 路径负责收尾 */ }
   };
 
   /** 流断恢复轮询：引擎侧任务还在跑（应用重启 / SSE 断开）就持续对账。 */
@@ -281,7 +332,7 @@ export const useConversation = create<ConversationStore>((set, get) => {
         const r = await engine.get('/sessions');
         const running = ((r.body as Array<{ id: string; state: string }> | undefined) || [])
           .some((x) => x.id === sid && x.state === 'running');
-        if (running) startResume(sid); else stopResume(sid);
+        if (running) startResume(sid); else { stopResume(sid); void checkWake(sid); }
       } catch { /* 状态不可得 → 只回放历史 */ }
       // 排队消息对账
       void refreshQueue(sid, patch, set);

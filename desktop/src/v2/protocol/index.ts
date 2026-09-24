@@ -28,7 +28,7 @@ export interface SseMeta {
 export interface EngineBridge {
   get(apiPath: string): Promise<{ unreachable?: boolean; status?: number; body?: unknown }>;
   post(apiPath: string, body?: unknown): Promise<{ body?: unknown }>;
-  chat(payload: { message: string; sessionId?: string }): Promise<void>;
+  chat(payload: { message: string; sessionId?: string; resumeQueue?: boolean }): Promise<void>;
   restart(): Promise<unknown>;
   status(): Promise<{ status: string; addr: string }>;
   listModels(): Promise<unknown>;
@@ -39,6 +39,24 @@ export interface EngineBridge {
   onSseDone(cb: (meta?: SseMeta) => void): () => void;
   // preload 单参转发整个 payload（{ session_id, error }），非 (err, meta) 双参
   onSseError(cb: (payload: SseMeta) => void): () => void;
+}
+
+/** 用户资产目录操作结果。 */
+export interface AssetResult {
+  ok: boolean;
+  error?: string;
+  path?: string;
+}
+
+/** 用户资产目录访问口（路径可相对用户资产根；写/删/复制目标越界即失败）。 */
+export interface AssetsBridge {
+  root(): Promise<string>;
+  exists(p: string): Promise<boolean>;
+  write(p: string, content: string): Promise<AssetResult>;
+  mkdir(p: string): Promise<AssetResult>;
+  rm(p: string): Promise<AssetResult>;
+  /** 复制内置资产为自定义（src 任意位置，dest 须在用户资产目录内且不存在）。 */
+  copy(src: string, dest: string): Promise<AssetResult>;
 }
 
 declare global {
@@ -66,6 +84,7 @@ declare global {
         listDir(p: string): Promise<unknown>;
         readImage(p: string): Promise<unknown>;
       };
+      assets: AssetsBridge;
       devices: Record<string, (...args: unknown[]) => unknown> & {
         list(): Promise<unknown>;
         onChanged(cb: (x: unknown) => void): () => void;

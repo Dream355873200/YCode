@@ -1,6 +1,6 @@
 // mcp.go 插件 MCP 服务器：引擎启动后后台连接，工具归属声明它的插件。
 //
-// 被任一模式引用的插件，其 mcpServers 在 HTTP 服务起来后并行连接（单个
+// 被任一模式引用的插件，其 mcpServers 在引擎启动 / reload 后并行连接（单个
 // 超时 30s，不阻塞启动）；发现的工具以 mcp__<server>__<tool> 注册进进程级
 // 工具注册表，先登记归属插件再注册——会话工具过滤器据此只对引用该插件的
 // 模式可见。连接失败只影响该服务器，状态经 GET /mcp 与 /plugins 暴露给设置页。
@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"os"
 	"regexp"
+	"strings"
 	"sync"
 	"time"
 
@@ -36,14 +37,21 @@ type mcpServerStatus struct {
 	Tools     []string `json:"tools"`
 }
 
-// mcpHub 进程级 MCP 连接表。
+// mcpEntry 一个在册的 MCP 服务器（sig = 声明指纹，变更即重连）。
+type mcpEntry struct {
+	status *mcpServerStatus
+	sig    string
+	client *mcp.Client
+}
+
+// mcpHubT 进程级 MCP 连接表（按服务器名索引；servers 保持展示顺序）。
 type mcpHubT struct {
 	mu      sync.RWMutex
 	servers []*mcpServerStatus
-	clients []*mcp.Client
+	entries map[string]*mcpEntry
 }
 
-var mcpHub = &mcpHubT{}
+var mcpHub = &mcpHubT{entries: map[string]*mcpEntry{}}
 
 // snapshot 状态快照（按插件、服务器声明顺序）。
 func (h *mcpHubT) snapshot() []mcpServerStatus {
@@ -69,82 +77,143 @@ func (h *mcpHubT) forPlugin(pluginID string) []mcpServerStatus {
 	return out
 }
 
-func (h *mcpHubT) update(s *mcpServerStatus, fn func(*mcpServerStatus)) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	fn(s)
-}
-
-// startPluginMCP 后台并行连接被模式引用的插件的全部 MCP 服务器。
-// 立即返回；状态表同步建好（初始 connecting）。
-func startPluginMCP(app *goagent.App) {
-	type job struct {
+// syncPluginMCP 按目录对账 MCP 服务器：被模式引用的插件声明的服务器后台
+// 并行连接（已连且声明未变的保留）；不再声明或声明变更的断开并下线其工具。
+// 立即返回；状态表同步建好（新连接初始 connecting）。调用方串行（启动 / reloadMu）。
+func syncPluginMCP(app *goagent.App, c *Catalog) {
+	type want struct {
 		plugin *Plugin
 		srv    MCPServer
-		status *mcpServerStatus
+		sig    string
 	}
+	var order []want
+	for _, p := range c.UsedPlugins() {
+		for _, srv := range p.MCPServers {
+			b, _ := json.Marshal(struct {
+				Plugin, Dir string
+				Srv         MCPServer
+			}{p.ID, p.Dir, srv})
+			order = append(order, want{p, srv, string(b)})
+		}
+	}
+	desired := map[string]want{}
+	for _, w := range order {
+		desired[w.srv.Name] = w
+	}
+
+	type job struct {
+		want
+		e *mcpEntry
+	}
+	var stale []*mcpEntry
 	var jobs []job
 	mcpHub.mu.Lock()
-	for _, p := range catalog.UsedPlugins() {
-		for _, srv := range p.MCPServers {
+	for name, e := range mcpHub.entries {
+		if w, ok := desired[name]; !ok || w.sig != e.sig {
+			stale = append(stale, &mcpEntry{status: &mcpServerStatus{Tools: append([]string{}, e.status.Tools...)}, client: e.client})
+			delete(mcpHub.entries, name)
+		}
+	}
+	mcpHub.servers = nil
+	for _, w := range order {
+		e := mcpHub.entries[w.srv.Name]
+		if e == nil {
 			transport := "stdio"
-			if srv.URL != "" {
+			if w.srv.URL != "" {
 				transport = "http"
 			}
-			st := &mcpServerStatus{Plugin: p.ID, Name: srv.Name, Transport: transport, Status: "connecting", Tools: []string{}}
-			mcpHub.servers = append(mcpHub.servers, st)
-			jobs = append(jobs, job{p, srv, st})
+			e = &mcpEntry{sig: w.sig, status: &mcpServerStatus{Plugin: w.plugin.ID, Name: w.srv.Name, Transport: transport, Status: "connecting", Tools: []string{}}}
+			mcpHub.entries[w.srv.Name] = e
+			jobs = append(jobs, job{w, e})
 		}
+		mcpHub.servers = append(mcpHub.servers, e.status)
 	}
 	mcpHub.mu.Unlock()
 
-	for _, j := range jobs {
-		go func(j job) {
-			ctx, cancel := context.WithTimeout(context.Background(), pluginMCPTimeout)
-			defer cancel()
-			client, tools, err := mcp.Connect(ctx, mcpConfig(j.plugin, j.srv))
-			if err != nil {
-				log.Printf("[mcp] %s（插件 %s）连接失败: %v", j.srv.Name, j.plugin.ID, err)
-				mcpHub.update(j.status, func(s *mcpServerStatus) { s.Status, s.Error = "error", err.Error() })
-				return
-			}
-			var names []string
-			existing := map[string]bool{}
-			for _, n := range app.ToolNames() {
-				existing[n] = true
-			}
-			for _, t := range tools {
-				if existing[t.Name] {
-					log.Printf("[mcp] %s: 工具 %s 与已注册工具重名，跳过", j.srv.Name, t.Name)
-					continue
-				}
-				existing[t.Name] = true
-				catalog.setPluginOwner(t.Name, j.plugin.ID) // 先登记归属，再注册（见 setPluginOwner）
-				app.Tool(t.Name, goagent.MCPToolDef(t))
-				names = append(names, t.Name)
-			}
-			info := ""
-			if si := client.ServerInfo(); si != nil {
-				info = si.Name
-				if si.Version != "" {
-					info += " " + si.Version
-				}
-			}
-			mcpHub.mu.Lock()
-			mcpHub.clients = append(mcpHub.clients, client)
-			j.status.Status, j.status.Server = "connected", info
-			j.status.Tools = append(j.status.Tools, names...)
-			mcpHub.mu.Unlock()
-			log.Printf("[mcp] %s（插件 %s）已连接: %d 个工具", j.srv.Name, j.plugin.ID, len(names))
-		}(j)
+	for _, e := range stale {
+		for _, t := range e.status.Tools {
+			pluginTools.hide(t)
+		}
+		if e.client != nil {
+			_ = e.client.Disconnect()
+		}
 	}
+	for _, j := range jobs {
+		go connectPluginMCP(app, j.plugin, j.srv, j.e)
+	}
+}
+
+// connectPluginMCP 连接单个服务器并注册其工具。连接期间若被 reload 取代
+// （entries 里已不是这一项），断开并下线，不污染新状态。
+func connectPluginMCP(app *goagent.App, p *Plugin, srv MCPServer, e *mcpEntry) {
+	current := func() bool { return mcpHub.entries[srv.Name] == e }
+	ctx, cancel := context.WithTimeout(context.Background(), pluginMCPTimeout)
+	defer cancel()
+	client, tools, err := mcp.Connect(ctx, mcpConfig(p, srv))
+	if err != nil {
+		log.Printf("[mcp] %s（插件 %s）连接失败: %v", srv.Name, p.ID, err)
+		mcpHub.mu.Lock()
+		e.status.Status, e.status.Error = "error", err.Error()
+		mcpHub.mu.Unlock()
+		return
+	}
+	mcpHub.mu.RLock()
+	live := current()
+	mcpHub.mu.RUnlock()
+	if !live {
+		_ = client.Disconnect()
+		return
+	}
+	var names []string
+	existing := map[string]bool{}
+	for _, n := range app.ToolNames() {
+		existing[n] = true
+	}
+	own := "mcp__" + srv.Name + "__"
+	for _, t := range tools {
+		// 同名工具只允许是本服务器上一次连接留下的（重连覆盖）
+		if existing[t.Name] && !strings.HasPrefix(t.Name, own) {
+			log.Printf("[mcp] %s: 工具 %s 与已注册工具重名，跳过", srv.Name, t.Name)
+			continue
+		}
+		existing[t.Name] = true
+		pluginTools.claim(t.Name, p.ID) // 先登记归属，再注册
+		app.ReplaceTool(t.Name, goagent.MCPToolDef(t))
+		names = append(names, t.Name)
+	}
+	info := ""
+	if si := client.ServerInfo(); si != nil {
+		info = si.Name
+		if si.Version != "" {
+			info += " " + si.Version
+		}
+	}
+	mcpHub.mu.Lock()
+	if !current() { // 注册期间被取代：撤回
+		mcpHub.mu.Unlock()
+		for _, n := range names {
+			pluginTools.hide(n)
+		}
+		_ = client.Disconnect()
+		return
+	}
+	e.client = client
+	e.status.Status, e.status.Server = "connected", info
+	e.status.Tools = append(e.status.Tools, names...)
+	mcpHub.mu.Unlock()
+	log.Printf("[mcp] %s（插件 %s）已连接: %d 个工具", srv.Name, p.ID, len(names))
 }
 
 // stopPluginMCP 断开全部 MCP 连接（stdio 服务器进程随之终止）。
 func stopPluginMCP() {
 	mcpHub.mu.Lock()
-	clients := mcpHub.clients
-	mcpHub.clients = nil
+	var clients []*mcp.Client
+	for _, e := range mcpHub.entries {
+		if e.client != nil {
+			clients = append(clients, e.client)
+			e.client = nil
+		}
+	}
 	mcpHub.mu.Unlock()
 	for _, c := range clients {
 		_ = c.Disconnect()

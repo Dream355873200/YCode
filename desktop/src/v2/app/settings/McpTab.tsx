@@ -90,7 +90,7 @@ export function McpTab() {
         ))
       )}
       <p className="text-ui-xs text-foreground-subtlest">
-        修改 MCP 声明后重启引擎生效；连接失败不影响引擎启动，其余工具照常可用。
+        MCP 声明在插件编辑里修改，保存即重连；连接失败不影响引擎启动，其余工具照常可用。
       </p>
     </div>
   );

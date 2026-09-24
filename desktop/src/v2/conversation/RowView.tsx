@@ -1,8 +1,8 @@
 // RowView — row → 组件分发。展示层唯一职责：把权威 row 画出来。
 // 工具卡片复用 legacy 渲染器注册表（toolRender.jsx，P0 平移资产）；
 // 交互卡（审批/确认/提问）直接挂 store 回传。
-import { useEffect, useRef, useState } from 'react';
-import { Brain } from 'lucide-react';
+import { memo, useEffect, useRef, useState } from 'react';
+import { Bot, Brain } from 'lucide-react';
 import type { Row, ToolRow } from './projection/rows';
 import { useConversation } from './store';
 import { resolveRenderer, actObj, actVerbPlain, toolStats } from '../../lib/toolRender';
@@ -12,10 +12,11 @@ import { Collapse } from '../components/ui/collapse';
 
 // ---------- 正文 / 思考 ----------
 
-function Markdown({ text }: { text: string }) {
+// renderMD 按原文缓存（lib/markdown）；memo 挡掉父级无关重渲染
+const Markdown = memo(function Markdown({ text }: { text: string }) {
   // renderMD 产出受控 HTML（legacy 同路径：先转义再高亮，无注入面）
   return <div className="v2-md" dangerouslySetInnerHTML={{ __html: renderMD(text) }} />;
-}
+});
 
 function Reasoning({ row, live }: { row: Extract<Row, { kind: 'reasoning' }>; live?: boolean }) {
   const [manualOpen, setManualOpen] = useState(false);
@@ -92,6 +93,109 @@ function ToolCard({ row }: { row: Extract<Row, { kind: 'tool' }> }) {
 
 function safeJson(s: string): unknown {
   try { return JSON.parse(s); } catch { return s; }
+}
+
+// ---------- 子 agent 卡（运行过程折叠 + 最新活动直播） ----------
+
+/** 展开态默认显示的最近活动条数；更早的折叠为「更早 N 条」。 */
+const AGENT_RECENT = 8;
+
+const fmtTokens = (n: number): string => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
+
+function AgentCard({ row }: { row: ToolRow }) {
+  const [open, setOpen] = useState(false);
+  const [showOld, setShowOld] = useState(false);
+  const listRef = useRef<HTMLDivElement>(null);
+  const input = (typeof row.input === 'string' ? safeJson(row.input) : row.input) as Record<string, unknown> | undefined;
+  const task = typeof input?.task === 'string' ? input.task : '';
+  const background = input?.run_in_background === true;
+  const ag = row.agent;
+  const name = row.name.replace(/^Agent_/, '');
+
+  // 状态：子 agent 进度优先（后台任务在 tool_done 之后仍在跑）
+  const status: 'running' | 'done' | 'failed' = ag?.status
+    ?? (row.state === 'running' ? 'running' : row.state === 'err' ? 'failed' : 'done');
+  const running = status === 'running';
+  const acts = ag?.activities ?? [];
+  const latest = acts[acts.length - 1];
+  const older = Math.max(0, acts.length - AGENT_RECENT);
+  const visible = showOld ? acts : acts.slice(older);
+
+  // 展开且运行中：新活动追加即贴底（只滚卡内列表）
+  useEffect(() => {
+    if (open && running && listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight;
+  }, [acts.length, open, running]);
+
+  const stText = running
+    ? (background && row.state !== 'running' ? '后台运行中' : '运行中')
+    : status === 'failed' ? '失败' : '完成';
+  const stCls = running ? 'text-brand' : status === 'failed' ? 'text-destructive' : 'text-success';
+  const meta = [
+    ag && ag.toolUses > 0 ? `${ag.toolUses} 次工具` : '',
+    ag && ag.tokens > 0 ? `${fmtTokens(ag.tokens)} tokens` : '',
+  ].filter(Boolean).join(' · ');
+  // 结果去掉统计附注（卡头已显示）
+  const result = (row.result || '').replace(/\n*--- agent「[^」]*」: .*---\s*$/, '').trim();
+
+  return (
+    <div className="my-1 rounded-lg border border-border bg-surface">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-ui-sm hover:bg-hover"
+      >
+        <span className={`inline-block w-3 text-foreground-subtlest transition-transform duration-200 ${open ? 'rotate-90' : ''}`}>▸</span>
+        {running
+          ? <span className="inline-block h-2.5 w-2.5 shrink-0 animate-spin rounded-full border-2 border-brand border-t-transparent" />
+          : <Bot size={13} className="shrink-0 text-foreground-subtlest" />}
+        <span className="shrink-0 text-foreground-subtle">子代理 {name}</span>
+        {task && <span className="min-w-0 truncate text-foreground-subtlest">{task}</span>}
+        <span className="ml-auto flex shrink-0 items-center gap-2 text-ui-xs">
+          {meta && <span className="text-foreground-subtlest">{meta}</span>}
+          <span className={stCls}>{stText}</span>
+        </span>
+      </button>
+      {/* 折叠态：运行中直播最新一条活动 */}
+      {!open && running && latest && (
+        <div className="flex items-center gap-1.5 border-t border-border px-3 py-1 text-ui-xs text-foreground-subtlest">
+          <span className="text-brand">›</span>
+          <span className="min-w-0 truncate">{latest}</span>
+        </div>
+      )}
+      <Collapse open={open} className="border-t border-border">
+        {acts.length > 0 && (
+          <div ref={listRef} className="scroll-fine max-h-48 overflow-y-auto px-3 py-1.5">
+            {older > 0 && (
+              <button
+                type="button"
+                onClick={() => setShowOld(!showOld)}
+                className="mb-0.5 text-ui-xs text-foreground-subtlest hover:text-foreground-subtle"
+              >
+                {showOld ? '收起更早的活动' : `更早 ${older} 条…`}
+              </button>
+            )}
+            {visible.map((a, i) => {
+              const isLast = i === visible.length - 1;
+              return (
+                <div key={i} className={`flex gap-1.5 py-px text-ui-xs ${isLast && running ? 'text-foreground-subtle' : 'text-foreground-subtlest'}`}>
+                  <span className={isLast && running ? 'text-brand' : ''}>{isLast && running ? '›' : '·'}</span>
+                  <span className="min-w-0 truncate">{a}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        {status === 'failed' && ag?.error && (
+          <div className="border-t border-border px-3 py-1.5 text-ui-xs text-destructive">{ag.error}</div>
+        )}
+        {result && (
+          <div className="scroll-fine max-h-72 overflow-y-auto border-t border-border px-3 py-2 text-ui-sm">
+            <Markdown text={result} />
+          </div>
+        )}
+      </Collapse>
+    </div>
+  );
 }
 
 // ---------- 探索组（连续读取折叠，ZCode 式） ----------
@@ -255,7 +359,7 @@ export function RowView({ row, sid, liveThinking }: { row: Row; sid: string; liv
     case 'reasoning':
       return <Reasoning row={row} live={liveThinking} />;
     case 'tool':
-      return <ToolCard row={row} />;
+      return row.name.startsWith('Agent_') ? <AgentCard row={row} /> : <ToolCard row={row} />;
     case 'permission':
       return <PermissionCard row={row} sid={sid} />;
     case 'confirm':

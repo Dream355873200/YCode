@@ -8,13 +8,25 @@ import (
 	goagent "github.com/Dream355873200/GoAgent"
 )
 
+// TestMain 用户资产根指向空临时目录：本机真实用户资产不影响用例。
+func TestMain(m *testing.M) {
+	dir, _ := os.MkdirTemp("", "flai-user-")
+	os.Setenv("FLAI_USER_DIR", dir)
+	code := m.Run()
+	os.RemoveAll(dir)
+	os.Exit(code)
+}
+
 // TestCatalogAssets 仓库内的模式/插件清单全部合规，且会话级能力按模式隔离。
 func TestCatalogAssets(t *testing.T) {
 	cat, err := LoadCatalog("flutter")
 	if err != nil {
 		t.Fatalf("LoadCatalog: %v", err)
 	}
-	catalog = cat
+	if len(cat.Errors) > 0 {
+		t.Fatalf("仓库内清单不应有加载错误: %v", cat.Errors)
+	}
+	setCatalog(cat)
 	sessMap = &sessionMap{path: filepath.Join(t.TempDir(), "session-map.json")}
 
 	code, flutter := cat.Mode("code"), cat.Mode("flutter")
@@ -61,7 +73,7 @@ func TestCatalogAssets(t *testing.T) {
 		t.Error("引用 explore 插件的模式会话应可见 Agent_explore")
 	}
 	// 插件归属的动态工具（MCP）：只对引用该插件的模式可见
-	cat.setPluginOwner("mcp__x__y", "android-device")
+	pluginTools.claim("mcp__x__y", "android-device")
 	if !sessionToolVisible("s1", "mcp__x__y") || sessionToolVisible("s2", "mcp__x__y") {
 		t.Error("插件 MCP 工具应只对引用该插件的模式可见")
 	}
@@ -74,10 +86,10 @@ func TestInstallAgents(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	catalog = cat
+	setCatalog(cat)
 	app := goagent.New(goagent.WithBuiltinTools())
-	if err := installAgents(app); err != nil {
-		t.Fatalf("installAgents: %v", err)
+	if errs := syncAgents(app, cat); len(errs) > 0 {
+		t.Fatalf("syncAgents: %v", errs)
 	}
 	if p, ok := app.ToolPermission("Agent_explore"); !ok || p != goagent.ReadOnly {
 		t.Fatalf("Agent_explore 应注册为只读工具: %v %v", p, ok)
@@ -91,7 +103,7 @@ func TestSessionModeSwitch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	catalog = cat
+	setCatalog(cat)
 	sessMap = &sessionMap{path: filepath.Join(t.TempDir(), "session-map.json")}
 	skills.rebuild()
 	dir := t.TempDir()

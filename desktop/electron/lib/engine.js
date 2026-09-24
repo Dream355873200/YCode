@@ -161,8 +161,12 @@ async function ensure(cfg) {
   state.proc = spawn(cfg.engine.binary, args, {
     env, windowsHide: true, cwd: ENGINE_CWD,
   });
-  state.proc.stdout.on('data', () => {});
-  state.proc.stderr.on('data', () => {});
+  // 引擎输出落盘（每次拉起覆盖）：卡死/崩溃时排查的唯一现场
+  const logFile = path.join(ENGINE_CWD, '.yume', 'engine.log');
+  fs.mkdirSync(path.dirname(logFile), { recursive: true });
+  const logStream = fs.createWriteStream(logFile);
+  state.proc.stdout.pipe(logStream, { end: false });
+  state.proc.stderr.pipe(logStream, { end: false });
   state.proc.on('exit', (code) => {
     state.proc = null;
     if (state.status !== 'stopped') setStatus('stopped', { exitCode: code });
@@ -196,11 +200,11 @@ function send(channel, payload) {
   if (state.win && !state.win.isDestroyed()) state.win.webContents.send(channel, payload);
 }
 
-async function streamChat({ message, sessionId }) {
+async function streamChat({ message, sessionId, resumeQueue }) {
   let sid = sessionId || '';
   let first = true;
   try {
-    for await (const evt of client().chat({ message, sessionId })) {
+    for await (const evt of client().chat({ message, sessionId, resumeQueue })) {
       if (evt && evt.session_id) sid = evt.session_id;
       if (first) { send('sse:begin', evt); first = false; }
       send('sse:event', evt);

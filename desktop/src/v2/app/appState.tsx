@@ -31,6 +31,8 @@ interface AppCtxValue {
   openProject(p: Project): void;
   /** 全部模式（引擎 /modes；不可达时为空）。 */
   modes: ModeDecl[];
+  /** 重拉模式目录（设置页保存用户资产并 reload 引擎后调用）。 */
+  refreshModes(): void;
   /** 默认模式 id（config.engine.mode）。 */
   defaultMode: string;
   /** 改默认模式（写 config；只影响新建项目预选与未记录模式的旧项目）。 */
@@ -92,7 +94,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return off;
   }, [refreshProjects]);
 
-  // 模式目录：引擎（重新）就绪时拉一次——清单在引擎启动时加载、运行期不变
+  // 模式目录：引擎（重新）就绪时拉一次；设置页改了用户资产并 reload 后经 refreshModes 重拉
+  const [modesTick, setModesTick] = useState(0);
+  const refreshModes = useCallback(() => setModesTick((t) => t + 1), []);
   useEffect(() => {
     if (engineStatus.status !== 'running') return;
     let alive = true;
@@ -103,7 +107,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (alive) setModes(list);
     }).catch(() => {});
     return () => { alive = false; };
-  }, [engineStatus.status]);
+  }, [engineStatus.status, modesTick]);
 
   const projectMode = project?.mode || defaultMode;
 
@@ -134,7 +138,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   return (
     <Ctx.Provider value={{
       projects, refreshProjects, project, sid, openProject,
-      modes, defaultMode, saveDefaultMode, projectMode, setProjectMode,
+      modes, refreshModes, defaultMode, saveDefaultMode, projectMode, setProjectMode,
       engineStatus, createDialogOpen, setCreateDialogOpen,
       settingsOpen, setSettingsOpen,
       sidebarOpen, setSidebarOpen,

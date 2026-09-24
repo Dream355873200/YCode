@@ -7,7 +7,7 @@ import type { MCPServerDecl, MCPServerStatus } from '../modeRegistry';
 import { Button } from '../../components/ui/button';
 import { cn } from '../../components/lib/utils';
 import { useCatalog, skillKey, type Catalog } from './catalog';
-import { BASE_TOOLSET_ID, BUILTIN_PROMPT_ID, tabLabel, useNav, type Route } from './nav';
+import { BASE_TOOLSET_ID, BUILTIN_PROMPT_ID, NEW_ID, tabLabel, useNav, type Route } from './nav';
 
 /** 路径末两段（规范文件等只显示短名，完整路径放 title）。 */
 export const baseName = (p: string): string => p.split(/[\\/]/).filter(Boolean).slice(-2).join('/');
@@ -19,6 +19,7 @@ export const mcpSummary = (s: MCPServerDecl): string =>
 /** 路由的显示名（返回按钮文案）。 */
 export function routeTitle(c: Catalog, r: Route): string {
   if (!r.id) return tabLabel(r.tab);
+  if (r.id === NEW_ID) return '新建';
   switch (r.tab) {
     case 'modes': return c.modes.find((m) => m.id === r.id)?.name ?? r.id;
     case 'plugins': return c.plugins.find((p) => p.id === r.id)?.name ?? r.id;
@@ -216,11 +217,12 @@ export function DetailSection({ title, children }: { title: string; children: Re
 }
 
 /** 卡片分区：标题 + 计数 + 两列卡片网格；无卡片时显示空态文案。 */
-export function CardSection({ title, count, empty = '无', hint, children }: {
+export function CardSection({ title, count, empty = '无', hint, actions, children }: {
   title: string;
   count?: number;
   empty?: string;
   hint?: string;
+  actions?: React.ReactNode;
   children?: React.ReactNode;
 }) {
   const items = Children.toArray(children);
@@ -229,6 +231,7 @@ export function CardSection({ title, count, empty = '无', hint, children }: {
       <h3 className="flex items-center gap-1.5 text-ui-sm font-medium text-foreground">
         {title}
         {count !== undefined && <span className="font-normal text-foreground-subtlest">{count}</span>}
+        {actions && <span className="ml-auto flex items-center gap-1">{actions}</span>}
       </h3>
       {items.length
         ? <div className="grid grid-cols-1 gap-2 md:grid-cols-2">{items}</div>

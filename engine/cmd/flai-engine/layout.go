@@ -47,3 +47,42 @@ func hasAssetMarker(dir string) bool {
 	}
 	return false
 }
+
+// userRoot 用户资产根目录（设置页自建的模式/插件/提示词组/技能）：
+// FLAI_USER_DIR > 系统用户配置目录/amobilecreater（Windows 即 %APPDATA%）。
+// 与应用根并列扫描，同 ID 用户项覆盖内置项；桌面壳只往这里写。
+func userRoot() string {
+	if v := os.Getenv("FLAI_USER_DIR"); v != "" {
+		return v
+	}
+	if d, err := os.UserConfigDir(); err == nil {
+		return filepath.Join(d, "amobilecreater")
+	}
+	return ""
+}
+
+// 资产来源（/modes /plugins /prompts /skills 的 origin 字段）。
+const (
+	originBundled = "bundled" // 随应用分发（应用根）
+	originUser    = "user"    // 用户自建（用户资产根）
+)
+
+// assetRoot 一个资产根目录及其来源。
+type assetRoot struct {
+	Dir    string
+	Origin string
+}
+
+// assetRoots 某类资产的扫描根（先内置后用户——后扫到的同 ID 覆盖先前的）。
+// envKey 非空时其值替代内置根（测试 / 发行脚本用）。
+func assetRoots(kind, envKey string) []assetRoot {
+	bundled := filepath.Join(appRoot(), kind)
+	if v := os.Getenv(envKey); envKey != "" && v != "" {
+		bundled = v
+	}
+	roots := []assetRoot{{Dir: bundled, Origin: originBundled}}
+	if u := userRoot(); u != "" {
+		roots = append(roots, assetRoot{Dir: filepath.Join(u, kind), Origin: originUser})
+	}
+	return roots
+}

@@ -10,6 +10,7 @@ const { projectStats, filetree, gitStatus } = require('./lib/tools');
 const devices = require('./lib/devices');
 const flutter = require('./lib/flutter');
 const { scaffolds } = require('./lib/scaffolds');
+const assets = require('./lib/assets');
 
 let win = null;
 
@@ -101,7 +102,11 @@ ipcMain.handle('fs:readFile', (_e, p) => {
 // 编辑器写回：CodeEditor Ctrl+S 保存。写的是引擎管理的项目目录，
 // 落盘后前端再通知引擎（POST /notify/user-edit）让 AI 重读该文件。
 ipcMain.handle('fs:writeFile', (_e, p, content) => {
-  try { fs.writeFileSync(p, content, 'utf-8'); return { ok: true }; }
+  try {
+    fs.mkdirSync(path.dirname(p), { recursive: true });
+    fs.writeFileSync(p, content, 'utf-8');
+    return { ok: true };
+  }
   catch (e) { return { ok: false, error: e.message }; }
 });
 // 列目录（测试报告页签扫描 .yume/test-reports/）
@@ -120,6 +125,9 @@ ipcMain.handle('fs:readImage', (_e, p) => {
     return { ok: true, dataUrl: `data:image/${mime};base64,${b.toString('base64')}` };
   } catch (e) { return { ok: false, error: e.message }; }
 });
+
+// ---------- IPC：用户资产（设置页编辑器；写删限定在用户资产目录） ----------
+assets.register(ipcMain);
 
 // ---------- IPC：项目 ----------
 ipcMain.handle('projects:list', async () => {

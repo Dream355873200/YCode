@@ -6,6 +6,17 @@ import { createContext, useCallback, useContext, useEffect, useState } from 'rea
 import type { AgentDecl, MCPServerDecl, MCPServerStatus, ModeDecl, ModeSidePanel } from '../modeRegistry';
 import { engine } from '../../protocol';
 
+/** 资产来源：应用内置（只读，可复制为自定义）/ 用户资产目录（可编辑、删除）。 */
+export type AssetOrigin = 'bundled' | 'user';
+
+/** 引擎逐项加载错误（坏项被跳过，不影响其他项）。 */
+export interface LoadError {
+  kind: 'mode' | 'plugin' | 'agent' | 'mcp';
+  id: string;
+  file?: string;
+  error: string;
+}
+
 export interface PluginItem {
   id: string;
   name: string;
@@ -19,6 +30,7 @@ export interface PluginItem {
   mcpServers?: MCPServerDecl[];
   sidePanels?: ModeSidePanel[];
   dir: string;
+  origin: AssetOrigin;
   agentDefs: AgentDecl[];
   usedBy: string[];
 }
@@ -27,7 +39,7 @@ export interface SkillItem {
   name: string;
   description?: string;
   whenToUse?: string;
-  origin: 'plugin' | 'global';
+  origin: 'plugin' | 'user' | 'global';
   plugin?: string;
   filePath?: string;
 }
@@ -35,6 +47,7 @@ export interface SkillItem {
 export interface PromptGroupItem {
   name: string;
   dir?: string;
+  origin?: AssetOrigin;
   files?: string[];
   usedBy: string[];
 }
@@ -58,6 +71,8 @@ export interface Catalog {
   prompts: PromptGroupItem[];
   mcp: MCPServerStatus[];
   tools: ToolInfo[];
+  /** 模式 / 插件 / 子代理 / MCP 的加载错误。 */
+  errors: LoadError[];
   loaded: boolean;
   loading: boolean;
   error: string;
@@ -80,7 +95,7 @@ const listOf = <T,>(body: Body, key: string): T[] => (body?.[key] as T[] | undef
  *  connecting 时每 2s 只重拉 /mcp，全部落定即停。 */
 export function CatalogProvider({ children }: { children: React.ReactNode }) {
   const [data, setData] = useState<Omit<Catalog, 'loaded' | 'loading' | 'error' | 'refresh'>>({
-    modes: [], toolsets: {}, plugins: [], skills: [], prompts: [], mcp: [], tools: [],
+    modes: [], toolsets: {}, plugins: [], skills: [], prompts: [], mcp: [], tools: [], errors: [],
   });
   const [loaded, setLoaded] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -107,6 +122,7 @@ export function CatalogProvider({ children }: { children: React.ReactNode }) {
           prompts: listOf<PromptGroupItem>(prompts.body as Body, 'prompts'),
           mcp: listOf<MCPServerStatus>(mcp.body as Body, 'servers'),
           tools: Array.isArray(tools.body) ? (tools.body as ToolInfo[]) : [],
+          errors: [...listOf<LoadError>(mb, 'errors'), ...listOf<LoadError>(plugins.body as Body, 'errors')],
         });
         setError('');
         setLoaded(true);
@@ -145,9 +161,9 @@ export const skillKey = (s: SkillItem): string => s.filePath || `${s.origin}:${s
 export const modePlugins = (c: Catalog, m: ModeDecl): PluginItem[] =>
   m.plugins.map((id) => c.plugins.find((p) => p.id === id)).filter((p): p is PluginItem => !!p);
 
-/** 会话可见技能 = 引用插件的技能 + 全局技能。 */
+/** 会话可见技能 = 引用插件的技能 + 用户技能 + 全局技能。 */
 export const modeSkills = (c: Catalog, m: ModeDecl): SkillItem[] =>
-  c.skills.filter((s) => s.origin === 'global' || (s.plugin !== undefined && m.plugins.includes(s.plugin)));
+  c.skills.filter((s) => s.origin !== 'plugin' || (s.plugin !== undefined && m.plugins.includes(s.plugin)));
 
 /** 子代理 + 其所属插件。 */
 export const allAgents = (c: Catalog): Array<{ agent: AgentDecl; plugin: PluginItem }> =>
@@ -169,3 +185,11 @@ export function baseTools(c: Catalog): ToolInfo[] {
 /** 按 id 取模式。 */
 export const modeById = (c: Catalog, id: string): ModeDecl | undefined => c.modes.find((m) => m.id === id);
 export const pluginById = (c: Catalog, id: string): PluginItem | undefined => c.plugins.find((p) => p.id === id);
+
+/** 指定类别、指定 id 的加载错误。 */
+export const errorsFor = (c: Catalog, kinds: LoadError['kind'][], id?: string): LoadError[] =>
+  c.errors.filter((e) => kinds.includes(e.kind) && (id === undefined || e.id === id));
+
+/** 除指定插件外已占用的 MCP server 名（server 名须全局唯一）。 */
+export const mcpNamesExcept = (c: Catalog, pluginId: string): string[] =>
+  c.plugins.filter((p) => p.id !== pluginId).flatMap((p) => (p.mcpServers ?? []).map((s) => s.name));

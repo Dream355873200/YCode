@@ -73,6 +73,10 @@ export interface ModeDecl {
   projectFields: ProjectField[];
   /** 脚手架 id（electron/lib/scaffolds.js 注册表；空 = 打开已有目录）。 */
   scaffold?: string;
+  /** bundled = 应用内置；user = 用户资产目录（设置页可编辑）。 */
+  origin?: 'bundled' | 'user';
+  /** 模式包目录绝对路径。 */
+  dir?: string;
   resolved: ModeResolved;
 }
 

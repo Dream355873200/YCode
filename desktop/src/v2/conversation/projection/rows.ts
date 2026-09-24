@@ -15,6 +15,36 @@ export type ToolRow = Extract<Row, { kind: 'tool' }>;
 
 export type Tone = 'info' | 'error' | 'stopped';
 
+/** 子 agent 进度：状态 + 活动流水（每次工具启动 / 阶段性结论一行）。 */
+export type AgentProgress = {
+  status: 'running' | 'done' | 'failed';
+  activities: string[];
+  toolUses: number;
+  tokens: number;
+  error?: string;
+};
+
+/** 活动流水上限（更早的只计数，不保留正文）。 */
+const AGENT_ACTIVITY_CAP = 200;
+
+function mergeAgentProgress(prev: AgentProgress | undefined, frame: Envelope): AgentProgress {
+  const status = frame.agent_status === 'done' ? 'done' : frame.agent_status === 'failed' ? 'failed' : 'running';
+  const act = frame.agent_activity || '';
+  const base: AgentProgress = prev ?? { status, activities: [], toolUses: 0, tokens: 0 };
+  let activities = base.activities;
+  // 终态帧的 activity 是错误信息，不进流水
+  if (act && status === 'running' && activities[activities.length - 1] !== act) {
+    activities = [...activities, act].slice(-AGENT_ACTIVITY_CAP);
+  }
+  return {
+    status,
+    activities,
+    toolUses: Math.max(base.toolUses, frame.agent_tool_uses || 0),
+    tokens: Math.max(base.tokens, frame.agent_tokens || 0),
+    error: status === 'failed' ? act || base.error : base.error,
+  };
+}
+
 export type Row =
   /** 用户消息（每条消息 = 独立一轮的输入；排队态显示在队列面板）。 */
   | { kind: 'user'; id: string; text: string; steered?: boolean }
@@ -26,6 +56,8 @@ export type Row =
   | {
     kind: 'tool'; id: string; toolUseId: string; name: string;
     input?: unknown; state: 'running' | 'ok' | 'err'; result?: string;
+    /** 子 agent 运行过程（subagent_progress 帧按 tool_use_id 归并）。 */
+    agent?: AgentProgress;
   }
   /** 权限审批请求。 */
   | {
@@ -89,9 +121,46 @@ function confirmOrAsk(frame: Envelope): Row {
 }
 
 /**
+ * 后台子 agent 收口：发起它的 run 结束后进度帧不再下发，终态只经
+ * 「后台任务…（task_id=X）」提醒回注——据此把对应卡片（结果里带同一
+ * task_id）置为终态。
+ */
+function settleBackgroundAgent(rows: Row[], text: string): void {
+  const m = text.match(/后台任务「[^」]*」已(完成|终止|失败)（task_id=([\w-]+)）/);
+  if (!m) return;
+  settleAgentTask(rows, m[2]!, m[1] === '完成' ? 'done' : 'failed', m[1] === '完成' ? undefined : `已${m[1]}`);
+}
+
+/** 把结果里带 task_id 的运行中子 agent 卡置为终态（原地修改 out 数组）。 */
+function settleAgentTask(rows: Row[], taskId: string, status: 'done' | 'failed', error?: string): void {
+  const i = rows.findIndex((r) => r.kind === 'tool' && r.agent?.status === 'running'
+    && (r.result || '').includes(`task_id=${taskId}`));
+  const t = rows[i] as ToolRow | undefined;
+  if (t?.agent) rows[i] = { ...t, agent: { ...t.agent, status, error } };
+}
+
+/**
+ * 仍在跑的后台子 agent：发起调用已返回（工具行收口），但子 agent 进度
+ * 未到终态。主 agent 空闲时据此显示「等待」并在终态通知到达后唤醒。
+ * 返回各自的 task_id（从启动回执里解析；解析不到为空串）。
+ */
+export function pendingBackgroundAgents(rows: readonly Row[]): string[] {
+  return rows.flatMap((r) => (r.kind === 'tool' && r.state !== 'running' && r.agent?.status === 'running'
+    ? [(r.result || '').match(/task_id=([\w-]+)/)?.[1] ?? '']
+    : []));
+}
+
+/** 引擎侧已查无此任务（引擎重启等）：卡片收口为失败，不再无限等待。 */
+export function markAgentTasksLost(rows: readonly Row[], taskIds: string[]): Row[] {
+  const out = [...rows];
+  for (const id of taskIds) settleAgentTask(out, id, 'failed', '后台任务已丢失（引擎重启？）');
+  return out;
+}
+
+/**
  * 归约一帧 → 新 row 流。纯函数：同序列帧必得同结果（流式/回放同路径）。
- * run_start / turn_complete / usage / metadata / subagent_progress 不产生
- * row（分别由 run 生命周期与独立 store 消费）。
+ * run_start / turn_complete / usage / metadata 不产生 row（由 run 生命周期
+ * 与独立 store 消费）；subagent_progress 归并进所属工具 row。
  */
 export function applyFrame(rows: readonly Row[], frame: Envelope): Row[] {
   const out = [...rows];
@@ -138,6 +207,13 @@ export function applyFrame(rows: readonly Row[], frame: Envelope): Row[] {
       }
       break;
     }
+    case 'subagent_progress': {
+      // 归并到发起调用的工具卡（后台子 agent 在 tool_done 之后仍会上报）
+      const id = frame.agent_id || frame.tool_use_id;
+      const t = id ? out.findLast((r): r is ToolRow => r.kind === 'tool' && r.toolUseId === id) : undefined;
+      if (t) out[out.indexOf(t)] = { ...t, agent: mergeAgentProgress(t.agent, frame) };
+      break;
+    }
     case 'permission_request': {
       out.push({
         kind: 'permission', id: nextRowId(), requestId: frame.request_id || '',
@@ -155,6 +231,7 @@ export function applyFrame(rows: readonly Row[], frame: Envelope): Row[] {
       // 渲染为提示行而非用户气泡——用户输入走 queue 车道。
       const text = stripReminderTags(frame.text || '');
       if (text) out.push({ kind: 'notice', id: nextRowId(), text, tone: 'info' });
+      settleBackgroundAgent(out, text);
       break;
     }
     case 'queue_run': {
@@ -165,6 +242,7 @@ export function applyFrame(rows: readonly Row[], frame: Envelope): Row[] {
       if (!text) break;
       if (raw.includes('<system-reminder')) {
         out.push({ kind: 'notice', id: nextRowId(), text, tone: 'info' });
+        settleBackgroundAgent(out, text);
       } else {
         out.push({ kind: 'user', id: nextRowId(), text });
       }

@@ -10,7 +10,7 @@
 // 模式不直接声明工具集/技能/规范/面板：这些由插件打包，模式按需组合。
 // 引擎一次加载全部模式，模式是会话级的——每个会话按 session-map 绑定的
 // mode 看到各自的工具、提示词、规范与技能，多模式会话并存互不干扰。
-// 模式根目录定位：FLAI_MODES_DIR > appRoot/modes（见 layout.go）。
+// 模式根：内置 appRoot/modes（FLAI_MODES_DIR 可替代）+ 用户 userRoot/modes（见 layout.go）。
 package main
 
 import (
@@ -32,6 +32,8 @@ type Mode struct {
 	ProjectFields []ProjectField `json:"projectFields"`      // 新建项目表单字段（桌面壳消费）
 	Scaffold      string         `json:"scaffold,omitempty"` // 脚手架 id（空 = 打开已有目录）
 
+	Origin   string    `json:"origin"`   // bundled | user（解析产物，非清单字段）
+	Dir      string    `json:"dir"`      // 模式包目录绝对路径（解析产物）
 	Resolved *ModeView `json:"resolved"` // 插件聚合后的能力视图（解析产物，非清单字段）
 }
 
@@ -47,7 +49,7 @@ type modeManifest struct {
 }
 
 // ProjectField 新建项目表单的一个字段。字段值原样交给桌面壳的脚手架
-//（或直接写进项目注册表），引擎不解释语义。
+// （或直接写进项目注册表），引擎不解释语义。
 type ProjectField struct {
 	ID          string        `json:"id"`
 	Label       string        `json:"label"`
@@ -136,58 +138,73 @@ func (m *Mode) HasPlugin(id string) bool {
 	return contains(m.Plugins, id)
 }
 
-// modesDir 模式包根目录定位：FLAI_MODES_DIR > 应用根/modes。
-func modesDir() string {
-	if v := os.Getenv("FLAI_MODES_DIR"); v != "" {
-		return v
-	}
-	return filepath.Join(appRoot(), "modes")
-}
-
-// loadModes 扫描并严格解码全部模式清单（按 id 排序；插件引用在
-// LoadCatalog 里解析校验）。
-func loadModes() ([]*Mode, error) {
-	root := modesDir()
-	entries, err := os.ReadDir(root)
-	if err != nil {
-		return nil, fmt.Errorf("模式目录不可读 %s: %w", root, err)
-	}
-	var modes []*Mode
-	for _, e := range entries {
-		if !e.IsDir() {
+// loadModes 扫描全部模式根（内置 → 用户，同 id 用户覆盖内置）并严格
+// 解码清单（按 id 排序）。单个清单不合规只记错误跳过，不影响其他模式；
+// 插件引用在 LoadCatalog 里解析校验。
+func loadModes() ([]*Mode, []LoadError) {
+	byID := map[string]*Mode{}
+	var errs []LoadError
+	for _, root := range assetRoots("modes", "FLAI_MODES_DIR") {
+		entries, err := os.ReadDir(root.Dir)
+		if err != nil {
+			if !os.IsNotExist(err) {
+				errs = append(errs, LoadError{Kind: "mode", File: root.Dir, Err: fmt.Sprintf("模式目录不可读: %v", err)})
+			}
 			continue
 		}
-		manifest := filepath.Join(root, e.Name(), "mode.json")
-		if _, err := os.Stat(manifest); err != nil {
-			continue // 无清单的目录不是模式包
+		for _, e := range entries {
+			if !e.IsDir() {
+				continue
+			}
+			dir := filepath.Join(root.Dir, e.Name())
+			manifest := filepath.Join(dir, "mode.json")
+			if _, err := os.Stat(manifest); err != nil {
+				continue // 无清单的目录不是模式包
+			}
+			m, err := loadMode(dir, manifest)
+			if err != nil {
+				errs = append(errs, LoadError{Kind: "mode", ID: e.Name(), File: manifest, Err: err.Error()})
+				continue
+			}
+			m.Origin = root.Origin
+			byID[m.ID] = m
 		}
-		var mm modeManifest
-		if err := decodeStrict(manifest, &mm); err != nil {
-			return nil, err
-		}
-		if mm.ID == "" {
-			mm.ID = e.Name()
-		}
-		if mm.ID != e.Name() {
-			return nil, fmt.Errorf("模式 %s: id %q 必须与目录名一致", e.Name(), mm.ID)
-		}
-		if mm.Name == "" {
-			return nil, fmt.Errorf("模式 %s: 缺少 name", mm.ID)
-		}
-		if mm.Plugins == nil {
-			mm.Plugins = []string{}
-		}
-		if err := validateFields(mm.ID, mm.ProjectFields); err != nil {
-			return nil, err
-		}
-		modes = append(modes, &Mode{
-			ID: mm.ID, Name: mm.Name, Description: mm.Description,
-			Prompts: mm.Prompts, Plugins: mm.Plugins,
-			ProjectFields: mm.ProjectFields, Scaffold: mm.Scaffold,
-		})
+	}
+	modes := make([]*Mode, 0, len(byID))
+	for _, m := range byID {
+		modes = append(modes, m)
 	}
 	sort.Slice(modes, func(i, j int) bool { return modes[i].ID < modes[j].ID })
-	return modes, nil
+	return modes, errs
+}
+
+// loadMode 严格解码并校验单个模式清单。
+func loadMode(dir, manifest string) (*Mode, error) {
+	var mm modeManifest
+	if err := decodeStrict(manifest, &mm); err != nil {
+		return nil, err
+	}
+	name := filepath.Base(dir)
+	if mm.ID == "" {
+		mm.ID = name
+	}
+	if mm.ID != name {
+		return nil, fmt.Errorf("模式 %s: id %q 必须与目录名一致", name, mm.ID)
+	}
+	if mm.Name == "" {
+		return nil, fmt.Errorf("模式 %s: 缺少 name", mm.ID)
+	}
+	if mm.Plugins == nil {
+		mm.Plugins = []string{}
+	}
+	if err := validateFields(mm.ID, mm.ProjectFields); err != nil {
+		return nil, err
+	}
+	return &Mode{
+		ID: mm.ID, Name: mm.Name, Description: mm.Description,
+		Prompts: mm.Prompts, Plugins: mm.Plugins,
+		ProjectFields: mm.ProjectFields, Scaffold: mm.Scaffold, Dir: dir,
+	}, nil
 }
 
 // resolveMode 把模式引用的插件聚合成能力视图。未知插件/提示词组、
@@ -263,15 +280,17 @@ func pluginIDs(byID map[string]*Plugin) []string {
 func modesRoutes() map[string]func(http.ResponseWriter, *http.Request) {
 	return map[string]func(http.ResponseWriter, *http.Request){
 		"GET /modes": func(w http.ResponseWriter, r *http.Request) {
+			c := catalog()
 			toolsets := map[string]map[string]any{}
 			for id, ts := range toolsetRegistry {
 				toolsets[id] = map[string]any{"tools": ts.tools, "notes": ts.notes}
 			}
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"modes":       catalog.Modes,
-				"defaultMode": catalog.DefaultMode,
+				"modes":       c.Modes,
+				"defaultMode": c.DefaultMode,
 				"toolsets":    toolsets,
+				"errors":      c.errorsOf("mode"),
 			})
 		},
 	}

@@ -1,5 +1,5 @@
 // codediff.js — 代码高亮 + 行级 diff（StagePanel 直播 / CodeEditor 编辑器共用）。
-import { highlightCode } from './markdown.js';
+import { highlightCode, textCache } from './markdown.js';
 
 // 按文件扩展名给 highlight.js 挑语言
 export const LANG_BY_EXT = {
@@ -19,8 +19,14 @@ export function highlightLines(code, lang) {
 
 // ---- 行级 diff（开发直播/编辑器：AI 改动后新增绿底 / 删除红底叠加在语法高亮上）----
 // 简单 LCS（最长公共子序列）按行对比 —— 文件规模（几百行）下完全够用。
-// 返回 [{ type: 'same'|'add'|'del', text, oldNo, newNo }]
+// 返回 [{ type: 'same'|'add'|'del', text, oldNo, newNo }]（按输入缓存，调用方勿改返回值）
+/** @param {string} oldText @param {string} newText @returns {Array<{type: 'same'|'add'|'del', text: string, oldNo?: number, newNo?: number}>} */
 export function diffLines(oldText, newText) {
+  return diffCached(`${oldText || ''}\0${newText || ''}`, oldText, newText);
+}
+const diffCached = textCache(200, diffRaw);
+
+function diffRaw(oldText, newText) {
   const a = (oldText || '').split('\n');
   const b = (newText || '').split('\n');
   const n = a.length, m = b.length;

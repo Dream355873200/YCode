@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { applyFrame, resolvePermission, resolveAsk, resetRowIds, type Row } from './rows';
+import { applyFrame, resolvePermission, resolveAsk, resetRowIds, pendingBackgroundAgents, markAgentTasksLost, type Row } from './rows';
 import type { Envelope } from '../../protocol';
 
 const f = (p: Partial<Envelope>): Envelope => ({ seq: 1, v: 1, type: 'text_delta', ...p });
@@ -53,6 +53,42 @@ describe('applyFrame 工具配对', () => {
     let rows = applyFrame([], f({ type: 'tool_start', tool_name: 'Bash', tool_use_id: 'u1' }));
     rows = applyFrame(rows, f({ type: 'tool_done', tool_use_id: 'u1', tool_result: '退出码非零: 1' }));
     expect((rows[0] as Extract<Row, { kind: 'tool' }>).state).toBe('err');
+  });
+
+  it('subagent_progress 按 tool_use_id 归并进工具行：活动去重追加，终态保留流水', () => {
+    const p = (status: string, activity: string, uses: number) => f({
+      type: 'subagent_progress', agent_id: 'u1', agent_status: status,
+      agent_activity: activity, agent_tool_uses: uses, agent_tokens: uses * 100,
+    });
+    let rows = applyFrame([], f({ type: 'tool_start', tool_name: 'Agent_explore', tool_use_id: 'u1' }));
+    rows = applyFrame(rows, p('running', 'Read a.go', 1));
+    rows = applyFrame(rows, p('running', 'Read a.go', 1));
+    rows = applyFrame(rows, p('running', 'Grep foo', 2));
+    rows = applyFrame(rows, f({ type: 'tool_done', tool_use_id: 'u1', tool_result: '结论' }));
+    rows = applyFrame(rows, p('done', '', 2));
+    expect(rows).toHaveLength(1);
+    expect((rows[0] as Extract<Row, { kind: 'tool' }>).agent).toEqual({
+      status: 'done', activities: ['Read a.go', 'Grep foo'], toolUses: 2, tokens: 200, error: undefined,
+    });
+  });
+
+  it('后台子 agent：终态提醒按 task_id 收口卡片', () => {
+    let rows = applyFrame([], f({ type: 'tool_start', tool_name: 'Agent_explore', tool_use_id: 'u1' }));
+    rows = applyFrame(rows, f({ type: 'tool_done', tool_use_id: 'u1', tool_result: 'agent「explore」已在后台启动（task_id=a123）。' }));
+    rows = applyFrame(rows, f({ type: 'subagent_progress', agent_id: 'u1', agent_status: 'running', agent_activity: 'Read a.go' }));
+    rows = applyFrame(rows, f({ type: 'queue_run', text: '<system-reminder source="host">\n后台任务「explore」已完成（task_id=a123）。\n</system-reminder>' }));
+    expect((rows[0] as Extract<Row, { kind: 'tool' }>).agent?.status).toBe('done');
+  });
+
+  it('pendingBackgroundAgents：只数已返回但仍在跑的后台卡；丢失任务可收口', () => {
+    let rows = applyFrame([], f({ type: 'tool_start', tool_name: 'Agent_explore', tool_use_id: 'u1' }));
+    rows = applyFrame(rows, f({ type: 'subagent_progress', agent_id: 'u1', agent_status: 'running', agent_activity: 'Read' }));
+    expect(pendingBackgroundAgents(rows)).toEqual([]); // 前台运行中不算等待
+    rows = applyFrame(rows, f({ type: 'tool_done', tool_use_id: 'u1', tool_result: '已在后台启动（task_id=a1）。' }));
+    expect(pendingBackgroundAgents(rows)).toEqual(['a1']);
+    rows = markAgentTasksLost(rows, ['a1']);
+    expect(pendingBackgroundAgents(rows)).toEqual([]);
+    expect((rows[0] as Extract<Row, { kind: 'tool' }>).agent?.status).toBe('failed');
   });
 });
 

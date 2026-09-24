@@ -19,7 +19,8 @@
 // 它的插件：只有引用该插件的模式的会话可见。
 //
 // 校验严格：id 必须等于目录名、引用的工具集必须在注册表、声明的
-// 文件/目录必须存在——清单写错拒绝启动，不静默丢能力。
+// 文件/目录必须存在。不合规的插件被跳过并记入目录错误（/catalog/errors），
+// 不拖垮其他插件与模式。插件根：内置 appRoot/plugins + 用户 userRoot/plugins。
 package main
 
 import (
@@ -64,6 +65,7 @@ type Plugin struct {
 	MCPServers  []MCPServer `json:"mcpServers,omitempty"` // MCP 服务器声明
 	SidePanels  []SidePanel `json:"sidePanels,omitempty"` // 右栏面板槽位（桌面壳消费）
 
+	Origin    string      `json:"origin"`    // bundled | user（解析产物，非清单字段）
 	Dir       string      `json:"dir"`       // 插件目录绝对路径（解析产物，非清单字段）
 	AgentDefs []*AgentDef `json:"agentDefs"` // agents 目录解析出的子代理（解析产物）
 }
@@ -97,43 +99,43 @@ func (p *Plugin) resolve(rel string) string {
 	return filepath.Join(p.Dir, filepath.FromSlash(rel))
 }
 
-// pluginsDir 插件根目录定位：FLAI_PLUGINS_DIR > 应用根/plugins。
-func pluginsDir() string {
-	if v := os.Getenv("FLAI_PLUGINS_DIR"); v != "" {
-		return v
-	}
-	return filepath.Join(appRoot(), "plugins")
-}
-
-// LoadPlugins 扫描插件根目录下全部插件包（按 id 排序；无 plugin.json 的
-// 目录不是插件包，跳过）。任一清单不合规即返回错误。
-func LoadPlugins() ([]*Plugin, error) {
-	root := pluginsDir()
-	entries, err := os.ReadDir(root)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil // 无插件目录 = 零插件
-		}
-		return nil, fmt.Errorf("插件目录不可读 %s: %w", root, err)
-	}
-	var plugins []*Plugin
-	for _, e := range entries {
-		if !e.IsDir() {
-			continue
-		}
-		dir := filepath.Join(root, e.Name())
-		manifest := filepath.Join(dir, "plugin.json")
-		if _, err := os.Stat(manifest); err != nil {
-			continue
-		}
-		p, err := loadPlugin(dir, manifest)
+// LoadPlugins 扫描全部插件根（内置 → 用户，同 id 用户覆盖内置；无
+// plugin.json 的目录不是插件包）。单个清单不合规只记错误跳过（按 id 排序）。
+func LoadPlugins() ([]*Plugin, []LoadError) {
+	byID := map[string]*Plugin{}
+	var errs []LoadError
+	for _, root := range assetRoots("plugins", "FLAI_PLUGINS_DIR") {
+		entries, err := os.ReadDir(root.Dir)
 		if err != nil {
-			return nil, err
+			if !os.IsNotExist(err) { // 无插件目录 = 零插件
+				errs = append(errs, LoadError{Kind: "plugin", File: root.Dir, Err: fmt.Sprintf("插件目录不可读: %v", err)})
+			}
+			continue
 		}
+		for _, e := range entries {
+			if !e.IsDir() {
+				continue
+			}
+			dir := filepath.Join(root.Dir, e.Name())
+			manifest := filepath.Join(dir, "plugin.json")
+			if _, err := os.Stat(manifest); err != nil {
+				continue
+			}
+			p, err := loadPlugin(dir, manifest)
+			if err != nil {
+				errs = append(errs, LoadError{Kind: "plugin", ID: e.Name(), File: manifest, Err: err.Error()})
+				continue
+			}
+			p.Origin = root.Origin
+			byID[p.ID] = p
+		}
+	}
+	plugins := make([]*Plugin, 0, len(byID))
+	for _, p := range byID {
 		plugins = append(plugins, p)
 	}
 	sort.Slice(plugins, func(i, j int) bool { return plugins[i].ID < plugins[j].ID })
-	return plugins, nil
+	return plugins, errs
 }
 
 // loadPlugin 严格解码并校验单个插件清单。
@@ -226,12 +228,13 @@ func pluginsRoutes() map[string]func(http.ResponseWriter, *http.Request) {
 				UsedBy    []string          `json:"usedBy"`
 				MCPStatus []mcpServerStatus `json:"mcpStatus"`
 			}
+			c := catalog()
 			items := []pluginItem{}
-			for _, p := range catalog.Plugins {
-				items = append(items, pluginItem{Plugin: p, RulesFile: p.RulesPath(), UsedBy: catalog.PluginUsedBy(p.ID), MCPStatus: mcpHub.forPlugin(p.ID)})
+			for _, p := range c.Plugins {
+				items = append(items, pluginItem{Plugin: p, RulesFile: p.RulesPath(), UsedBy: c.PluginUsedBy(p.ID), MCPStatus: mcpHub.forPlugin(p.ID)})
 			}
 			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]any{"plugins": items})
+			_ = json.NewEncoder(w).Encode(map[string]any{"plugins": items, "errors": c.errorsOf("plugin", "agent", "mcp")})
 		},
 	}
 }

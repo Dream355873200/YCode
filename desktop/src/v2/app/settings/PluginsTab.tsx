@@ -1,17 +1,92 @@
-// 插件分区：清单 → 详情。详情 = 清单信息 + 被哪些模式引用 + 打包的能力卡片。
-import { CircleAlertIcon, PuzzleIcon } from 'lucide-react';
-import { allMcp, pluginById, useCatalog } from './catalog';
+// 插件分区：清单 → 详情。详情 = 清单信息 + 打包的能力卡片。
+// 自定义插件（用户资产目录）可新建 / 编辑清单与规范 / 新建子代理 / 删除；
+// 内置插件「复制为自定义」后再改。
+import { useState } from 'react';
+import { CircleAlertIcon, PlusIcon, PuzzleIcon } from 'lucide-react';
+import { AgentEditor } from './AgentsTab';
+import { allMcp, errorsFor, mcpNamesExcept, pluginById, useCatalog, type PluginItem } from './catalog';
 import { AgentCard, McpCard, PanelCard, RuleCard, SkillCard, ToolsetCard } from './cards';
-import { useNav } from './nav';
+import { AssetActions, EditorFrame, FormField, LoadErrors, OriginChip, ToggleChips, useFileText, useSaver } from './editing';
+import { buildPluginManifest, pluginFormFrom, type PluginForm } from './manifest';
+import { NEW_ID, useNav } from './nav';
 import {
   CardSection, Chip, DetailFrame, DetailSection, EmptyHint, ErrorBox, GroupHeader, InfoRow, Loading,
   RefreshButton, ResourceList, ResourceRow,
 } from './ui';
+import { Button } from '../../components/ui/button';
+import { Input } from '../../components/ui/input';
+import { Textarea } from '../../components/ui/textarea';
+
+const MCP_EXAMPLE = '[{ "name": "fs", "command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "."] }]';
+
+function PluginFields({ initial, isNew, onDone, onCancel }: {
+  initial: PluginForm; isNew: boolean; onDone(id: string): void; onCancel(): void;
+}) {
+  const catalog = useCatalog();
+  const [form, setForm] = useState(initial);
+  const { saving, error, run } = useSaver();
+  const set = <K extends keyof PluginForm>(k: K, v: PluginForm[K]) => setForm((f) => ({ ...f, [k]: v }));
+  const save = () => {
+    const r = buildPluginManifest(form, {
+      isNew,
+      pluginIds: catalog.plugins.map((p) => p.id),
+      toolsets: Object.keys(catalog.toolsets),
+      otherMcpNames: mcpNamesExcept(catalog, form.id.trim()),
+    });
+    void run(r.ok ? r.value.map((w) => ({ write: w })) : { error: r.error }, () => onDone(form.id.trim()));
+  };
+  return (
+    <EditorFrame title={isNew ? '新建插件' : `编辑插件 ${initial.id}`} error={error} saving={saving}
+      onCancel={onCancel} onSave={save}>
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <FormField label="id" hint="目录名，只能含字母、数字、_、-；保存后不可改">
+          <Input value={form.id} disabled={!isNew} onChange={(e) => set('id', e.target.value)} placeholder="my-tools" />
+        </FormField>
+        <FormField label="名称">
+          <Input value={form.name} onChange={(e) => set('name', e.target.value)} />
+        </FormField>
+      </div>
+      <FormField label="描述">
+        <Input value={form.description} onChange={(e) => set('description', e.target.value)} />
+      </FormField>
+      <FormField label="工具集" hint="引擎内置的原生工具集；引用本插件的模式即可用其工具">
+        <ToggleChips value={form.toolsets} onChange={(v) => set('toolsets', v)}
+          options={Object.keys(catalog.toolsets).sort().map((t) => ({ id: t, label: t }))} empty="引擎没有可选工具集" />
+      </FormField>
+      <FormField label="领域规范" hint={`每轮作为项目上下文注入；留空 = 不声明规范${form.rulesFile ? `（文件 ${form.rulesFile}）` : ''}`}>
+        <Textarea value={form.rules ?? ''} onChange={(e) => set('rules', e.target.value)}
+          className="max-h-[28rem] min-h-24 font-mono text-ui-xs" placeholder="# 规范&#10;- 约束一&#10;- 约束二" />
+      </FormField>
+      <FormField label="MCP 服务器（JSON 数组）" hint={`stdio 写 command/args/env，远程写 url/headers，二选一；server 名全局唯一。例：${MCP_EXAMPLE}`}>
+        <Textarea value={form.mcpServers} onChange={(e) => set('mcpServers', e.target.value)}
+          spellCheck={false} className="max-h-80 font-mono text-ui-xs" />
+      </FormField>
+    </EditorFrame>
+  );
+}
+
+/** 插件编辑器：编辑时先读规范文件预填。 */
+function PluginEditor({ plugin, onDone, onCancel }: { plugin?: PluginItem; onDone(id: string): void; onCancel(): void }) {
+  const rules = useFileText(plugin?.rules ? plugin.rulesFile || `${plugin.dir}/${plugin.rules}` : undefined);
+  if (!rules.loaded) return <Loading />;
+  return <PluginFields initial={pluginFormFrom(plugin, rules.text)} isNew={!plugin} onDone={onDone} onCancel={onCancel} />;
+}
 
 function PluginDetail({ id }: { id: string }) {
   const catalog = useCatalog();
+  const nav = useNav();
+  const [editing, setEditing] = useState<'plugin' | 'agent' | null>(null);
+  const { saving, error, run } = useSaver();
   const plugin = pluginById(catalog, id);
-  if (!plugin) return <ErrorBox message={`插件 ${id} 不存在`} />;
+  if (!plugin) {
+    return catalog.loaded
+      ? <div className="space-y-2"><ErrorBox message={`插件 ${id} 不存在或加载失败`} /><LoadErrors errors={errorsFor(catalog, ['plugin'], id)} /></div>
+      : <Loading />;
+  }
+  const done = () => setEditing(null);
+  if (editing === 'plugin') return <PluginEditor plugin={plugin} onDone={done} onCancel={done} />;
+  if (editing === 'agent') return <AgentEditor plugin={plugin} onDone={done} onCancel={done} />;
+  const isUser = plugin.origin === 'user';
   const skills = catalog.skills.filter((s) => s.origin === 'plugin' && s.plugin === plugin.id);
   const agents = plugin.agentDefs ?? [];
   const mcp = allMcp(catalog).filter((m) => m.plugin.id === plugin.id);
@@ -20,12 +95,23 @@ function PluginDetail({ id }: { id: string }) {
   const provides = toolsets.length + (plugin.rules ? 1 : 0) + agents.length + mcp.length + skills.length + panels.length;
   return (
     <DetailFrame icon={<PuzzleIcon className="size-5" />} title={plugin.name} desc={plugin.description}
-      actions={plugin.usedBy.length === 0 ? <Chip>未被模式引用</Chip> : undefined}>
+      actions={
+        <>
+          <OriginChip origin={plugin.origin} />
+          <AssetActions origin={plugin.origin} busy={saving}
+            onCopy={() => void run([{ copy: { src: plugin.dir, dest: `plugins/${plugin.id}` } }])}
+            onEdit={() => setEditing('plugin')}
+            onDelete={() => void run([{ rm: `plugins/${plugin.id}` }], nav.back)} />
+          {plugin.usedBy.length === 0 && <Chip>未被模式引用</Chip>}
+        </>
+      }>
+      {error && <ErrorBox message={error} />}
+      <LoadErrors errors={catalog.errors.filter((e) => e.kind !== 'mode' && e.file?.startsWith(plugin.dir))} />
       <DetailSection title="清单">
         <InfoRow label="id"><span className="font-mono text-ui-xs">{plugin.id}</span></InfoRow>
         <InfoRow label="目录"><span className="break-all font-mono text-ui-xs">{plugin.dir}</span></InfoRow>
       </DetailSection>
-      {provides === 0 && (
+      {provides === 0 && !isUser && (
         <CardSection title="提供的能力" empty="清单没有声明任何能力" />
       )}
       {plugin.rules && (
@@ -38,8 +124,13 @@ function PluginDetail({ id }: { id: string }) {
           {toolsets.map((t) => <ToolsetCard key={t} id={t} />)}
         </CardSection>
       )}
-      {(agents.length > 0 || plugin.agents) && (
-        <CardSection title="子代理" count={agents.length} empty={`${plugin.agents}/ 下没有子代理定义`}>
+      {(agents.length > 0 || plugin.agents || isUser) && (
+        <CardSection title="子代理" count={agents.length} empty={isUser ? '还没有子代理' : `${plugin.agents}/ 下没有子代理定义`}
+          actions={isUser ? (
+            <Button type="button" size="xs" variant="ghost" onClick={() => setEditing('agent')}>
+              <PlusIcon className="size-3" />新建子代理
+            </Button>
+          ) : undefined}>
           {agents.map((a) => <AgentCard key={a.name} agent={a} />)}
         </CardSection>
       )}
@@ -64,18 +155,27 @@ function PluginDetail({ id }: { id: string }) {
 
 export function PluginsTab() {
   const catalog = useCatalog();
-  const { route, go } = useNav();
+  const { route, go, replace, back } = useNav();
   const { plugins, loaded, error } = catalog;
   if (error) return <ErrorBox message={error} />;
+  if (route.id === NEW_ID) return <PluginEditor onDone={(id) => replace('plugins', id)} onCancel={back} />;
   if (route.id) return <PluginDetail id={route.id} />;
   return (
     <div className="space-y-4">
-      <GroupHeader title="已安装插件" count={plugins.length} actions={<RefreshButton />} />
+      <GroupHeader title="已安装插件" count={plugins.length} actions={
+        <div className="flex items-center gap-1">
+          <Button type="button" size="sm" variant="outline" onClick={() => go('plugins', NEW_ID)}>
+            <PlusIcon className="size-3.5" />新建插件
+          </Button>
+          <RefreshButton />
+        </div>
+      } />
+      <LoadErrors errors={errorsFor(catalog, ['plugin'])} />
       {!loaded ? <Loading /> : plugins.length === 0 ? (
         <EmptyHint
           icon={<PuzzleIcon className="size-8" />}
           title="还没有插件"
-          desc="把能力包放进应用目录 plugins/<id>/（plugin.json 清单，规范见 plugins/README.md），再在模式的 plugins 里引用。"
+          desc="点「新建插件」组合工具集 / 规范 / MCP / 子代理，再在模式里引用。"
         />
       ) : (
         <ResourceList>
@@ -90,6 +190,7 @@ export function PluginsTab() {
                 onClick={() => go('plugins', p.id)}
                 right={
                   <>
+                    {p.origin === 'user' && <OriginChip origin="user" />}
                     {p.usedBy.length === 0 && <Chip>未引用</Chip>}
                     {(p.toolsets?.length ?? 0) > 0 && <Chip>工具集 ×{p.toolsets!.length}</Chip>}
                     {p.rules && <Chip>规范</Chip>}

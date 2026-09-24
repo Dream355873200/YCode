@@ -25,7 +25,7 @@ export const tabLabel = (t: Tab): string => TABS.find((x) => x.id === t)?.label 
 
 /** 路由：分区 + 可选详情 id（无 id = 分区清单页）。
  *  详情 id 约定：工具集 `base` = 基础工具；提示词 `@builtin` = 内置提示词、
- *  `rule:<pluginId>` = 插件的领域规范；技能用 key（见 skillKey）。 */
+ *  `rule:<pluginId>` = 插件的领域规范；技能用 key（见 skillKey）；`@new` = 新建页。 */
 export interface Route {
   tab: Tab;
   id?: string;
@@ -37,6 +37,8 @@ export interface Nav {
   prev: Route | null;
   go(tab: Tab, id?: string): void;
   back(): void;
+  /** 替换栈顶（新建保存后从「新建」页换到新项详情，返回不回到表单）。 */
+  replace(tab: Tab, id?: string): void;
 }
 
 export const NavContext = createContext<Nav | null>(null);
@@ -48,5 +50,7 @@ export function useNav(): Nav {
 }
 
 export const BUILTIN_PROMPT_ID = '@builtin';
+/** 各分区的「新建」页路由 id。 */
+export const NEW_ID = '@new';
 export const BASE_TOOLSET_ID = 'base';
 export const ruleId = (pluginId: string): string => `rule:${pluginId}`;

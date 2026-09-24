@@ -2,15 +2,16 @@
 //
 // 引擎进程内只有一份工具注册表，模式是会话级的：
 //
-//   - 工具：被任一模式引用的工具集装一次；会话工具过滤器按「工具名 →
+//   - 工具：全部工具集启动时装一次；会话工具过滤器按「工具名 →
 //     所属工具集 / 所属插件」判断该会话的模式是否启用，未归属的 base 工具恒可见。
 //     插件子代理（Agent_<name>）与插件 MCP 工具（mcp__<server>__<tool>）归属插件
 //   - 提示词：会话级提示词组目录（模式 prompts；空 = 内置通用 Agent 提示词）
 //   - 规范：会话级项目上下文（模式插件的 rules + 工具集附带的动态上下文）
-//   - 技能：每个模式一份注册表（插件技能 > 全局 skills/），Skill 工具按会话取用；
-//     项目 .yume/commands/ 由 Skill 工具按会话工作目录现场读取，优先级最高
+//   - 技能：每个模式一份注册表（插件技能 > 用户 skills/ > 内置 skills/），Skill
+//     工具按会话取用；项目 .yume/commands/ 由 Skill 工具按会话工作目录现场读取，优先级最高
 //
-// 清单（mode.json / plugin.json / agents/*.md）在启动时严格校验、加载后不变；
+// 清单（mode.json / plugin.json / agents/*.md）逐项校验：坏项跳过并记入
+// Errors，不拖垮其他项。POST /reload 重建目录后原子替换（见 reload.go）；
 // 技能文件每 30s 重扫（新增/删除会话中途生效）。
 package main
 
@@ -18,95 +19,174 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Dream355873200/GoAgent/skill"
 )
 
-// Catalog 已加载并校验的全部模式与插件。
+// LoadError 目录加载中的单项错误（坏项被跳过，其余照常可用）。
+type LoadError struct {
+	Kind string `json:"kind"`           // mode | plugin | agent | mcp
+	ID   string `json:"id,omitempty"`   // 出错项 id（目录不可读等整体错误为空）
+	File string `json:"file,omitempty"` // 出错清单 / 目录路径
+	Err  string `json:"error"`
+}
+
+// Catalog 已加载并校验的全部模式与插件（加载后不可变，reload 整体替换）。
 type Catalog struct {
 	Modes       []*Mode
 	Plugins     []*Plugin
-	DefaultMode string // 未绑定模式的会话使用（--mode）
+	DefaultMode string      // 未绑定模式的会话使用（--mode；不可用时回退首个可用模式）
+	Errors      []LoadError // 被跳过的坏项
 
-	modeByID  map[string]*Mode
-	toolOwner map[string]string // 工具名 → 所属工具集（静态，启动时建好）
-
-	ownerMu     sync.RWMutex
-	pluginOwner map[string]string // 工具名 → 所属插件（子代理启动时登记；MCP 工具连上后登记）
+	modeByID map[string]*Mode
 }
 
-// catalog 进程级能力目录（main 启动时装配；路由与会话解析器读它）。
-var catalog *Catalog
+var catalogPtr atomic.Pointer[Catalog]
 
-// LoadCatalog 加载全部插件与模式并逐一解析校验。任一清单不合规、
-// 引用悬空或默认模式不存在都返回错误（拒绝带病启动）。
-func LoadCatalog(defaultMode string) (*Catalog, error) {
-	plugins, err := LoadPlugins()
-	if err != nil {
-		return nil, err
+// catalog 当前能力目录快照（调用方在一次处理内复用同一快照，
+// 避免 reload 替换时前后读到两份目录）。
+func catalog() *Catalog { return catalogPtr.Load() }
+
+func setCatalog(c *Catalog) { catalogPtr.Store(c) }
+
+// toolsetOwner 工具名 → 所属工具集（由注册表静态派生）。
+var toolsetOwner = func() map[string]string {
+	m := map[string]string{}
+	for ts, inst := range toolsetRegistry {
+		for _, t := range inst.tools {
+			if prev, dup := m[t]; dup {
+				panic(fmt.Sprintf("工具 %q 同时归属工具集 %s 与 %s", t, prev, ts))
+			}
+			m[t] = ts
+		}
 	}
+	return m
+}()
+
+// pluginToolTable 进程级插件工具归属表（跨 reload 存活——工具注册表也是进程级的）。
+//
+//	owner  工具名 → 所属插件（子代理装配 / MCP 工具连上时登记）
+//	hidden 已下线的插件工具：goagent 注册表不支持删除，下线 = 对全部会话隐藏
+type pluginToolTable struct {
+	mu     sync.RWMutex
+	owner  map[string]string
+	hidden map[string]bool
+}
+
+var pluginTools = &pluginToolTable{owner: map[string]string{}, hidden: map[string]bool{}}
+
+// claim 登记工具归属并解除隐藏。须在工具注册进 app 之前调用，否则注册
+// 与登记之间的窗口里它会被当成 base 工具对所有会话可见。
+func (t *pluginToolTable) claim(tool, pluginID string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.owner[tool] = pluginID
+	delete(t.hidden, tool)
+}
+
+// hide 下线工具（对全部会话不可见，直到再次 claim）。
+func (t *pluginToolTable) hide(tool string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.hidden[tool] = true
+}
+
+// lookup 工具归属；hidden = 已下线。
+func (t *pluginToolTable) lookup(tool string) (pluginID string, owned, hidden bool) {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	pid, ok := t.owner[tool]
+	return pid, ok, t.hidden[tool]
+}
+
+// LoadCatalog 加载全部插件与模式并逐项解析校验。坏插件、坏模式、引用
+// 坏/缺插件的模式、命名冲突的后来者都跳过并记入 Errors；默认模式不可用时
+// 回退到首个可用模式。只有一个可用模式都没有时返回错误。
+func LoadCatalog(defaultMode string) (*Catalog, error) {
+	plugins, errs := LoadPlugins()
+
+	// 插件级命名空间：MCP 服务器名、子代理名全局唯一（二者都进工具名）；
+	// 冲突时按 id 序后来者的该项被剔除
+	agentOwner := map[string]string{}
+	mcpOwner := map[string]string{}
+	for _, p := range plugins {
+		var servers []MCPServer
+		for _, s := range p.MCPServers {
+			if prev, dup := mcpOwner[s.Name]; dup {
+				errs = append(errs, LoadError{Kind: "mcp", ID: s.Name, File: p.Dir,
+					Err: fmt.Sprintf("MCP 服务器名 %q 同时出现在插件 %s 与 %s（后者已忽略）", s.Name, prev, p.ID)})
+				continue
+			}
+			mcpOwner[s.Name] = p.ID
+			servers = append(servers, s)
+		}
+		p.MCPServers = servers
+		defs := []*AgentDef{}
+		for _, d := range p.AgentDefs {
+			tool := d.ToolName()
+			if prev, dup := agentOwner[tool]; dup {
+				errs = append(errs, LoadError{Kind: "agent", ID: d.Name, File: d.File,
+					Err: fmt.Sprintf("子代理 %q 同时出现在插件 %s 与 %s（后者已忽略）", d.Name, prev, p.ID)})
+				continue
+			}
+			if ts, clash := toolsetOwner[tool]; clash {
+				errs = append(errs, LoadError{Kind: "agent", ID: d.Name, File: d.File,
+					Err: fmt.Sprintf("子代理工具名 %s（插件 %s）与工具集 %s 的工具重名", tool, p.ID, ts)})
+				continue
+			}
+			agentOwner[tool] = p.ID
+			defs = append(defs, d)
+		}
+		p.AgentDefs = defs
+	}
+
 	pluginByID := map[string]*Plugin{}
 	for _, p := range plugins {
 		pluginByID[p.ID] = p
 	}
-	modes, err := loadModes()
-	if err != nil {
-		return nil, err
-	}
-	c := &Catalog{Modes: modes, Plugins: plugins, DefaultMode: defaultMode, modeByID: map[string]*Mode{}}
-	if c.Plugins == nil {
-		c.Plugins = []*Plugin{}
-	}
+	modes, modeErrs := loadModes()
+	errs = append(errs, modeErrs...)
+	c := &Catalog{Plugins: plugins, DefaultMode: defaultMode, Modes: []*Mode{}, modeByID: map[string]*Mode{}}
 	for _, m := range modes {
 		v, err := resolveMode(m, pluginByID)
 		if err != nil {
-			return nil, err
+			errs = append(errs, LoadError{Kind: "mode", ID: m.ID, File: m.Dir, Err: err.Error()})
+			continue
 		}
 		m.Resolved = v
+		c.Modes = append(c.Modes, m)
 		c.modeByID[m.ID] = m
 	}
+	if len(c.Modes) == 0 {
+		return nil, fmt.Errorf("没有可用的模式（%d 个错误: %v）", len(errs), errs)
+	}
 	if c.modeByID[defaultMode] == nil {
-		ids := make([]string, 0, len(modes))
-		for _, m := range modes {
-			ids = append(ids, m.ID)
-		}
-		return nil, fmt.Errorf("默认模式 %q 不存在（可用: %v）", defaultMode, ids)
+		c.DefaultMode = c.Modes[0].ID
+		errs = append(errs, LoadError{Kind: "mode", ID: defaultMode,
+			Err: fmt.Sprintf("默认模式 %q 不可用，已回退到 %s", defaultMode, c.DefaultMode)})
 	}
-	c.toolOwner = map[string]string{}
-	for ts, inst := range toolsetRegistry {
-		for _, t := range inst.tools {
-			if prev, dup := c.toolOwner[t]; dup {
-				return nil, fmt.Errorf("工具 %q 同时归属工具集 %s 与 %s", t, prev, ts)
-			}
-			c.toolOwner[t] = ts
-		}
-	}
-	// 插件级命名空间：MCP 服务器名、子代理名全局唯一（二者都进工具名）
-	c.pluginOwner = map[string]string{}
-	mcpOwner := map[string]string{}
-	for _, p := range plugins {
-		for _, s := range p.MCPServers {
-			if prev, dup := mcpOwner[s.Name]; dup {
-				return nil, fmt.Errorf("MCP 服务器名 %q 同时出现在插件 %s 与 %s", s.Name, prev, p.ID)
-			}
-			mcpOwner[s.Name] = p.ID
-		}
-		for _, d := range p.AgentDefs {
-			tool := d.ToolName()
-			if prev, dup := c.pluginOwner[tool]; dup {
-				return nil, fmt.Errorf("子代理 %q 同时出现在插件 %s 与 %s", d.Name, prev, p.ID)
-			}
-			if ts, clash := c.toolOwner[tool]; clash {
-				return nil, fmt.Errorf("子代理工具名 %s（插件 %s）与工具集 %s 的工具重名", tool, p.ID, ts)
-			}
-			c.pluginOwner[tool] = p.ID
-		}
+	c.Errors = errs
+	if c.Errors == nil {
+		c.Errors = []LoadError{}
 	}
 	return c, nil
+}
+
+// errorsOf 指定类别的加载错误（/modes /plugins 附带展示）。
+func (c *Catalog) errorsOf(kinds ...string) []LoadError {
+	out := []LoadError{}
+	for _, e := range c.Errors {
+		if contains(kinds, e.Kind) {
+			out = append(out, e)
+		}
+	}
+	return out
 }
 
 // Mode 按 id 取模式（不存在返回 nil）。
@@ -135,57 +215,27 @@ func (c *Catalog) PluginUsedBy(pluginID string) []string {
 	return used
 }
 
-// setPluginOwner 登记工具归属插件（MCP 工具须在注册进 app 之前登记，
-// 否则注册与登记之间的窗口里它会被当成 base 工具对所有会话可见）。
-func (c *Catalog) setPluginOwner(tool, pluginID string) {
-	c.ownerMu.Lock()
-	defer c.ownerMu.Unlock()
-	c.pluginOwner[tool] = pluginID
-}
-
-func (c *Catalog) pluginOf(tool string) (string, bool) {
-	c.ownerMu.RLock()
-	defer c.ownerMu.RUnlock()
-	pid, ok := c.pluginOwner[tool]
-	return pid, ok
-}
-
-// Toolsets 被至少一个模式引用的工具集（去重、排序——装配顺序确定）。
-func (c *Catalog) Toolsets() []string {
-	seen := map[string]bool{}
-	var out []string
-	for _, m := range c.Modes {
-		for _, ts := range m.Resolved.Toolsets {
-			if !seen[ts] {
-				seen[ts] = true
-				out = append(out, ts)
-			}
-		}
-	}
-	sort.Strings(out)
-	return out
-}
-
 // sessionMode 会话当前模式：session-map 绑定的模式，未绑定或已不存在
 // 时回落默认模式（永不返回 nil）。
 func sessionMode(sessionID string) *Mode {
+	c := catalog()
 	if id := sessMap.modeOf(sessionID); id != "" {
-		if m := catalog.Mode(id); m != nil {
+		if m := c.Mode(id); m != nil {
 			return m
 		}
 	}
-	return catalog.Mode(catalog.DefaultMode)
+	return c.Mode(c.DefaultMode)
 }
 
 // sessionToolVisible 会话工具过滤器：归属某工具集的工具只对启用了该
 // 工具集的模式可见；归属某插件的工具（子代理 / MCP）只对引用了该插件的
-// 模式可见；base 工具恒可见。
+// 模式可见，已下线的对谁都不可见；base 工具恒可见。
 func sessionToolVisible(sessionID, toolName string) bool {
-	if ts, owned := catalog.toolOwner[toolName]; owned {
+	if ts, owned := toolsetOwner[toolName]; owned {
 		return sessionMode(sessionID).HasToolset(ts)
 	}
-	if pid, owned := catalog.pluginOf(toolName); owned {
-		return sessionMode(sessionID).HasPlugin(pid)
+	if pid, owned, hidden := pluginTools.lookup(toolName); owned {
+		return !hidden && sessionMode(sessionID).HasPlugin(pid)
 	}
 	return true
 }
@@ -198,6 +248,19 @@ func sessionPromptDir(sessionID string) string {
 // sessionContextFiles 会话项目上下文（插件规范 + 工具集动态上下文）。
 func sessionContextFiles(sessionID string) []string {
 	return sessionMode(sessionID).Resolved.contextFiles
+}
+
+// userSkillsDir 用户全局技能目录（设置页新建技能写这里；空 = 无用户根）。
+func userSkillsDir() string {
+	if u := userRoot(); u != "" {
+		return filepath.Join(u, "skills")
+	}
+	return ""
+}
+
+// globalSkillDirs 对全部模式生效的技能目录（用户 > 内置）。
+func globalSkillDirs() []string {
+	return []string{userSkillsDir(), globalSkillsDir}
 }
 
 // ---- 技能 ----
@@ -220,11 +283,12 @@ func (sc *skillCatalog) forSession(sessionID string) *skill.Registry {
 
 // rebuild 按当前技能文件重建全部模式的注册表。
 func (sc *skillCatalog) rebuild() {
-	next := make(map[string]*skill.Registry, len(catalog.Modes))
-	for _, m := range catalog.Modes {
+	c := catalog()
+	next := make(map[string]*skill.Registry, len(c.Modes))
+	for _, m := range c.Modes {
 		reg := skill.NewRegistry("", "")
-		// 优先级：插件（按模式引用顺序）> 全局——先注册者占位
-		for _, dir := range append(append([]string{}, m.Resolved.SkillDirs...), globalSkillsDir) {
+		// 优先级：插件（按模式引用顺序）> 用户全局 > 内置全局——先注册者占位
+		for _, dir := range append(append([]string{}, m.Resolved.SkillDirs...), globalSkillDirs()...) {
 			for _, s := range scanSkillDir(dir) {
 				if reg.Get(s.Name) == nil {
 					reg.Register(s)
@@ -279,7 +343,7 @@ func skillsRoutes() map[string]func(http.ResponseWriter, *http.Request) {
 				Name        string `json:"name"`
 				Description string `json:"description,omitempty"`
 				WhenToUse   string `json:"whenToUse,omitempty"`
-				Origin      string `json:"origin"`           // plugin | global
+				Origin      string `json:"origin"`           // plugin | user | global
 				Plugin      string `json:"plugin,omitempty"` // origin=plugin 时的插件 id
 				FilePath    string `json:"filePath,omitempty"`
 			}
@@ -292,9 +356,10 @@ func skillsRoutes() map[string]func(http.ResponseWriter, *http.Request) {
 					})
 				}
 			}
-			for _, p := range catalog.Plugins {
+			for _, p := range catalog().Plugins {
 				add("plugin", p.ID, p.SkillsPath())
 			}
+			add("user", "", userSkillsDir())
 			add("global", "", globalSkillsDir)
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]any{"skills": items})
