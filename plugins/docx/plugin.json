@@ -1,0 +1,8 @@
+{
+  "id": "docx",
+  "name": "Word 文档",
+  "description": "创建、编辑与审阅 Word 文档（DOCX）：docx-js / python-docx 制作、修订与批注处理、OOXML 级编辑、格式转换（doc→docx→PDF→图片）与视觉验收",
+  "rules": "rules.md",
+  "skills": "skills",
+  "agents": "agents"
+}

@@ -1,0 +1,10 @@
+{
+  "id": "computer-use",
+  "name": "电脑控制",
+  "description": "自动化桌面应用：驱动鼠标、键盘与界面元素，代你完成实际任务（Windows UIA 语义树 + 截图 + SendInput，MCP 工具 mcp__computer__*）",
+  "rules": "rules.md",
+  "skills": "skills",
+  "mcpServers": [
+    { "name": "computer", "command": "node", "args": ["${PLUGIN_DIR}/mcp/server.js"] }
+  ]
+}

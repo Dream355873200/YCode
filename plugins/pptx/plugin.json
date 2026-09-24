@@ -1,0 +1,8 @@
+{
+  "id": "pptx",
+  "name": "演示文档",
+  "description": "创建、编辑与审阅演示文档（PPTX）：pptxgenjs / python-pptx 制作、版式设计与母版、读取与结构提取、转 PDF / 渲染成图与视觉验收",
+  "rules": "rules.md",
+  "skills": "skills",
+  "agents": "agents"
+}

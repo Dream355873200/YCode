@@ -4,6 +4,10 @@ go 1.25.5
 
 require github.com/Dream355873200/GoAgent v0.0.0-20260924063101-d604571845eb
 
+// 开发期替换：引擎用到 SessionSystemPrompt 等尚未提交/发布的库能力。
+// 库的改动提交发布后，删除本行并 go get github.com/Dream355873200/GoAgent@latest。
+replace github.com/Dream355873200/GoAgent => ../../claude-code-rev-study-main/claude-code-rev-study-main/goagent
+
 require (
 	github.com/anthropics/anthropic-sdk-go v1.4.0 // indirect
 	github.com/atotto/clipboard v0.1.4 // indirect

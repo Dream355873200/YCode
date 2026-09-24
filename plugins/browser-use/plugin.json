@@ -1,0 +1,11 @@
+{
+  "id": "browser-use",
+  "name": "浏览器操作",
+  "description": "操作 YCode 内置浏览器（右栏可见）：打开/导航/快照引用/点击/输入/截图/console 验证，多实例并行，检查网页与验证交互",
+  "rules": "rules.md",
+  "skills": "skills",
+  "sidePanels": [{ "id": "browser", "label": "浏览器" }],
+  "mcpServers": [
+    { "name": "browser", "command": "node", "args": ["${PLUGIN_DIR}/mcp/server.js"] }
+  ]
+}

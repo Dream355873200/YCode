@@ -14,6 +14,7 @@ import { PlanPanel } from './PlanPanel';
 import SpecPanel from './SpecPanel';
 import TestReportPanel from './TestReportPanel';
 import DevicePanel from './DevicePanel';
+import BrowserPanel from './BrowserPanel';
 
 interface PaneTab { id: string; label: string; icon?: typeof GitBranchIcon }
 
@@ -30,6 +31,7 @@ const MODE_PANELS: Record<string, ComponentType> = {
   spec: SpecPanel,
   'test-report': TestReportPanel,
   device: DevicePanel,
+  browser: BrowserPanel,
 };
 
 export function SidePane({ open }: { open: boolean }) {

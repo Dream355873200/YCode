@@ -128,7 +128,7 @@ function migrateLegacySession(map, sessionId, projectDir) {
   delete map[legacy];
 }
 
-async function ensure(cfg) {
+async function ensure(cfg, extraEnv = {}) {
   // 引擎是单例常驻进程：多项目并行靠 session→项目映射（session-map.json），
   // 不再按项目重启。已在跑（含用户手动先启动的）直接复用。
   try {
@@ -147,6 +147,7 @@ async function ensure(cfg) {
   setStatus('starting');
   const env = {
     ...process.env,
+    ...extraEnv, // 壳侧子系统注入（浏览器控制端点端口/token 等）
     FLAI_MODEL: cfg.engine.model,
     FLAI_BASE_URL: cfg.engine.baseUrl,
     FLAI_API_KEY: cfg.engine.apiKey,

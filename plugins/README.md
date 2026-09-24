@@ -191,3 +191,10 @@ MCP 工具的权限级别为普通工具（按权限模式走审批）。
 | `flutter-dev` | `flutter` 工具集 + SPEC 驱动开发规范 + 界面风格 / 导航 / 本地数据等技能 + SPEC 面板 |
 | `android-device` | `device` / `test-report` 工具集 + 分层测试技能 + 「手机」「测试报告」面板 |
 | `vision` | `vision` 工具集 |
+| `docx` | Word 文档技能包（创建/编辑/审阅/转换）+ 视觉验收子代理 `Agent_visual-judge` |
+| `xlsx` | 电子表格技能包（场景驱动 openpyxl 工作台）+ `Agent_visual-judge` |
+| `pptx` | 演示文档技能包（设计实践 + 制作/渲染管线）+ `Agent_visual-judge` |
+| `pdf` | PDF 四条生产线技能包（报告/创意/LaTeX/处理）+ `Agent_visual-judge` |
+| `github` | GitHub 工作流技能包（commit/pr/issue/repo/release/gist/codespace/actions/secret/setup） |
+| `browser-use` | MCP `browser`（内置浏览器操作：快照引用/点击/输入/截图/console）+ 右栏「浏览器」面板 |
+| `computer-use` | MCP `computer`（桌面自动化：UIA 元素树/截图/鼠标键盘，平台后端契约见插件 README） |

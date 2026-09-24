@@ -96,6 +96,19 @@ contextBridge.exposeInMainWorld('amc', {
     },
     writeMirror: (id, chunk) => ipcRenderer.send('mirror:write', id, chunk),
   },
+  // 内置浏览器（右栏面板）：实例列表/激活/开关 + 浏览区矩形上报 + 变更推送
+  browser: {
+    list: () => ipcRenderer.invoke('browser:list'),
+    open: (url) => ipcRenderer.invoke('browser:open', url),
+    activate: (id) => ipcRenderer.invoke('browser:activate', id),
+    close: (id) => ipcRenderer.invoke('browser:close', id),
+    setRect: (rect) => ipcRenderer.invoke('browser:rect', rect),
+    onChanged: (cb) => {
+      const h = (_e, x) => cb(x);
+      ipcRenderer.on('browser:changed', h);
+      return () => ipcRenderer.removeListener('browser:changed', h);
+    },
+  },
   // flutter run 部署 + Hot Reload
   flutter: {
     start: (payload) => ipcRenderer.invoke('flutter:start', payload),

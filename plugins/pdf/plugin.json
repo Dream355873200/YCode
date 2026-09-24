@@ -1,0 +1,8 @@
+{
+  "id": "pdf",
+  "name": "PDF",
+  "description": "创建、编辑与审阅 PDF：报告 / 创意海报 / 学术 LaTeX / 既有 PDF 处理四条生产线，Office→PDF、HTML→PDF 转换，合并拆分、抽取文本表格与表单填写",
+  "rules": "rules.md",
+  "skills": "skills",
+  "agents": "agents"
+}

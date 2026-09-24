@@ -1,0 +1,7 @@
+{
+  "id": "github",
+  "name": "GitHub",
+  "description": "GitHub 工作流技能包：提交、PR、Issue、仓库、Release、Gist、Codespace、Actions、密钥同步——全部基于 gh CLI",
+  "rules": "rules.md",
+  "skills": "skills"
+}

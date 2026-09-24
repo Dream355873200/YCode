@@ -1,0 +1,8 @@
+{
+  "id": "xlsx",
+  "name": "电子表格",
+  "description": "创建、编辑与审阅电子表格（XLSX/CSV）：场景驱动的 openpyxl 工作台、公式与图表、VBA、数据分析与格式转换、财务建模与视觉验收",
+  "rules": "rules.md",
+  "skills": "skills",
+  "agents": "agents"
+}

@@ -11,6 +11,7 @@ const devices = require('./lib/devices');
 const flutter = require('./lib/flutter');
 const { scaffolds } = require('./lib/scaffolds');
 const assets = require('./lib/assets');
+const browserctl = require('./lib/browserctl');
 
 let win = null;
 
@@ -59,7 +60,8 @@ ipcMain.handle('engine:post', (_e, apiPath, body) => engine.httpJSON('POST', eng
 ipcMain.handle('engine:chat', (_e, payload) => engine.streamChat(payload).then(() => ({ ok: true })).catch((err) => ({ ok: false, error: String(err) })));
 ipcMain.handle('engine:restart', async () => {
   engine.kill();
-  return engine.ensure(loadConfig());
+  // 重启同样注入浏览器控制端点（端口/token 不变，browserctl 随壳进程存活）
+  return engine.ensure(loadConfig(), browserctl.env());
 });
 ipcMain.handle('engine:status', () => ({ status: engine.state.status, addr: engine.state.addr }));
 // 模型列表：OpenAI 兼容端点的 GET {baseUrl}/models（composer 模型选择器数据源）。
@@ -225,9 +227,11 @@ ipcMain.handle('flutter:status', (_e, dir) => flutter.status(dir));
 app.whenReady().then(async () => {
   createWindow();
   devices.startPolling();
+  // 浏览器控制端点先起（引擎经环境变量拿到端口与 token，browser-use 插件的 MCP 工具用它）
+  const browserEnv = await browserctl.start({ win: () => win });
   const cfg = loadConfig();
   if (cfg.engine.autoStart) {
-    await engine.ensure(cfg);
+    await engine.ensure(cfg, browserEnv);
   } else {
     engine.state.status = 'stopped';
   }
@@ -237,10 +241,12 @@ app.on('window-all-closed', () => {
   engine.kill();
   devices.killAll();
   flutter.killAll();
+  browserctl.stop();
   app.quit();
 });
 app.on('before-quit', () => {
   engine.kill();
   devices.killAll();
   flutter.killAll();
+  browserctl.stop();
 });
