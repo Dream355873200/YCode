@@ -159,7 +159,12 @@ async function handle(msg) {
         }
         return { id, result: textResult(typeof r === "string" ? r : JSON.stringify(r, null, 2)) };
       } catch (e) {
-        return { id, result: textResult(String(e.message || e), true) };
+        const msg = String(e.message || e);
+        // 失败 ≠ 终止：错误文本自带持久化指令，模型读到就不会提前收尾
+        const guidance = /不在最近一次快照|没有打开的浏览器实例|不存在|超时|Invalid/.test(msg)
+          ? "\n\n（可恢复失败：这不是终止信号。按提示重新 browser_snapshot / browser_new 后立即重试；同一动作连续失败两次才考虑换方案，且不要结束回合。）"
+          : "";
+        return { id, result: textResult(msg + guidance, true) };
       }
     }
     if (method === "ping") return { id, result: {} };

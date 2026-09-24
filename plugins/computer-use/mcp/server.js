@@ -365,7 +365,12 @@ async function handle(msg) {
         if (r && r.__text !== undefined) return { id, result: textResult(r.__text) };
         return { id, result: textResult(typeof r === "string" ? r : JSON.stringify(r, null, 2)) };
       } catch (e) {
-        return { id, result: textResult(String(e.message || e), true) };
+        const msg = String(e.message || e);
+        // 失败 ≠ 终止：错误文本自带持久化指令，模型读到就不会提前收尾
+        const guidance = /\(STALE_STATE\)|已不存在|Invalid parameters|超时/.test(msg)
+          ? "\n\n（可恢复失败：这不是终止信号。读取原因 → 重新 get_app_state 观察最新状态 → 修正后立即重试或换一条路径；同一动作连续失败两次才考虑换方案，且不要结束回合。）"
+          : "";
+        return { id, result: textResult(msg + guidance, true) };
       }
     }
     if (method === "ping") return { id, result: {} };
