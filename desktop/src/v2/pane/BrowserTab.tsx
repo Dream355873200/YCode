@@ -3,7 +3,7 @@
 // 挂载即激活该实例（主进程把 WebContentsView 盖到浏览区矩形上），卸载/切走
 // 时上报空矩形隐藏。「选取元素」注入拾取脚本，点中的元素以引用文本加入对话。
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowLeftIcon, ArrowRightIcon, CrosshairIcon, RotateCwIcon, SquareTerminalIcon } from 'lucide-react';
+import { ArrowLeftIcon, ArrowRightIcon, CrosshairIcon, RotateCwIcon, SquareTerminalIcon, ZoomInIcon, ZoomOutIcon } from 'lucide-react';
 import { useApp } from '../app/appState';
 import { Button } from '../components/ui/button';
 import { cn } from '../components/lib/utils';
@@ -93,6 +93,22 @@ export default function BrowserTab({ inst }: { inst: BrowserInst }) {
           onChange={(e) => setUrlInput(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') navigate(urlInput); }}
         />
+        <Button variant="ghost" size="icon-sm" aria-label="缩小虚拟宽度" title="缩小页面虚拟宽度（显示更多内容）"
+          className="shrink-0 text-foreground-subtle hover:bg-hover hover:text-foreground"
+          onClick={() => amc?.browser?.viewport?.(inst.id, true, Math.max(640, Math.round((inst.vw || 1280) * 0.8)))}>
+          <ZoomOutIcon />
+        </Button>
+        <button type="button" title="适应宽度：按桌面版式渲染并缩放进面板"
+          className={cn('h-6 shrink-0 rounded-md px-1.5 text-ui-2xs',
+            inst.fit ? 'bg-brand/15 text-brand' : 'text-foreground-subtle hover:bg-hover hover:text-foreground')}
+          onClick={() => amc?.browser?.viewport?.(inst.id, !inst.fit, inst.vw || 1280)}>
+          {inst.fit ? `${inst.vw || 1280}` : '1:1'}
+        </button>
+        <Button variant="ghost" size="icon-sm" aria-label="放大虚拟宽度" title="放大页面虚拟宽度（内容更大）"
+          className="shrink-0 text-foreground-subtle hover:bg-hover hover:text-foreground"
+          onClick={() => amc?.browser?.viewport?.(inst.id, true, Math.min(2400, Math.round((inst.vw || 1280) * 1.25)))}>
+          <ZoomInIcon />
+        </Button>
         <Button variant="ghost" size="icon-sm" aria-label="选择元素加入对话" title="选择元素加入对话"
           className={cn('shrink-0', picking ? 'bg-brand/20 text-brand' : 'text-foreground-subtle hover:bg-hover hover:text-foreground')}
           onClick={() => togglePick()}>

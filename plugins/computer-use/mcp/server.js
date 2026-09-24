@@ -141,7 +141,7 @@ def("get_app_state", "读取目标应用的 UI 语义元素树（辅助功能树
   },
   required: [],
 }, async (a) => {
-  const r = await ps("state.ps1", { app: a.app_ref || {}, max: a.max_elements || 250 }, 120_000);
+  const r = await ps("state.ps1", { app: a.app_ref || {}, max: a.max_elements || 400 }, 120_000);
   const key = a.app_ref && a.app_ref.hwnd ? `hwnd:${a.app_ref.hwnd}`
     : a.app_ref && a.app_ref.pid ? `pid:${a.app_ref.pid}`
     : `hwnd:${r.hwnd}`;
@@ -152,6 +152,7 @@ def("get_app_state", "读取目标应用的 UI 语义元素树（辅助功能树
     "",
     ...r.elements.map((e) => {
       const bits = [`[${e.i}]`, e.t];
+      if (e.a && e.a.length) bits.push(`(${e.a.join(",")})`);
       if (e.n) bits.push(`"${e.n.length > 80 ? e.n.slice(0, 80) + "…" : e.n}"`);
       if (e.v !== null && e.v !== undefined && e.v !== "") bits.push(`值=${e.v.length > 60 ? e.v.slice(0, 60) + "…" : e.v}`);
       if (e.off) bits.push("(离屏)");
@@ -250,7 +251,7 @@ def("set_value", "用辅助功能 ValuePattern 直接设置可设置元素的值
   required: ["target", "value"],
 }, async (a) => {
   const { state, el } = resolveTarget(undefined, a.target);
-  const r = await ps("value.ps1", { hwnd: state.hwnd, runtime_id: el.rt, expect_i: el.i, value: a.value }, 120_000);
+  const r = await ps("value.ps1", { hwnd: state.hwnd, runtime_id: el.rt, expect_i: el.i, expect: { i: el.i, t: el.t, n: el.n || "" }, value: a.value }, 120_000);
   return { __text: `已设置 [${a.target}] "${el.n || el.t}" = ${a.value}——观察确认结果` };
 });
 

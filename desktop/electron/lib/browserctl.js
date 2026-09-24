@@ -46,6 +46,7 @@ function instSummary(inst) {
     active: inst.id === state.activeId,
     suspended: !inst.view,
     historyIndex: inst.historyIndex, historyLength: inst.history.length,
+    fit: inst.fit, vw: inst.vw,
   };
 }
 
@@ -105,6 +106,7 @@ async function restore(inst) {
   if (url && url !== 'about:blank') {
     try { await inst.view.webContents.loadURL(url); } catch { /* 恢复失败不致命 */ }
   }
+  void applyViewport(inst); // 恢复后重新套用视口适配
 }
 
 // 活实例数超限时挂起最久未用的非激活实例
@@ -124,12 +126,33 @@ function createInstance(url) {
     history: [], historyIndex: -1,
     lastUsed: Date.now(), queue: Promise.resolve(), dbg: null,
     refs: null, // 最近一次快照的 ref → 坐标（点击解析）
+    fit: true, vw: 1280, // 视口适配：按 vw 宽的桌面版式渲染，缩放进面板宽度
   };
   state.instances.set(id, inst);
   // 同步建 view + 装事件（导航由调用方 await，保证返回时页面已就绪）
   inst.view = createView();
   wireEvents(inst);
   return inst;
+}
+
+// 视口适配：把页面按 inst.vw 的桌面宽度布局，等比缩进面板宽度。
+// 右栏窄（~340px），1:1 渲染桌面站点只能看到一条；适配后整页可见。
+async function applyViewport(inst) {
+  if (!inst.view || !inst.fit || !state.panelRect || state.panelRect.width < 50) return;
+  const k = Math.max(0.15, Math.min(1, state.panelRect.width / inst.vw));
+  try {
+    await cdp(inst, 'Emulation.setDeviceMetricsOverride', {
+      width: Math.round(inst.vw),
+      height: Math.max(1, Math.round(state.panelRect.height / k)),
+      deviceScaleFactor: k,
+      mobile: false,
+    });
+  } catch { /* 视口覆盖失败不致命 */ }
+}
+
+async function clearViewport(inst) {
+  if (!inst.view) return;
+  try { await cdp(inst, 'Emulation.clearDeviceMetricsOverride'); } catch { /* */ }
 }
 
 function wireEvents(inst) {
@@ -452,6 +475,20 @@ function getInst(id) {
   return inst;
 }
 
+// 设置视口适配（fit + 虚拟宽度），返回实例摘要
+function setViewport(id, fit, vw) {
+  const inst = getInst(id);
+  if (fit !== undefined) inst.fit = !!fit;
+  if (vw) inst.vw = Math.min(2400, Math.max(640, Math.round(vw)));
+  emitChanged();
+  if (inst.fit) {
+    void applyViewport(inst);
+  } else {
+    void clearViewport(inst);
+  }
+  return instSummary(inst);
+}
+
 async function activate(id) {
   const inst = state.instances.get(id);
   if (!inst) throw new Error(`实例 ${id} 不存在`);
@@ -499,6 +536,7 @@ const routes = {
     return { closed: inst.id };
   },
   'POST /browser/activate': (b) => activate(getInst(b.browser).id),
+  'POST /browser/viewport': async (b) => setViewport(getInst(b.browser).id, b.fit, b.vw),
   'POST /browser/navigate': async (b) => {
     if (!b.url) throw new Error('缺少 url');
     return navigate(getInst(b.browser), b.url);
@@ -646,9 +684,12 @@ function registerIpc() {
     if (inst && inst.view && win && !win.isDestroyed()) {
       if (!win.contentView.children?.includes(inst.view)) win.contentView.addChildView(inst.view);
       inst.view.setBounds(rect);
+      void applyViewport(inst); // 视口适配跟随面板尺寸（拖拽调宽实时缩放）
     }
     return true;
   });
+  // 视口适配设置：fit=按虚拟宽度缩放展示；vw=虚拟桌面宽度（px）
+  ipcMain.handle('browser:viewport', (_e, id, fit, vw) => setViewport(id, fit, vw));
   // 实例内导航（tab 地址栏回车）
   ipcMain.handle('browser:navigate', (_e, id, url) => routes['POST /browser/navigate']({ browser: id, url }));
   // DevTools（独立窗口）

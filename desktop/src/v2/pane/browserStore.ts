@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 export interface BrowserInst {
   id: string; url: string; title: string;
   active: boolean; suspended: boolean;
+  fit?: boolean; vw?: number;
 }
 
 let insts: BrowserInst[] = [];

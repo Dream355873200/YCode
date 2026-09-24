@@ -21,7 +21,14 @@ try {
     $cur = $stack.Pop()
     if ($idx -eq [int]$in.expect_i) {
       $rt = ($cur.GetRuntimeId() | ForEach-Object { $_ }) -join ','
-      if ($rt -ne $in.runtime_id) { throw "STALE_STATE: 元素已变化——重新 get_app_state" }
+      if ($rt -ne $in.runtime_id) {
+        # 易变 UI（浏览器地址栏等）：runtimeId 变了，但同序同类型同名视为同一元素
+        $ctype = ''
+        try { $ctype = $cur.Current.ControlType.ProgrammaticName -replace '^ControlType\.', '' } catch {}
+        if ($ctype -ne $in.expect.t -or ($cur.Current.Name -or '') -ne $in.expect.n) {
+          throw "STALE_STATE: 元素已变化——重新 get_app_state"
+        }
+      }
       $el = $cur; break
     }
     $idx++

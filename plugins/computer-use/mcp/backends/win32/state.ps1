@@ -65,6 +65,14 @@ try {
     $name = $c.Name; if ($name) { $name = $name.Trim() }
     $val = $null
     try { if ($el.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern)) { $val = $el.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern).Current.Value } } catch {}
+    # 能力标注（ZCode 式 actions）：模型据此选择 left_click / set_value / 展开 / 勾选
+    $acts = @()
+    try { if ($el.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)) { $acts += 'press' } } catch {}
+    try { if ($el.GetCurrentPattern([System.Windows.Automation.ExpandCollapsePattern]::Pattern)) { $acts += 'expand' } } catch {}
+    try { if ($el.GetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern)) { $acts += 'toggle' } } catch {}
+    try { if ($el.GetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern)) { $acts += 'select' } } catch {}
+    try { if ($el.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern)) { $acts += 'settable' } } catch {}
+    try { if ($c.HasKeyboardFocus) { $acts += 'focused' } } catch {}
     $b = $c.BoundingRectangle
     $cx = 0; $cy = 0
     if ($b.Width -gt 0 -and $b.Height -gt 0) {
@@ -82,6 +90,7 @@ try {
       i = $idx; t = $tname; n = $name; v = $val; rt = $rt
       b = $bstr
       cx = $cx; cy = $cy; off = [bool]$c.IsOffscreen
+      a = $acts
     })
     if ($elements.Count -ge $max) { $truncated = $true; break }
 
