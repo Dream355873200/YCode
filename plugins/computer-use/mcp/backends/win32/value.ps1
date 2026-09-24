@@ -80,7 +80,8 @@ try {
   }
 
   # ---- 第二遍：序号错位 → 按 (类型,名称) 全树唯一匹配 ----
-  if (-not $el -and $wantT) {
+  # 名称为空时不启用（只按类型匹配太松，可能设错元素），保持 fail-closed
+  if (-not $el -and $wantT -and $wantN) {
     $hits = @()
     foreach ($c in $all) {
       $tn = Get-TypeName $c

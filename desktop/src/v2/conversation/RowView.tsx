@@ -122,9 +122,9 @@ function ToolCard({ row }: { row: Extract<Row, { kind: 'tool' }> }) {
         const m = (row.result || '').match(IMG_MARKER_RE);
         if (!m || row.state === 'running') return null;
         return (
-          <div className="px-3 pb-2">
+          <div className="max-w-full px-3 pb-2">
             <img src={`data:image/jpeg;base64,${m[1]}`} alt="截图"
-              className="max-h-64 cursor-zoom-in rounded-md border border-border object-contain"
+              className="max-h-64 max-w-full cursor-zoom-in rounded-md border border-border object-contain"
               onClick={() => setOpen(true)} />
           </div>
         );

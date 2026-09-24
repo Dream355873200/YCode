@@ -259,11 +259,11 @@ def("set_value", "用辅助功能 ValuePattern 直接设置可设置元素的值
   } catch (e) {
     if (!/STALE_STATE/.test(String(e.message))) throw e;
     const fresh = await refreshStateByHwnd(state.hwnd);
-    const el2 = (fresh.elements || []).find((x) => x.i === el.i);
+    const el2 = relocate(fresh, el);
     if (!el2) throw e;
     call.runtime_id = el2.rt;
     call.expect = { i: el2.i, t: el2.t, n: el2.n || "" };
-    await ps("value.ps1", { hwnd: fresh.hwnd, runtime_id: el2.rt, expect_i: el2.i, value: a.value }, 120_000);
+    await ps("value.ps1", { hwnd: fresh.hwnd, runtime_id: el2.rt, expect_i: el2.i, expect: call.expect, value: a.value }, 120_000);
   }
   return { __text: `已设置 [${a.target}] "${el.n || el.t}" = ${a.value}——观察确认结果` };
 });
@@ -312,7 +312,7 @@ async function act(action, a) {
   } catch (e) {
     if (!/STALE_STATE/.test(String(e.message)) || !payload.runtime_id) throw e;
     const fresh = await refreshStateByHwnd(payload.hwnd);
-    const el = (fresh.elements || []).find((x) => x.i === payload.expect.i);
+    const el = relocate(fresh, payload.expect);
     if (!el) throw e;
     payload.runtime_id = el.rt;
     payload.expect = { i: el.i, t: el.t, n: el.n || "" };
@@ -327,6 +327,22 @@ async function refreshStateByHwnd(hwnd) {
   lastState.set(`hwnd:${hwnd}`, r);
   lastState.set("foreground", r);
   return r;
+}
+
+// STALE 后在最新元素树里重新定位原目标。
+// 只按序号找不安全：易变 UI（浏览器地址栏）重排后同序号可能是别的元素。
+// 规则：名称非空 → 按 (类型,名称) 匹配，多候选取序号最接近的；名称为空 → 退回序号。
+function relocate(fresh, el) {
+  const all = (fresh && fresh.elements) || [];
+  const name = String(el.n || "").trim();
+  if (name) {
+    const hits = all.filter((x) => x.t === el.t && String(x.n || "").trim() === name);
+    if (hits.length === 1) return hits[0];
+    if (hits.length > 1) {
+      return hits.reduce((best, c) => (Math.abs(c.i - el.i) < Math.abs(best.i - el.i) ? c : best), hits[0]);
+    }
+  }
+  return all.find((x) => x.i === el.i) || null;
 }
 
 // ---------- MCP stdio ----------

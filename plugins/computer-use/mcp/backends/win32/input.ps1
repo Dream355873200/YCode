@@ -61,35 +61,75 @@ function Send-Chord([string]$combo) {
   foreach ($m in $mods) { [void][YCodeNative]::Key((Vk $m), $true, $false) }
 }
 
+function Get-TypeName($el) {
+  $t = ''
+  try { $t = $el.Current.ControlType.ProgrammaticName -replace '^ControlType\.', '' } catch {}
+  $n = ''
+  try { $n = $el.Current.Name } catch {}
+  if ($n) { $n = $n.Trim() }
+  return @($t, $n)
+}
+
+function Get-RuntimeId($el) {
+  $rt = ''
+  try { $rt = ($el.GetRuntimeId() | ForEach-Object { $_ }) -join ',' } catch {}
+  return $rt
+}
+
+# 遍历算法必须与 state.ps1 完全一致：逆序压栈的 DFS + 深度上限 20 + 子节点上限 80 +
+# 全量计数，否则 @eN 序号在两侧错位，会误判 STALE 或点错元素。
+function Enumerate-Tree($root) {
+  $walker = [System.Windows.Automation.TreeWalker]::ControlViewWalker
+  $stack = New-Object System.Collections.Stack
+  $depths = New-Object System.Collections.Stack
+  $stack.Push($root); $depths.Push(0)
+  $out = New-Object System.Collections.ArrayList
+  while ($stack.Count -gt 0) {
+    $cur = $stack.Pop(); $depth = $depths.Pop()
+    if ($depth -gt 20) { continue }
+    [void]$out.Add($cur)
+    $child = $walker.GetFirstChild($cur); $kids = @(); $n = 0
+    while ($child -ne $null -and $n -lt 80) { $kids += $child; $child = $walker.GetNextSibling($child); $n++ }
+    for ($k = $kids.Count - 1; $k -ge 0; $k--) { $stack.Push($kids[$k]); $depths.Push($depth + 1) }
+  }
+  return $out
+}
+
 function Resolve-Point([object]$in) {
-  # 带元素目标：按 runtimeId 在 hwnd 窗口重枚举复核身份（fail-closed）。
-  # 遍历算法必须与 state.ps1 完全一致：逆序压栈的 DFS + 深度上限 20 + 全量计数，
-  # 否则 @eN 序号在两侧错位，会误判 STALE 或点错元素。
+  # 带元素目标：在 hwnd 窗口重枚举复核身份。两遍定位：
+  #   1) 序号 + 身份（runtimeId 或 类型+名称）一致 → 直接用；
+  #   2) 序号已错位（浏览器地址栏这类元素树毫秒级重排）→ 全树按 (类型,名称) 找，
+  #      名称非空且唯一匹配才用（唯一性 + 有名 双重约束，避免点到同名/无名元素）；
+  #      多个匹配或名称为空仍判 STALE（保持 fail-closed）。
   if ($in.runtime_id) {
     Add-Type -AssemblyName UIAutomationClient
     Add-Type -AssemblyName UIAutomationTypes
     $root = [System.Windows.Automation.AutomationElement]::FromHandle([IntPtr]$in.hwnd)
-    $el = $null; $idx = 0
-    $walker = [System.Windows.Automation.TreeWalker]::ControlViewWalker
-    $stack = New-Object System.Collections.Stack
-    $depths = New-Object System.Collections.Stack
-    $stack.Push($root); $depths.Push(0)
-    while ($stack.Count -gt 0 -and -not $el) {
-      $cur = $stack.Pop(); $depth = $depths.Pop()
-      if ($depth -gt 20) { continue }
-      if ($idx -eq [int]$in.expect.i) {
-        $rt = ($cur.GetRuntimeId() | ForEach-Object { $_ }) -join ','
-        if ($rt -ne $in.runtime_id -or (($cur.Current.ControlType.ProgrammaticName -replace '^ControlType\.','') -ne $in.expect.t)) {
-          throw "STALE_STATE: 元素 [$($in.expect.i)] 已变化或消失——重新 get_app_state 获取新索引，不要按旧索引盲点"
-        }
-        $el = $cur; break
+    $all = Enumerate-Tree $root
+    $wantT = [string]$in.expect.t
+    $wantN = ''
+    if ($in.expect.n) { $wantN = ([string]$in.expect.n).Trim() }
+    $i = [int]$in.expect.i
+
+    $el = $null
+    if ($i -ge 0 -and $i -lt $all.Count) {
+      $cand = $all[$i]
+      if ((Get-RuntimeId $cand) -eq $in.runtime_id) { $el = $cand }
+      else {
+        $tn = Get-TypeName $cand
+        if ($tn[0] -eq $wantT -and $tn[1] -eq $wantN) { $el = $cand }
       }
-      $idx++
-      $child = $walker.GetFirstChild($cur); $kids = @(); $n = 0
-      while ($child -ne $null -and $n -lt 80) { $kids += $child; $child = $walker.GetNextSibling($child); $n++ }
-      for ($k = $kids.Count - 1; $k -ge 0; $k--) { $stack.Push($kids[$k]); $depths.Push($depth + 1) }
     }
-    if (-not $el) { throw "STALE_STATE: 元素 [$($in.expect.i)] 已不存在——重新 get_app_state" }
+    if (-not $el -and $wantN) {
+      $hits = @()
+      foreach ($c in $all) {
+        $tn = Get-TypeName $c
+        if ($tn[0] -eq $wantT -and $tn[1] -eq $wantN) { $hits += ,$c }
+      }
+      if ($hits.Count -eq 1) { $el = $hits[0] }
+      elseif ($hits.Count -gt 1) { throw "STALE_STATE: 元素 [$i] 序号已错位且 (类型,名称) 有 $($hits.Count) 个匹配，无法安全定位——重新 get_app_state" }
+    }
+    if (-not $el) { throw "STALE_STATE: 元素 [$i] 已不存在——重新 get_app_state" }
     $pt = $null
     try { $pt = $el.GetClickablePoint() } catch {}
     if (-not $pt -or $pt.X -eq 0) {
