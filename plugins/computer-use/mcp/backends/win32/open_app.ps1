@@ -5,9 +5,16 @@ $ErrorActionPreference = 'Stop'
 
 function Out([object]$o) { $o | ConvertTo-Json -Depth 4 -Compress }
 
+# stdin 是 Node 写入的 UTF-8 字节流；[Console]::In 在中文 Windows 上按 GBK 解码，
+# 会把中文解成乱码并搞挂 ConvertFrom-Json（"计算器" → "璁＄畻鍣?"）。必须显式按 UTF-8 读。
+function Read-Payload() {
+  if ($Payload) { return $Payload }
+  $sr = New-Object System.IO.StreamReader([Console]::OpenStandardInput(), [System.Text.Encoding]::UTF8)
+  return $sr.ReadToEnd()
+}
+
 try {
-  if (-not $Payload) { $Payload = [Console]::In.ReadToEnd() }
-  $in = $Payload | ConvertFrom-Json
+  $in = (Read-Payload) | ConvertFrom-Json
   $name = [string]$in.name
   $before = @(Get-Process | Where-Object { $_.MainWindowHandle -ne 0 } | Select-Object -ExpandProperty Id)
 

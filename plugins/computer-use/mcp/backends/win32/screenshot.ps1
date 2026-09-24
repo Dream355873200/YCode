@@ -9,9 +9,16 @@ Add-Type -Path "$PSScriptRoot\YCodeNative.cs" -ReferencedAssemblies System.Drawi
 
 function Out([object]$o) { $o | ConvertTo-Json -Depth 4 -Compress }
 
+# stdin 是 Node 写入的 UTF-8 字节流；[Console]::In 在中文 Windows 上按 GBK 解码，
+# 会把中文解成乱码并搞挂 ConvertFrom-Json。必须显式按 UTF-8 读。
+function Read-Payload() {
+  if ($Payload) { return $Payload }
+  $sr = New-Object System.IO.StreamReader([Console]::OpenStandardInput(), [System.Text.Encoding]::UTF8)
+  return $sr.ReadToEnd()
+}
+
 try {
-  if (-not $Payload) { $Payload = [Console]::In.ReadToEnd() }
-  $in = $Payload | ConvertFrom-Json
+  $in = (Read-Payload) | ConvertFrom-Json
   $x = 0; $y = 0; $w = 0; $h = 0
   if ($in.hwnd) {
     $hwnd = [IntPtr]$in.hwnd
