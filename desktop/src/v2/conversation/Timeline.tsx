@@ -10,6 +10,7 @@ import {
 } from './projection/scrollAnchor';
 import { RowView, foldReads, ReadGroup } from './RowView';
 import { useConversation } from './store';
+import { Collapse } from '../components/ui/collapse';
 
 function TurnBlock({ unit, sid, live }: { unit: Extract<TurnUnit, { type: 'turn' }>; sid: string; live?: boolean }) {
   const { work, tail } = unit;
@@ -56,7 +57,7 @@ function TurnBlock({ unit, sid, live }: { unit: Extract<TurnUnit, { type: 'turn'
         <div className="mb-0.5">
           <button type="button" onClick={() => { if (!running && !aborted) setManual(!open); }}
             className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-ui-xs text-foreground-subtlest hover:bg-hover">
-            {!expanded && <span className={`inline-block transition-transform ${open ? 'rotate-90' : ''}`}>▸</span>}
+            {!expanded && <span className={`inline-block transition-transform duration-200 ${open ? 'rotate-90' : ''}`}>▸</span>}
             <span>工作过程</span>
             {running ? (
               <>
@@ -70,19 +71,17 @@ function TurnBlock({ unit, sid, live }: { unit: Extract<TurnUnit, { type: 'turn'
           </button>
         </div>
       )}
-      {showBody && (
-        <div className={`mt-0.5 pt-1 ${hasWork ? 'border-t border-border' : ''}`}>
-          {foldReads(bodyRows).map((r) =>
-            r.kind === 'readgroup' ? (
-              <ReadGroup key={r.id} group={r} />
-            ) : (
-              <RowView key={r.id} row={r as Row} sid={sid}
-                liveThinking={r.kind === 'reasoning' && r.id === bodyRows[bodyRows.length - 1]?.id && running} />
-            )
-          )}
-          <div className="h-1.5" />
-        </div>
-      )}
+      <Collapse open={showBody} className={`mt-0.5 pt-1 ${hasWork ? 'border-t border-border' : ''}`}>
+        {foldReads(bodyRows).map((r) =>
+          r.kind === 'readgroup' ? (
+            <ReadGroup key={r.id} group={r} />
+          ) : (
+            <RowView key={r.id} row={r as Row} sid={sid}
+              liveThinking={r.kind === 'reasoning' && r.id === bodyRows[bodyRows.length - 1]?.id && running} />
+          )
+        )}
+        <div className="h-1.5" />
+      </Collapse>
       {!expanded && tail.map((r) => <RowView key={r.id} row={r} sid={sid} />)}
     </div>
   );

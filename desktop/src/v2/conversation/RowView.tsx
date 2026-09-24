@@ -8,6 +8,7 @@ import { useConversation } from './store';
 import { resolveRenderer, actObj, actVerbPlain, toolStats } from '../../lib/toolRender';
 import { renderMD } from '../../lib/markdown';
 import { Button } from '../components/ui/button';
+import { Collapse } from '../components/ui/collapse';
 
 // ---------- 正文 / 思考 ----------
 
@@ -35,12 +36,12 @@ function Reasoning({ row, live }: { row: Extract<Row, { kind: 'reasoning' }>; li
           className={`shrink-0 ${live ? 'animate-pulse text-brand' : 'text-foreground-subtlest'}`} />
         {live ? '思考中…' : '思考'}
       </button>
-      {open && (
+      <Collapse open={open}>
         <div ref={boxRef}
           className={`scroll-fine mt-1 overflow-y-auto whitespace-pre-wrap border-l-2 border-border pl-3 text-ui-sm text-foreground-subtle ${live ? 'h-28' : 'max-h-72'}`}>
           {row.text}
         </div>
-      )}
+      </Collapse>
     </div>
   );
 }
@@ -67,7 +68,7 @@ function ToolCard({ row }: { row: Extract<Row, { kind: 'tool' }> }) {
         className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-ui-sm ${R.expandable ? 'cursor-pointer hover:bg-hover' : 'cursor-default'}`}
       >
         {R.expandable && (
-          <span className={`inline-block w-3 text-foreground-subtlest transition-transform ${open ? 'rotate-90' : ''}`}>▸</span>
+          <span className={`inline-block w-3 text-foreground-subtlest transition-transform duration-200 ${open ? 'rotate-90' : ''}`}>▸</span>
         )}
         <span className="text-foreground-subtle">{label}</span>
         {obj && <span className="min-w-0 truncate text-foreground-subtlest">{obj}</span>}
@@ -80,13 +81,11 @@ function ToolCard({ row }: { row: Extract<Row, { kind: 'tool' }> }) {
         )}
         <span className={`${stats ? '' : 'ml-auto'} shrink-0 text-ui-xs ${stCls}`}>{stIcon}</span>
       </button>
-      {expandable && open && (
-        <div className="border-t border-border px-3 py-2">
-          {R.Detail
-            ? <R.Detail act={{ verb: row.name, input, obj, st: row.state === 'running' ? '…' : row.state === 'err' ? 'err' : 'ok', detail: row.result || '', toolUseId: row.toolUseId, expand: true }} />
-            : <pre className="scroll-fine max-h-72 overflow-auto whitespace-pre-wrap text-ui-xs text-foreground-subtle">{row.result}</pre>}
-        </div>
-      )}
+      <Collapse open={expandable && open} className="border-t border-border px-3 py-2">
+        {R.Detail
+          ? <R.Detail act={{ verb: row.name, input, obj, st: row.state === 'running' ? '…' : row.state === 'err' ? 'err' : 'ok', detail: row.result || '', toolUseId: row.toolUseId, expand: true }} />
+          : <pre className="scroll-fine max-h-72 overflow-auto whitespace-pre-wrap text-ui-xs text-foreground-subtle">{row.result}</pre>}
+      </Collapse>
     </div>
   );
 }
@@ -136,11 +135,11 @@ function ReadItem({ row }: { row: ToolRow }) {
         </span>
         <span className={`ml-auto shrink-0 ${stCls}`}>{stIcon}</span>
       </button>
-      {open && (
+      <Collapse open={open}>
         <pre className="scroll-fine max-h-60 overflow-auto border-t border-border px-3 py-2 text-ui-xs text-foreground-subtle">
           {row.result}
         </pre>
-      )}
+      </Collapse>
     </div>
   );
 }
@@ -160,14 +159,14 @@ export function ReadGroup({ group }: { group: ReadGroupUnit }) {
         onClick={() => setOpen(!open)}
         className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-ui-sm hover:bg-hover"
       >
-        <span className={`inline-block w-3 text-foreground-subtlest transition-transform ${open ? 'rotate-90' : ''}`}>▸</span>
+        <span className={`inline-block w-3 text-foreground-subtlest transition-transform duration-200 ${open ? 'rotate-90' : ''}`}>▸</span>
         <span className="text-foreground-subtle">探索</span>
         <span className="min-w-0 truncate text-foreground-subtlest">
           读取了 {reads.length} 个文件{errCount ? ` · ${errCount} 个失败` : ''}
         </span>
         <span className={`ml-auto shrink-0 text-ui-xs ${stCls}`}>{stIcon}</span>
       </button>
-      {open && reads.map((r) => <ReadItem key={r.id} row={r} />)}
+      <Collapse open={open}>{reads.map((r) => <ReadItem key={r.id} row={r} />)}</Collapse>
     </div>
   );
 }
