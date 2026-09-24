@@ -327,10 +327,18 @@ async function snapshot(inst, max = 400) {
 }
 
 // ref → 坐标（只认最近一次快照，页面变化即失效）
-function refPoint(inst, ref) {
-  if (!inst.refs || !inst.refs.length) throw new Error('没有可用快照——先 browser_snapshot 获取 @eN 引用');
-  const r = inst.refs.find((x) => x.ref === ref);
-  if (!r) throw new Error(`${ref} 不在最近一次快照里——重新 browser_snapshot`);
+// refPoint 引用解析（自愈）：引用为空/失效时自动重新快照一次再找——
+// 页面切换、实例恢复、重启后 refs 丢失等场景直接自愈，不打断模型流程。
+async function refPoint(inst, ref) {
+  if (!inst.refs || !inst.refs.length) await snapshot(inst);
+  let r = inst.refs?.find((x) => x.ref === ref);
+  if (!r) {
+    await snapshot(inst);
+    r = inst.refs?.find((x) => x.ref === ref);
+  }
+  if (!r) {
+    throw new Error(`${ref} 在当前页面上不存在（快照共 ${inst.refs?.length || 0} 个可点元素）——重新 browser_snapshot 查看现有引用，不要凭记忆猜旧引用`);
+  }
   return r;
 }
 
@@ -342,7 +350,7 @@ async function click(inst, { ref, x, y, button = 'left', clickCount = 1 }) {
   inst.lastUsed = Date.now();
   await restore(inst);
   let px = x, py = y;
-  if (ref) { const r = refPoint(inst, ref); px = r.x; py = r.y; }
+  if (ref) { const r = await refPoint(inst, ref); px = r.x; py = r.y; }
   if (px === undefined) throw new Error('需要 ref 或 {x,y}');
   return enqueue(inst, async () => {
     await dispatchMouse(inst, 'mouseMoved', px, py);
@@ -389,7 +397,7 @@ async function scroll(inst, { dx = 0, dy = 0, ref, x, y }) {
   inst.lastUsed = Date.now();
   await restore(inst);
   let px = x, py = y;
-  if (ref) { const r = refPoint(inst, ref); px = r.x; py = r.y; }
+  if (ref) { const r = await refPoint(inst, ref); px = r.x; py = r.y; }
   return enqueue(inst, async () => {
     // 未指定位置：滚视口中心（布局尺寸从 CDP 取，避免瞎猜坐标）
     if (px === undefined || py === undefined) {
