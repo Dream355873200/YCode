@@ -3,7 +3,7 @@
 // 交互卡（审批/确认/提问）直接挂 store 回传。
 import { useEffect, useRef, useState } from 'react';
 import { Brain } from 'lucide-react';
-import type { Row } from './projection/rows';
+import type { Row, ToolRow } from './projection/rows';
 import { useConversation } from './store';
 import { resolveRenderer, actObj, actVerbPlain, toolStats } from '../../lib/toolRender';
 import { renderMD } from '../../lib/markdown';
@@ -104,8 +104,8 @@ export function foldReads(rows: readonly Row[]): Array<Row | ReadGroupUnit> {
   const out: Array<Row | ReadGroupUnit> = [];
   let buf: ToolRow[] = [];
   const flush = () => {
-    if (buf.length >= 2) out.push({ kind: 'readgroup', id: `grp-${buf[0].id}`, reads: buf });
-    else if (buf.length === 1) out.push(buf[0]);
+    if (buf.length >= 2 && buf[0]) out.push({ kind: 'readgroup', id: `grp-${buf[0].id}`, reads: buf });
+    else if (buf.length === 1 && buf[0]) out.push(buf[0]);
     buf = [];
   };
   for (const r of rows) {

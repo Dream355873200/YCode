@@ -32,7 +32,7 @@ export interface EngineBridge {
   restart(): Promise<unknown>;
   status(): Promise<{ status: string; addr: string }>;
   listModels(): Promise<unknown>;
-  bindProject(sessionId: string, dir: string): Promise<{ ok: boolean }>;
+  bindProject(sessionId: string, dir: string, mode?: string): Promise<{ ok: boolean }>;
   onStatus(cb: (s: { status: string; addr: string }) => void): () => void;
   onSseBegin(cb: (evt: Envelope) => void): () => void;
   onSseEvent(cb: (evt: Envelope) => void): () => void;
@@ -55,6 +55,7 @@ declare global {
       projects: {
         list(): Promise<unknown>;
         create(p: Record<string, unknown>): Promise<unknown>;
+        setMode(dir: string, mode: string): Promise<{ ok: boolean; error?: string }>;
         remove(dir: string): Promise<unknown>;
         pickDir(): Promise<string | null>;
         filetree(dir: string): Promise<unknown>;

@@ -1,8 +1,12 @@
-# 插件：设备测试（device-testing）
+# 插件：安卓真机测试（android-device）
 
-让 AI 在真实 Android 设备/模拟器上操作和验证 Flutter 应用——不是纸上
+让 AI 在真实 Android 设备/模拟器上操作和验证应用——不是纸上
 谈兵跑 analyze 就宣布完成，而是 tap 进去、看到状态变化、留下证据。
 工具链分六层，按成本升序使用：能用便宜层证明的，不要往下走。
+
+本插件引用原生工具集 `device`（设备状态上下文 + 设备独占锁）与
+`test-report`（下表除 vision_ask 外的全部工具）；`vision_ask` 属于
+`vision` 插件，模式同时引用两者时可用。
 
 ## 工具清单
 
@@ -53,7 +57,8 @@ save 基线，否则回归永远 diff 非零。
    工具风格一致；一个工具一个动作，组合逻辑交给模型按层级编排。
 3. **实现位置**：`engine/internal/tools/device.go`，遵循现有模式——
    adb 命令封装 + 输出截断 + 设备忙检查 + testLogAppend 记时间线。
-4. **文档同步**：本文件的工具清单加一行；`knowledge/skills/testing.md`
-   的 allowed-tools frontmatter 与分层说明按需更新。
+4. **文档同步**：本文件的工具清单加一行；toolsets.go 注册表 `test-report`
+   条目的 tools 清单同步；`skills/testing.md` 的 allowed-tools frontmatter
+   与分层说明按需更新。
 5. **回归**：在真实设备上验证工具本身（成功/失败/设备离线三态），
    再跑一次「生成 → analyze → 设备测试」闭环。

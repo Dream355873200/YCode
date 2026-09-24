@@ -9,6 +9,11 @@ export interface ThinkPiece {
   think?: string;
 }
 
+/** 剥掉思考文本里残留的 <think>/<thinking> 标记：切分状态机只处理正文流
+    里的标签，部分供应商会把标签原样带进 reasoning 通道（GLM 系中转常见）
+    ——推理内容在投影层统一去标记，直播与历史回放都过这里。 */
+export const stripThinkMarks = (s: string): string => s.replace(/<\/?(?:think|thinking)>/g, '');
+
 export class ThinkTagSplitter {
   private inThink = false;
   private closeTag = '</think>';

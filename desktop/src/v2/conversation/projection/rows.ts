@@ -3,6 +3,7 @@
 // UI 不保存第二份真相，只渲染 rows 的投影）。展示层文案（状态徽标/摘要）
 // 由 toolcards 渲染器从 row 派生，这里只存权威事实。
 import type { Envelope } from '../../protocol';
+import { stripThinkMarks } from './thinkTags';
 
 let seq = 0;
 export const nextRowId = (): string => `r${++seq}`;
@@ -108,10 +109,12 @@ export function applyFrame(rows: readonly Row[], frame: Envelope): Row[] {
       break;
     }
     case 'thinking': {
-      const text = frame.thinking || '';
+      // stripThinkMarks：推理通道可能自带 <thinking> 标记文本（供应商行为），
+      // 投影层统一去标记——否则思考框里会露出裸标签
+      const text = stripThinkMarks(frame.thinking || '');
       if (!text) break;
       if (last && last.kind === 'reasoning') {
-        out[out.length - 1] = { ...last, text: last.text + text };
+        out[out.length - 1] = { ...last, text: stripThinkMarks(last.text + text) };
       } else {
         out.push({ kind: 'reasoning', id: nextRowId(), text });
       }

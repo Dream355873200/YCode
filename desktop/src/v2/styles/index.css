@@ -141,6 +141,19 @@
   --color-ring: var(--color-brand);
 }
 
+/* 原生滚动条跟随主题：color-scheme 决定 Chromium 默认滚动条深浅
+   （缺省 light——深色 UI 上出现白滚动条的根因），再叠加细滚动条样式 */
+html { color-scheme: light; }
+html.dark { color-scheme: dark; }
+::-webkit-scrollbar { width: 9px; height: 9px; }
+::-webkit-scrollbar-thumb {
+  background: color-mix(in oklab, var(--color-foreground) 18%, transparent);
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover { background: color-mix(in oklab, var(--color-foreground) 32%, transparent); }
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner { background: transparent; }
+
 html, body, #root { height: 100%; }
 body {
   font-family: var(--font-ui);

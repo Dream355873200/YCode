@@ -1,5 +1,6 @@
 // flai-engine 是 amobileCreater 产品的执行引擎：
-// 基于 goagent（GitHub: Dream355873200/GoAgent）构建的 Flutter AI 开发 daemon。
+// 基于 goagent（GitHub: Dream355873200/GoAgent）构建的 AI 开发 daemon。
+// 能力按「工具集 → 插件 → 模式」分层装配，模式是会话级的（见 catalog.go）。
 //
 // 以 HTTP/SSE 服务形态运行，供桌面壳（Electron）或 CLI 调用。
 package main
@@ -19,37 +20,27 @@ import (
 	// 具名导入即触发 builtin init()（注册 Read/Write/Edit 等内置工具 provider）；
 	// ManagementTools（含 Skill 工具）也需要具名引用。
 	builtin "github.com/Dream355873200/GoAgent/builtin"
-	"github.com/Dream355873200/GoAgent/skill"
 	"github.com/Dream355873200/GoAgent/task"
 
 	"github.com/amobileCreater/engine/internal/tools"
 )
 
-// domainRulesPath 是引擎领域规范（反偷懒条款 / 安全基线等），由模式包声明
-// （modes/<id>/domain-rules.md，经 mode.json 的 engine.domainRules 指向）。
-// 不用 WithSystemPrompt：那会整体覆盖 goagent 的七段默认提示词体系
-// （identity/doing_tasks/using_tools/tone…），导致模型行为退化。
-// 领域规范经 WithProjectContext 以「项目级规范文件」身份注入（等同 CLAUDE.md）。
-var domainRulesPath string // 当前模式的领域规范（LoadMode 后赋值；空 = 不注入）
-var deviceCtxPath string   // 动态设备状态上下文（每次 /chat 刷新，WithProjectContext 现读现用）
-var globalSkillsDir string // 全局 skill 目录兜底（模式未声明 skillsDir 时回退）
+var deviceCtxPath string   // 动态设备状态上下文（device 工具集按会话注入，WithSessionProjectContext 现读现用）
+var globalSkillsDir string // 全局 skill 目录（应用根 skills/，对所有模式生效）
 
-// sessMap 会话→项目目录映射（main 创建；postcompact 等扩展端点按会话解析）。
+// sessMap 会话绑定（项目目录 + 模式；main 创建，各会话级解析器读它）。
 var sessMap *sessionMap
 
 func init() {
 	_, file, _, _ := runtime.Caller(0)
-	// DEVICE.md 是设备状态的会话上下文文件（flutter 模式专用，code 模式不写不注）
+	// DEVICE.md 是设备状态的会话上下文文件（仅注入启用 device 工具集的会话）
 	deviceCtxPath = filepath.Join(filepath.Dir(file), "DEVICE.md")
-	// 全局 skill 目录兜底（模式包未声明 skillsDir 时用；仓库根 knowledge/skills/）。
-	// 从 main.go 位置定位仓库根：去掉文件名一层 + 上溯三级
-	//（cmd/flai-engine/ → engine/ → 仓库根）。此前少上溯一级指到
-	// engine/knowledge/skills（不存在），全局 skill 静默失效，此处修正。
-	// FLAI_GLOBAL_SKILLS 可覆盖（打包发行时指向安装目录）。
+	// 全局 skill 目录：应用根 skills/。资产随应用安装目录走（见 layout.go），
+	// 不落用户家目录；FLAI_GLOBAL_SKILLS 可覆盖。
 	if envOr("FLAI_GLOBAL_SKILLS", "") != "" {
 		globalSkillsDir = os.Getenv("FLAI_GLOBAL_SKILLS")
 	} else {
-		globalSkillsDir = filepath.Join(filepath.Dir(filepath.Dir(filepath.Dir(filepath.Dir(file)))), "knowledge", "skills")
+		globalSkillsDir = filepath.Join(appRoot(), "skills")
 	}
 }
 
@@ -68,13 +59,13 @@ func main() {
 	model := flag.String("model", envOr("FLAI_MODEL", "qwen2.5:7b"), "模型名称")
 	contextWindow := flag.Int("context-window", envOrInt("FLAI_CONTEXT_WINDOW", 1_000_000), "模型上下文窗口 token 数（决定压缩阈值，须与真实模型一致）")
 	maxOutput := flag.Int("max-output-tokens", envOrInt("FLAI_MAX_OUTPUT_TOKENS", 393216), "模型最大输出 token 数（推理模型的 reasoning 也占此额度，默认 4096 会导致正文被截断）")
-	modeID := flag.String("mode", envOr("FLAI_MODE", "flutter"), "产品模式（modes/ 目录下的模式包 id，决定工具集/领域规范/技能目录）")
+	modeID := flag.String("mode", envOr("FLAI_MODE", "flutter"), "默认模式（未绑定模式的会话使用；模式是会话级的，见 session-map.json）")
 	flag.Parse()
 
-	// 会话→项目映射：单引擎多项目的地基。桌面壳把每个 session 对应的
-	// 项目路径写进 ~/.amobilecreater/session-map.json；引擎解析后注入
-	// ctx.WorkDir——Bash 的 cmd.Dir、Read/Write/Edit 的相对路径、
-	// flutter/测试工具的项目根全部按会话扎根（切项目不重启引擎）。
+	// 会话绑定：单引擎多项目、多模式并存的地基。桌面壳把每个 session
+	// 对应的项目路径与模式写进 ~/.amobilecreater/session-map.json；引擎
+	// 解析后注入 ctx.WorkDir——Bash 的 cmd.Dir、Read/Write/Edit 的相对路径、
+	// 领域工具的项目根全部按会话扎根；模式决定会话可见的能力（见 catalog.go）。
 	sessMap = newSessionMap()
 
 	// 任务存储按会话隔离（task 跟随 session）：落盘到各项目的
@@ -84,15 +75,15 @@ func main() {
 		IdleTTL: 10 * time.Minute,
 	})
 
-	// 模式装配：领域工具集/领域规范/技能目录由模式包数据驱动（--mode 选择，
-	// 缺省 flutter 保持既有行为；GET /modes 供桌面壳发现可用模式）。
-	mode, err := LoadMode(*modeID)
+	// 能力目录：一次加载全部模式与插件（严格校验，清单写错拒绝启动）。
+	// 模式是会话级的——不同会话可同时运行在不同模式下。
+	cat, err := LoadCatalog(*modeID)
 	if err != nil {
-		log.Fatalf("加载模式: %v", err)
+		log.Fatalf("加载模式/插件: %v", err)
 	}
-	domainRulesPath = mode.DomainRulesPath()
+	catalog = cat
 
-	// 模式无关的通用装配 + 按模式增补的领域装配（细节见下方 append 段注释）。
+	// 模式无关的通用装配 + 会话级能力解析（细节见下方 append 段注释）。
 	// ProviderConfig 本身实现 Option，进切片统一展开。
 	opts := []goagent.Option{
 		goagent.ProviderConfig{
@@ -103,7 +94,9 @@ func main() {
 			ContextWindow:   *contextWindow, // 不设则 provider 默认 32768 → 压缩阈值 ~10K，历史被疯狂裁剪导致模型原地打转
 			MaxOutputTokens: *maxOutput,     // 不设则 provider 默认 4096 → 推理模型思考占满后正文为空，表现为「探索完就停」
 		},
-		goagent.WithPromptDir(enginePromptDir()),                                    // 定制版系统提示词（engine/prompts/，缺的文件自动回退 goagent 嵌入默认值）
+		goagent.WithSessionPromptDir(sessionPromptDir),                              // 会话模式的提示词组（空 = 内置通用 Agent 提示词；缺段回退内置）
+		goagent.WithSessionProjectContext(sessionContextFiles),                      // 会话模式的插件规范 + 工具集动态上下文（等同 CLAUDE.md 地位）
+		goagent.WithSessionToolFilter(sessionToolVisible),                           // 会话只看得到本模式启用的工具集（base 恒可见）
 		goagent.WithBuiltinTools(),                                                  // Read/Write/Edit/Glob/Grep/Bash/WebSearch 等（base）
 		goagent.WithTaskTools(),                                                     // TaskCreate/TaskUpdate/TaskList → 左栏任务流数据源
 		goagent.WithTaskStore(taskStore),                                            // 按会话隔离 + 落盘 + 闲置回收
@@ -119,20 +112,17 @@ func main() {
 		goagent.WithMaxTurns(80),
 		goagent.WithCostTracking(),
 		goagent.WithHTTPRoutes(userEditRoutes()), // 编辑器写回通知端点（/notify/user-edit，app 创建后经 engineApp 接线）
-		goagent.WithHTTPRoutes(modesRoutes()),    // 模式发现端点（桌面壳渲染模式选择/新建项目表单）
+		goagent.WithHTTPRoutes(modesRoutes()),    // 模式发现端点（全部模式 + 聚合视图 + 工具集明细）
+		goagent.WithHTTPRoutes(pluginsRoutes()),  // 插件发现端点（设置页插件清单）
+		goagent.WithHTTPRoutes(skillsRoutes()),   // 技能清单端点（按插件/全局归属）
+		goagent.WithHTTPRoutes(promptsRoutes()),  // 提示词组端点（设置页管理提示词组）
 	}
-	if domainRulesPath != "" {
-		opts = append(opts, goagent.WithProjectContext(domainRulesPath)) // 领域规范注入（不覆盖默认 prompt 体系）
-	}
-	// 领域工具集装配：按模式声明的 toolset 词查注册表分两段安装——
-	// options 段并入装配列表（New 前），install 段待 app 创建后执行。
-	// 未知词直接拒绝启动（mode.json 写错名字不能静默丢能力）。
+	// 工具集装配：被任一模式引用的工具集进程内装一次（会话可见性由
+	// 工具过滤器按模式裁剪）。options 段并入装配列表（New 前），install
+	// 段待 app 创建后执行。工具集名已在插件加载时校验。
 	var installs []func(*goagent.App)
-	for _, ts := range mode.Engine.Toolsets {
-		installer, ok := toolsetRegistry[ts]
-		if !ok {
-			log.Fatalf("模式 %s 声明了未知工具集 %q（可用: %v）", mode.ID, ts, knownToolsets())
-		}
+	for _, ts := range catalog.Toolsets() {
+		installer := toolsetRegistry[ts]
 		if installer.options != nil {
 			opts = append(opts, installer.options()...)
 		}
@@ -177,34 +167,25 @@ func main() {
 	//（落盘数据保留，下次访问自动从磁盘恢复）。
 	defer taskStore.StartSweeper(context.Background(), time.Minute)()
 
-	// Skill 系统：项目 .yume/commands/ + 模式技能目录双层发现。模式包
-	// 声明的 skillsDir 优先（flutter 指向 knowledge/skills/ 作为母本真源，
-	// 更新即时生效、老项目无需同步拷贝）；未声明时回退全局兜底目录。
-	// 项目同名 skill 覆盖模式层。每 30s 重扫兜底会话中途新增的文件。
-	skillDir := mode.SkillsPath()
-	if skillDir == "" {
-		skillDir = globalSkillsDir
-	}
-	skillReg := skill.NewRegistry(wdOrEmpty(), skillDir)
-	_ = skillReg.Discover()
-	for _, t := range builtin.ManagementTools(builtin.ManagementDeps{SkillRegistry: skillReg}) {
+	// Skill 系统：每个模式一份注册表（插件技能 > 全局 skills/），Skill 工具
+	// 按会话模式取用（描述里的技能清单也随会话变化）；项目 .yume/commands/
+	// 由 Skill 工具按会话工作目录现场读取、优先级最高。每 30s 重扫。
+	skills.watch(30 * time.Second)
+	for _, t := range builtin.ManagementTools(builtin.ManagementDeps{SkillRegistryFn: skills.forSession}) {
 		app.Tool(t.Name, t.Def)
 	}
-	go func() {
-		t := time.NewTicker(30 * time.Second)
-		defer t.Stop()
-		for range t.C {
-			_ = skillReg.Discover()
-		}
-	}()
 
-	fmt.Printf("flai-engine 启动 · 模式 %s（%s）\n  模型: %s @ %s\n  监听: http://%s\n", mode.ID, mode.Name, *model, *baseURL, *addr)
+	fmt.Printf("flai-engine 启动 · 默认模式 %s\n", catalog.DefaultMode)
+	for _, m := range catalog.Modes {
+		fmt.Printf("  模式 %s（%s）: 插件 %v · 工具集 %v\n", m.ID, m.Name, m.Plugins, m.Resolved.Toolsets)
+	}
+	fmt.Printf("  模型: %s @ %s\n  监听: http://%s\n", *model, *baseURL, *addr)
 	if err := app.RunHTTP(*addr); err != nil {
 		log.Fatalf("HTTP 服务退出: %v", err)
 	}
 }
 
-// wdOrEmpty 当前工作目录（引擎 cwd = 绑定的项目目录；拿不到给空串）。
+// wdOrEmpty 当前工作目录（拿不到给空串）。
 func wdOrEmpty() string {
 	wd, err := os.Getwd()
 	if err != nil {
@@ -218,15 +199,6 @@ func envOr(key, def string) string {
 		return v
 	}
 	return def
-}
-
-// enginePromptDir 定制系统提示词目录（engine/prompts/）。
-// 只放需要领域偏移的文件（identity/doing-tasks/tone-style/using-tools），
-// 其余（actions/reminder/output-efficiency/compact/yolo）缺文件时 goagent
-// 自动回退嵌入默认值——跟随库升级，不复制维护。
-func enginePromptDir() string {
-	_, file, _, _ := runtime.Caller(0)
-	return filepath.Join(filepath.Dir(filepath.Dir(filepath.Dir(file))), "prompts")
 }
 
 // reg 适配 (name, def) 双返回值工具构造器到表格初始化。

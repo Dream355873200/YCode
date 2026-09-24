@@ -14,6 +14,7 @@ import { useApp } from '../app/appState';
 import { engine } from '../protocol';
 import { Button } from '../components/ui/button';
 import { cn } from '../components/lib/utils';
+import { useDismiss } from '../components/lib/useDismiss';
 
 /** 权限模式（引擎 /mode 端点的字符串枚举）。 */
 const MODES: Array<{ id: string; label: string; desc: string; icon: typeof ZapIcon }> = [
@@ -30,25 +31,6 @@ const EFFORTS: Array<{ id: string; label: string; desc: string }> = [
   { id: 'medium', label: '中', desc: '常规开发任务的平衡档' },
   { id: 'high', label: '高', desc: '复杂架构/疑难问题，想得更深' },
 ];
-
-/** 菜单根元素 hook：点击外部 / Esc 关闭。 */
-function useDismiss(open: boolean, close: () => void): React.RefObject<HTMLDivElement | null> {
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent): void => {
-      if (ref.current && !ref.current.contains(e.target as Node)) close();
-    };
-    const onKey = (e: KeyboardEvent): void => { if (e.key === 'Escape') close(); };
-    document.addEventListener('mousedown', onDown);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('mousedown', onDown);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [open, close]);
-  return ref;
-}
 
 export function Composer({ sid, variant = 'docked', seed = '' }: {
   sid: string;

@@ -6,9 +6,10 @@ const fs = require('fs');
 
 const { loadConfig, saveConfig, loadRegistry, saveRegistry } = require('./lib/config');
 const engine = require('./lib/engine');
-const { run, projectStats, filetree, gitStatus } = require('./lib/tools');
+const { projectStats, filetree, gitStatus } = require('./lib/tools');
 const devices = require('./lib/devices');
 const flutter = require('./lib/flutter');
+const { scaffolds } = require('./lib/scaffolds');
 
 let win = null;
 
@@ -76,10 +77,10 @@ ipcMain.handle('engine:listModels', async () => {
     return [];
   }
 });
-// 打开项目：登记 session→项目映射（引擎按会话扎根项目目录，不重启）。
-// 多项目并行：一边执行中切到另一边，引擎继续跑互不干扰。
-ipcMain.handle('engine:bindProject', async (_e, sessionId, dir) => {
-  const ok = engine.bindSession(sessionId, dir);
+// 打开项目：登记 session→{项目目录, 模式} 绑定（引擎按会话扎根项目目录、
+// 按会话模式裁剪能力，不重启）。多项目、多模式并行互不干扰。
+ipcMain.handle('engine:bindProject', async (_e, sessionId, dir, mode) => {
+  const ok = engine.bindSession(sessionId, dir, mode);
   // 引擎可能还没起（如开机首次进项目）：顺手拉起，不等它就绪（非阻塞路径）
   if (engine.state.status !== 'running') engine.ensure(loadConfig());
   return { ok, restarted: false };
@@ -136,41 +137,48 @@ ipcMain.handle('projects:pickDir', async () => {
   return r.canceled ? null : r.filePaths[0];
 });
 
-// 新建项目：flutter create → 挂载知识库 skill → git init + 首提交 → 注册
-ipcMain.handle('projects:create', async (_e, { name, dir, idea, kind, color }) => {
-  if (!name || !dir) return { ok: false, error: '名称与目录必填' };
-  if (fs.existsSync(dir) && fs.readdirSync(dir).length > 0) {
-    return { ok: false, error: '目录非空，请选择空目录' };
+// 新建项目（模式声明驱动）：fields 是 mode.json projectFields 的表单值，
+// scaffold 是模式声明的脚手架 id（见 lib/scaffolds.js）：
+//   有 scaffold —— 在目录里生成工程后注册
+//   无 scaffold —— 打开已有工作目录直接注册（通用代码 Agent 不做脚手架）
+ipcMain.handle('projects:create', async (_e, { mode, scaffold, fields }) => {
+  const f = fields || {};
+  const dir = f.dir && String(f.dir).trim();
+  const projectMode = mode || loadConfig().engine.mode;
+  if (!dir) return { ok: false, error: '请选择目录' };
+  if (!projectMode) return { ok: false, error: '缺少模式' };
+
+  let record = {};
+  if (scaffold) {
+    const make = scaffolds[scaffold];
+    if (!make) return { ok: false, error: `未知脚手架 ${scaffold}` };
+    const r = await make({ ...f, dir });
+    if (!r.ok) return r;
+    record = r.record || {};
+  } else if (!fs.existsSync(dir)) {
+    return { ok: false, error: '请选择已存在的工作目录' };
   }
-  const projectName = name.trim().toLowerCase().replace(/[^a-z0-9_]/g, '_').replace(/^(\d)/, 'a$1');
-  fs.mkdirSync(dir, { recursive: true });
-  const created = await run('flutter', ['create', '--org', 'com.amobile', '--project-name', projectName, '--platforms', 'android,ios', dir]);
-  if (!created.ok) return { ok: false, error: `flutter create 失败: ${created.stderr || created.error}` };
 
-  // 挂载知识库 skill：不复制——引擎 Registry 双层扫描（全局 knowledge/skills/
-  // 是唯一真源 + 项目 .yume/commands/ 可放项目定制）。复制会造成旧拷贝
-  // 覆盖母本更新的问题，项目目录只建空目录备用。
-  const cfg = loadConfig();
-  try {
-    fs.mkdirSync(path.join(dir, '.yume', 'commands'), { recursive: true });
-  } catch (e) {
-    return { ok: false, error: `创建 .yume 失败: ${e.message}` };
-  }
-
-  // SPEC.md 草稿
-  fs.writeFileSync(path.join(dir, 'SPEC.md'),
-    `# ${name} · 产品规格书 SPEC v1（草稿）\n\n## 想法\n${idea || '（待补充）'}\n\n` +
-    `## 应用形态\n${kind === 'go' ? 'App + Go 后端（Gin+GORM）' : '纯移动 App（本地优先）'}\n\n## 品牌主色\n${color || '#3D5AFE'}\n`,
-    'utf-8');
-
-  // git init + 首次提交
-  await run('git', ['-C', dir, 'init']);
-  await run('git', ['-C', dir, 'add', '.']);
-  await run('git', ['-C', dir, 'commit', '-m', 'chore: flutter 脚手架 + 知识库挂载（amobileCreater）']);
-
-  // 注册
   const reg = loadRegistry();
-  reg.projects.unshift({ name, dir, idea: idea || '', kind: kind || 'app', color: color || '#3D5AFE', createdAt: new Date().toISOString() });
+  const prev = reg.projects.find((p) => p.dir === dir);
+  reg.projects = reg.projects.filter((p) => p.dir !== dir);
+  reg.projects.unshift({
+    ...(prev || {}),
+    ...record,
+    name: (f.name && String(f.name).trim()) || path.basename(dir),
+    dir, mode: projectMode,
+    createdAt: (prev && prev.createdAt) || new Date().toISOString(),
+  });
+  saveRegistry(reg);
+  return { ok: true };
+});
+// 切换项目模式：只改注册表记录；会话绑定由渲染层随后 bindProject 重写
+//（引擎下一轮 run 即按新模式装配工具/提示词/规范/技能，不重启）。
+ipcMain.handle('projects:setMode', (_e, dir, mode) => {
+  const reg = loadRegistry();
+  const p = reg.projects.find((x) => x.dir === dir);
+  if (!p) return { ok: false, error: '项目未注册' };
+  p.mode = mode;
   saveRegistry(reg);
   return { ok: true };
 });

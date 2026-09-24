@@ -3,6 +3,8 @@
 // assistant 消息内 content 块顺序即真实执行序（thinking → text → tool_use）。
 import type { Row } from './rows';
 import { stripReminderTags, nextRowId } from './rows';
+import { ThinkTagSplitter } from './thinkTags';
+import { stripThinkMarks } from './thinkTags';
 
 /** 引擎 GET /sessions/{id}/messages 的消息形状（content 块联合）。 */
 export interface HistoryBlock {
@@ -24,6 +26,20 @@ export interface HistoryMessage {
 export function historyToRows(messages: readonly HistoryMessage[]): Row[] {
   const rows: Row[] = [];
   const toolById = new Map<string, Extract<Row, { kind: 'tool' }>>();
+
+  // assistant 正文喂 ThinkTagSplitter：<think>/<thinking> 段分流成 reasoning
+  // row（与直播路径同语义——思考内容不残留在正式文本里，直播/回放一致）。
+  const pushAssistantText = (text: string): void => {
+    const sp = new ThinkTagSplitter();
+    for (const piece of [...sp.feed(text), ...sp.flush()]) {
+      if (piece.think) {
+        rows.push({ kind: 'reasoning', id: nextRowId(), text: piece.think });
+      } else if ((piece.text || '').trim()) {
+        rows.push({ kind: 'assistant_text', id: nextRowId(), text: piece.text! });
+      }
+    }
+  };
+
 
   for (const msg of messages || []) {
     const blocks = typeof msg.content === 'string'
@@ -49,10 +65,10 @@ export function historyToRows(messages: readonly HistoryMessage[]): Row[] {
         if (msg.role === 'user' && text) {
           rows.push({ kind: 'user', id: nextRowId(), text });
         } else if (text) {
-          rows.push({ kind: 'assistant_text', id: nextRowId(), text });
+          pushAssistantText(text);
         }
       } else if (b.type === 'thinking' && (b.thinking || '').trim()) {
-        rows.push({ kind: 'reasoning', id: nextRowId(), text: b.thinking! });
+        rows.push({ kind: 'reasoning', id: nextRowId(), text: stripThinkMarks(b.thinking!) });
       } else if (b.type === 'tool_use') {
         const t: Extract<Row, { kind: 'tool' }> = {
           kind: 'tool', id: nextRowId(), toolUseId: b.id || `t${rows.length}`,

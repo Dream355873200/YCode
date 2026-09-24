@@ -1,0 +1,12 @@
+{
+  "id": "android-device",
+  "name": "安卓真机测试",
+  "description": "adb 真机/模拟器操作与分层测试：语义树、点击滑动输入、截图对比、日志与网络联调、测试报告，含设备独占锁",
+  "toolsets": ["device", "test-report"],
+  "rules": "rules.md",
+  "skills": "skills",
+  "sidePanels": [
+    { "id": "test-report", "label": "测试报告" },
+    { "id": "device", "label": "手机" }
+  ]
+}

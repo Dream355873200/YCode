@@ -23,13 +23,15 @@ import (
 // 日志流永不退出——经 Bash 跑任何一个都会永久阻塞对话。
 var bannedCmd = regexp.MustCompile(`(^|[\s&|;])flutter(\.exe|\.bat)?(\s+(run|attach|daemon|logs))\b`)
 
-// wrapBash 返回带禁令的 Bash 工具定义：命中禁令直接报错并指路，
-// 其余命令透传原实现（保留原描述/Schema/权限）。
-func wrapBash() goagent.ToolDef {
+// wrapBash 返回带禁令的 Bash 工具定义：active(会话) 为真且命中禁令时
+// 直接报错并指路，其余命令透传原实现（保留原描述/Schema/权限）。
+// active 让禁令只作用于启用了 flutter 工具集的会话——Bash 是进程级
+// 单例工具，其他模式的会话照常执行。
+func wrapBash(active func(sessionID string) bool) goagent.ToolDef {
 	def := builtin.BashTool()
 	orig := def.Execute.(func(goagent.Context, builtin.BashInput) (string, error))
 	def.Execute = func(ctx goagent.Context, in builtin.BashInput) (string, error) {
-		if bannedCmd.MatchString(in.Command) {
+		if bannedCmd.MatchString(in.Command) && active(ctx.SessionID) {
 			return "", fmt.Errorf(
 				"禁止用 Bash 执行 flutter run/attach/daemon/logs（交互式长驻进程会永久阻塞对话）。\n" +
 					"部署到设备请用 flutter 工具：action=run（构建+安装+启动一条龙，等 app.started 即返回，进程自动转后台）。\n" +

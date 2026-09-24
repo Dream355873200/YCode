@@ -32,7 +32,10 @@ export default function WelcomeScreen() {
     if (!name.trim()) return setError('请填写项目名');
     if (!dir) return setError('请选择项目目录');
     setBusy(true);
-    const r = await window.amc.projects.create({ name: name.trim(), dir, idea: idea.trim(), kind, color });
+    const r = await window.amc.projects.create({
+      mode: 'flutter', scaffold: 'flutter-app',
+      fields: { name: name.trim(), dir, idea: idea.trim(), kind, color },
+    });
     setBusy(false);
     if (!r.ok) return setError(r.error);
     openProject({ name: name.trim(), dir, idea: idea.trim(), kind, color, head: null, commits: 0, dirty: true });

@@ -1,3 +1,5 @@
+github.com/Dream355873200/GoAgent v0.0.0-20260924050946-08b14903505f h1:JqYhKuo+mUvqi8QHcWHJ3x8I0gMRzpDxZr1RNM4M/oM=
+github.com/Dream355873200/GoAgent v0.0.0-20260924050946-08b14903505f/go.mod h1:29RJ51DAmN+dpbpfCUGd0AOgUKocDPg3HjR4L6Nw7fc=
 github.com/Masterminds/semver/v3 v3.5.0 h1:kQceYJfbupGfZOKZQg0kou0DgAKhzDg2NZPAwZ/2OOE=
 github.com/Masterminds/semver/v3 v3.5.0/go.mod h1:4V+yj/TJE1HU9XfppCwVMZq3I84lprf4nC11bSS5beM=
 github.com/anthropics/anthropic-sdk-go v1.4.0 h1:fU1jKxYbQdQDiEXCxeW5XZRIOwKevn/PMg8Ay1nnUx0=

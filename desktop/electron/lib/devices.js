@@ -42,29 +42,38 @@ async function listDevices() {
 
 function startPolling() {
   if (state.pollTimer) return;
-  let lastResetAt = 0; // 自愈限频：防与常驻老 adb 守护进程打乒乓
+  let lastResetAt = 0;   // 自愈限频：防与常驻老 adb 守护进程打乒乓
+  let emptyStreak = 0;   // 连续空轮计数（瞬断去抖 + 自愈门槛）
   const poll = async () => {
     try {
       let { devices, adbAvailable } = await listDevices();
-      // 自愈：adb server 重启/被抢后 USB 设备需重新枚举 —— reconnect 触发
-      if (adbAvailable && devices.length === 0 && state.lastDevicesJson !== '[]') {
+      const mirroring = state.mirrors.size > 0;
+      // 自愈 ①：设备从有到无，reconnect 触发重新枚举（server 端口隔离后
+      // 只兜 USB 瞬断）。投屏中跳过——任何 adb 动作都可能扰动 USB 通道。
+      if (adbAvailable && !mirroring && devices.length === 0 && state.lastDevicesJson !== '[]') {
         await run('adb', ['reconnect']).catch(() => {});
         await new Promise((r) => setTimeout(r, 1200));
-        const r2 = await listDevices();
-        devices = r2.devices;
+        devices = (await listDevices()).devices;
       }
-      // 自愈 ②：仍然拿不到设备但 adb 二进制在 —— 大概率 5037 又被老版 adb
-      //（C:\Windows\adb.exe 1.0.26，ROMaster 等国产软件常驻守护，杀不死）
-      // 抢占。60s 限频执行完整重置（强杀全部 adb → 我们的 1.0.41 重起）。
-      if (adbAvailable && devices.length === 0 && Date.now() - lastResetAt > 60_000) {
+      // 自愈 ②：连续 3 轮（≈9s）仍空 + 无投屏 —— 重置自有 adb server
+      //（强杀清场再起我们的 1.0.41，独占 USB）。投屏中绝不触发。
+      if (adbAvailable && !mirroring && devices.length === 0 && emptyStreak >= 2
+          && Date.now() - lastResetAt > 60_000) {
         lastResetAt = Date.now();
-        console.log('[adb] 设备丢失，执行 server 重置自愈');
+        console.log('[adb] 设备连续未枚举到，重置自有 adb server');
         await ensureAdbServer();
         await run('adb', ['reconnect']).catch(() => {});
         await new Promise((r) => setTimeout(r, 1500));
-        const r3 = await listDevices();
-        devices = r3.devices;
+        devices = (await listDevices()).devices;
         if (devices.length) console.log('[adb] 自愈成功，设备恢复');
+      }
+      // 广播去抖：单轮空读不立即广播「无设备」（瞬断会把 UI 上的设备下拉/
+      // 投屏按钮闪没）——连续 2 轮空才算真丢。
+      if (devices.length === 0 && state.lastDevicesJson !== '[]') {
+        emptyStreak += 1;
+        if (emptyStreak < 2) return;
+      } else {
+        emptyStreak = 0;
       }
       const json = JSON.stringify(devices);
       if (json !== state.lastDevicesJson) {
@@ -81,9 +90,10 @@ function startPolling() {
   state.pollTimer = setInterval(poll, 3000);
 }
 
-// adb server 归位：多版本 adb 共存时（本机实测 C:\Windows\adb.exe 1.0.26 由
-// ROMaster「fork-server」守护常驻，抢 5037 且新版 kill 命令对它无效），
-// 必须 PowerShell 强杀全部 adb 进程清空端口，再用我们选定的 1.0.41 起 server。
+// adb server 归位（仅在无投屏运行时由自愈调用）：多版本 adb 共存时（本机
+// 实测 C:\Windows\adb.exe 1.0.26 由 ROMaster 守护常驻、抢 5037），必须强杀
+// 全部 adb 进程清场，再用我们选定的 1.0.41 起 server——同时独占 USB 设备。
+// 只在启动归位与 60s 限频自愈时执行，运行中投屏绝不触发。
 async function ensureAdbServer() {
   await run('adb', ['kill-server']).catch(() => {});
   await new Promise((r) => setTimeout(r, 400));
@@ -108,6 +118,34 @@ async function ensureAdbServer() {
 //   - cleanup 必须为 false：server 退出会删掉 /data/local/tmp 里的自身文件
 //   - tunnel_forward 模式：客户端连接后双方交换 dummy byte（0x00），
 //     然后 server 推 device meta + video meta + H.264 流
+// 启动手机端 server（app_process，tunnel_forward 模式监听 localabstract:scrcpy）。
+// startMirror 与 connectMirror 的自动重拉共用；早退记录在 entry 上供重试判定。
+function spawnServer(deviceId) {
+  const serverProc = spawn(adbBin(), [
+    '-s', deviceId, 'shell',
+    `CLASSPATH=/data/local/tmp/amc-scrcpy-server app_process / com.genymobile.scrcpy.Server 4.1 ` +
+    `log_level=info video=true audio=false control=true cleanup=false max_size=1080 video_bit_rate=5000000 ` +
+    `video_codec=h264 tunnel_forward=true`,
+  ], { windowsHide: true });
+  serverProc.stdout.on('data', (c) => console.log('[scrcpy-server]', String(c).trim()));
+  serverProc.stderr.on('data', (c) => {
+    const s = String(c).trim();
+    if (!s) return;
+    console.log('[scrcpy-server:err]', s);
+    const e = state.mirrors.get(deviceId);
+    if (e) e.errTail = ((e.errTail || '') + '\n' + s).slice(-400);
+  });
+  // 早退记录：连接阶段死掉 → connectMirror 自动重拉（≤2 次）；额度耗尽仍未
+  // 连上由 connectMirror 统一报错。连上后死掉 → socket close 走 stopMirror。
+  serverProc.on('exit', (code) => {
+    console.log('[scrcpy-server] 退出 code=', code);
+    const e = state.mirrors.get(deviceId);
+    if (!e) return; // stopMirror 已清理（正常停止），勿重复广播
+    e.exited = true;
+  });
+  return serverProc;
+}
+
 async function startMirror(deviceId) {
   if (state.mirrors.has(deviceId)) return { ok: true, already: true };
   const serverBin = path.join(projectRoot(), 'tools', 'scrcpy', 'scrcpy-server');
@@ -126,18 +164,14 @@ async function startMirror(deviceId) {
   const push = await run('adb', ['-s', deviceId, 'push', serverBin, '/data/local/tmp/amc-scrcpy-server']);
   if (!push.ok) return { ok: false, error: `push scrcpy-server 失败: ${push.stderr || push.error}` };
 
-  // 2. 手机上启动 server（app_process），tunnel_forward 模式监听 localabstract:scrcpy
-  const serverProc = spawn(adbBin(), [
-    '-s', deviceId, 'shell',
-    `CLASSPATH=/data/local/tmp/amc-scrcpy-server app_process / com.genymobile.scrcpy.Server 4.1 ` +
-    `log_level=info video=true audio=false control=true cleanup=false max_size=1080 video_bit_rate=5000000 ` +
-    `video_codec=h264 tunnel_forward=true`,
-  ], { windowsHide: true });
-  serverProc.stdout.on('data', (c) => console.log('[scrcpy-server]', String(c).trim()));
-  serverProc.stderr.on('data', (c) => console.log('[scrcpy-server:err]', String(c).trim()));
-  serverProc.on('exit', (code) => console.log('[scrcpy-server] 退出 code=', code));
-  state.mirrors.set(deviceId, { serverProc, socket: null, port: null });
-  serverProc.on('exit', () => stopMirror(deviceId));
+  // 2. 启动手机端 server；连接在 connectMirror（renderer 挂载后主动请求，
+  //    避免竞态：mirror:port 消息早于监听器注册而丢失）
+  const entry = {
+    serverProc: null, socket: null, port: null,
+    exited: false, errTail: '', restarts: 0, retrying: false,
+  };
+  state.mirrors.set(deviceId, entry);
+  entry.serverProc = spawnServer(deviceId);
   return { ok: true };
 }
 
@@ -145,48 +179,91 @@ async function startMirror(deviceId) {
 async function connectMirror(deviceId) {
   const entry = state.mirrors.get(deviceId);
   if (!entry) return { ok: false, error: '投屏未启动' };
-  if (entry.socket) return { ok: true, already: true };
+  // 连接中/已连上：直接成功返回（StrictMode 双挂载会并发调两次——第二个
+  // 循环若也开跑，会和第一个互相 pkill/重拉 server。数据是按 deviceId 广播
+  // 的，一条通道服务所有挂载）。
+  if (entry.socket || entry.retrying) return { ok: true, already: true };
 
-  // 等 server 就绪（socket 开始监听）
-  await new Promise((r) => setTimeout(r, 1500));
-
-  // adb forward 到本机端口。注意 socket 名：scrcpy server 无 scid 参数时
-  // 监听 localabstract:scrcpy（4.x 默认）—— 必须与启动参数一致。
-  const fwd = await run('adb', ['-s', deviceId, 'forward', 'tcp:0', 'localabstract:scrcpy']);
-  if (!fwd.ok) { stopMirror(deviceId); return { ok: false, error: `adb forward 失败: ${fwd.stderr || fwd.error}` }; }
-  let port = parseInt((fwd.stdout.trim().match(/(\d+)/) || [])[1] || '0', 10);
-  if (!port) {
-    const fl = await run('adb', ['-s', deviceId, 'forward', '--list']);
-    const rows = (fl.stdout || '').trim().split('\n').filter((l) => l.includes('localabstract:scrcpy'));
-    const last = rows[rows.length - 1] || '';
-    port = parseInt((last.match(/tcp:(\d+)/) || [])[1] || '0', 10);
+  // 等 server 就绪并完成 video 通道握手。两个坑：
+  //   ① server 启动耗时随设备 1~8s 不等 —— 轮询重试而非固定 sleep；
+  //   ② adb forward 的 TCP 连接由 adbd 代答，server 死了也能「连上」——
+  //      必须以收到 dummy byte 为就绪判据（收到 = server 真正 accept 了）。
+  // server 早退（旧实例占坑/启动崩溃）时自动重拉，最多 2 次；12s 兜底判失败。
+  const deadline = Date.now() + 12_000;
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  entry.retrying = true;
+  let socket = null;
+  let hello = null;
+  let port = 0;
+  let lastErr = '未知错误';
+  for (;;) {
+    const e = state.mirrors.get(deviceId);
+    if (!e) return { ok: false, error: '投屏已中止' };
+    if (e.exited) {
+      if (e.restarts >= 3) {
+        lastErr = `server 反复退出${e.errTail ? `：${e.errTail.trim().split('\n').pop()}` : ''}`;
+        break;
+      }
+      e.restarts += 1;
+      console.log(`[mirror] server 早退，第 ${e.restarts} 次重拉`);
+      await run('adb', ['-s', deviceId, 'shell', 'pkill -f com.genymobile.scrcpy']).catch(() => {});
+      await sleep(800);
+      e.serverProc = spawnServer(deviceId);
+      e.exited = false;
+      e.errTail = '';
+    }
+    // forward + TCP 连接 + dummy byte 等待（≤2.5s）。没等到 dummy = adbd 代答
+    // 的空连接（server 未 accept），销毁重试——根治「TCP 连上即成功」假象。
+    socket = null;
+    hello = null;
+    const fwd = await run('adb', ['-s', deviceId, 'forward', 'tcp:0', 'localabstract:scrcpy']);
+    port = parseInt((fwd.stdout.trim().match(/(\d+)/) || [])[1] || '0', 10);
+    if (!port) {
+      const fl = await run('adb', ['-s', deviceId, 'forward', '--list']);
+      const rows = (fl.stdout || '').trim().split('\n').filter((l) => l.includes('localabstract:scrcpy'));
+      port = parseInt((((rows[rows.length - 1] || '').match(/tcp:(\d+)/) || [])[1]) || '0', 10);
+    }
+    if (fwd.ok && port) {
+      try {
+        socket = await new Promise((resolve, reject) => {
+          const s = net.connect(port, '127.0.0.1');
+          const t = setTimeout(() => { s.destroy(); reject(new Error('连接超时')); }, 1500);
+          s.once('connect', () => { clearTimeout(t); resolve(s); });
+          s.once('error', (err) => { clearTimeout(t); reject(err); });
+        });
+        hello = await new Promise((resolve, reject) => {
+          const t = setTimeout(() => reject(new Error('server 未应答')), 2500);
+          socket.once('data', (d) => { clearTimeout(t); resolve(d); });
+        });
+        break;
+      } catch (err) {
+        try { socket.destroy(); } catch { /* */ }
+        socket = null;
+        lastErr = String(err.message || err);
+      }
+    } else {
+      lastErr = fwd.ok ? '无法获取转发端口' : `adb forward 失败: ${fwd.stderr || fwd.error}`;
+    }
+    if (Date.now() > deadline) break;
+    await sleep(400);
   }
-  if (!port) { stopMirror(deviceId); return { ok: false, error: '无法获取转发端口' }; }
+  entry.retrying = false;
+  if (!socket || !hello) { stopMirror(deviceId); return { ok: false, error: `连接 scrcpy 失败: ${lastErr}` }; }
+  console.log('[mirror] video 通道已就绪 port=', port);
 
-  // TCP 连接。scrcpy 4.1 forward 模式 server 按顺序 accept 多条连接（源码
-  // DesktopConnection.open）：① video（accept 后发 dummy byte）② audio（跳过）
-  // ③ control —— 必须把控制通道也连上，server 的 open() 才会返回、视频才开始推流。
-  let socket;
+  // 握手收尾 + control 通道连接（此刻 server 已真正 accept，失败即真异常）。
+  // scrcpy 4.1 forward 模式 server 按顺序 accept 多条连接（源码
+  // DesktopConnection.open）：① video（accept 后发 dummy byte）② audio
+  // （audio=false 无此通道）③ control —— 必须把控制通道也连上，server 的
+  // open() 才会返回、视频才开始推流。
   let controlSocket;
   try {
-    socket = net.connect(port, '127.0.0.1');
-    await new Promise((resolve, reject) => {
-      socket.once('connect', () => { console.log('[mirror] TCP 已连接 port=', port); resolve(); });
-      socket.once('error', reject);
-    });
-    // 第 1 条 = video。dummy byte 只在第一条 accept 后发一次（sendDummyByte 标志）。
-    const hello = await new Promise((resolve, reject) => {
-      const t = setTimeout(() => reject(new Error('握手超时（server 未发 dummy byte）')), 5000);
-      socket.once('data', (d) => { clearTimeout(t); resolve(d); });
-    });
     socket.write(Buffer.from([0]));
     if (hello.length > 1) {
       // dummy 后已附带 meta（罕见但处理）：先缓存，socket data 事件接上后补发
       const cur = state.mirrors.get(deviceId);
       if (cur) cur.pending = hello.subarray(1);
     }
-    console.log('[mirror] video 通道握手完成');
-
     // 第 2 条 = control（不发 dummy）。控制消息走这条，设备消息（剪贴板等）也从这条回来
     controlSocket = net.connect(port, '127.0.0.1');
     await new Promise((resolve, reject) => {
@@ -195,6 +272,7 @@ async function connectMirror(deviceId) {
     });
     console.log('[mirror] control 通道已连接');
   } catch (e) {
+    socket.destroy();
     stopMirror(deviceId);
     return { ok: false, error: `连接 scrcpy 失败: ${e.message}` };
   }

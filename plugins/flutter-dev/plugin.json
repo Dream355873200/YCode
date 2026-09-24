@@ -1,0 +1,11 @@
+{
+  "id": "flutter-dev",
+  "name": "Flutter 开发",
+  "description": "Flutter 工程能力：flutter 工具（analyze/test/build/run）、SPEC 驱动的开发规范、界面风格与数据层技能",
+  "toolsets": ["flutter"],
+  "rules": "rules.md",
+  "skills": "skills",
+  "sidePanels": [
+    { "id": "spec", "label": "SPEC" }
+  ]
+}

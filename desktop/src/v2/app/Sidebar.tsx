@@ -1,8 +1,10 @@
 // Sidebar — 会话侧栏（ZCode 导航结构）：新建/搜索导航行 + 项目分组列表 +
 // 底部引擎状态卡；支持收起为窄轨（rail），Header 的开合钮控制。
+// 开合动画：容器常驻挂载做宽度过渡，全量内容与 rail 双层交叉渐隐
+// （隐藏层 visibility 延迟到过渡结束才生效，不挡焦点/点击）。
 import { useState } from 'react';
 import { PlusIcon, Settings2Icon, SearchIcon } from 'lucide-react';
-import { useApp } from './appState';
+import { useApp, sessionIdOf } from './appState';
 import { useConversation } from '../conversation/store';
 import { Button } from '../components/ui/button';
 import { cn } from '../components/lib/utils';
@@ -16,36 +18,32 @@ function EngineDot({ status }: { status: string }) {
   return <span className={cn('inline-block h-2 w-2 shrink-0 rounded-full', cls)} />;
 }
 
-/** 收起态：窄图标轨（logo 移入标题栏左端——顶带随侧栏开合联动）。 */
-function Rail() {
-  const { setCreateDialogOpen, engineStatus } = useApp();
-  return (
-    <aside className="flex w-12 shrink-0 flex-col items-center gap-1 border-r border-border bg-sidebar py-2">
-      <Button variant="ghost" size="icon-md" aria-label="新建项目（Ctrl+N）"
-        className="text-foreground-subtle hover:bg-hover hover:text-foreground"
-        onClick={() => setCreateDialogOpen(true)}>
-        <PlusIcon />
-      </Button>
-      <div className="mt-auto pb-1">
-        <EngineDot status={engineStatus.status} />
-      </div>
-    </aside>
-  );
-}
-
 export function Sidebar() {
   const { projects, project, openProject, engineStatus, setCreateDialogOpen, setSettingsOpen, sidebarOpen, setSidebarOpen } = useApp();
   const sessions = useConversation((s) => s.sessions);
   const [filter, setFilter] = useState('');
 
-  if (!sidebarOpen) return <Rail />;
-
   const shown = projects.filter((p) =>
     !filter.trim()
     || p.name.toLowerCase().includes(filter.trim().toLowerCase()));
 
+  // 收起态快捷会话项：直接遍历项目列表（全量来自引擎，冷会话也显示），
+  // 每项渲染成圆角方框（项目名首字母 + 运行中角标），点击只切会话不展开侧栏
+  const railItems = projects.map((p) => {
+    const sid = sessionIdOf(p);
+    return { p, running: !!(sid && sessions[sid]?.busy) };
+  });
+
   return (
-    <aside className="flex w-66 shrink-0 flex-col border-r border-border bg-sidebar">
+    <aside className={cn(
+      'relative shrink-0 overflow-hidden border-r border-border bg-sidebar transition-[width] duration-200 ease-out',
+      sidebarOpen ? 'w-66' : 'w-12',
+    )}>
+      {/* 全量内容层：固定 w-66 防回流，随开合交叉渐隐 */}
+      <div aria-hidden={!sidebarOpen} className={cn(
+        'absolute inset-y-0 left-0 flex w-66 flex-col transition-[opacity,visibility] duration-200',
+        sidebarOpen ? 'visible opacity-100' : 'invisible pointer-events-none opacity-0',
+      )}>
       {/* 顶部 logo 行（ZCode 式：点 logo 收起侧栏；高度对齐 Header h-12） */}
       <div className="flex h-12 shrink-0 items-center px-4">
         <button type="button" aria-label="收起侧栏" title="收起侧栏"
@@ -115,6 +113,39 @@ export function Sidebar() {
           onClick={() => setSettingsOpen(true)}>
           <Settings2Icon />
         </Button>
+      </div>
+      </div>
+      {/* 窄轨层：与全量内容交叉渐隐 */}
+      <div aria-hidden={sidebarOpen} className={cn(
+        'absolute inset-y-0 left-0 flex w-12 flex-col items-center gap-1 py-2 transition-[opacity,visibility] duration-200',
+        sidebarOpen ? 'invisible pointer-events-none opacity-0' : 'visible opacity-100',
+      )}>
+        <Button variant="ghost" size="icon-md" aria-label="新建项目（Ctrl+N）"
+          className="text-foreground-subtle hover:bg-hover hover:text-foreground"
+          onClick={() => setCreateDialogOpen(true)}>
+          <PlusIcon />
+        </Button>
+        {/* 会话快捷项：圆角方框，点击只切会话（侧栏保持收起） */}
+        {railItems.length > 0 && (
+          <div className="mt-1 flex min-h-0 flex-col items-center gap-1 overflow-y-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            {railItems.map(({ p, running }) => (
+              <button key={p.dir} type="button" title={p.name} aria-label={`切换到 ${p.name}`}
+                onClick={() => openProject(p)}
+                className={cn(
+                  'relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border text-ui-2xs font-medium transition-colors',
+                  project?.dir === p.dir
+                    ? 'border-brand bg-selected text-foreground'
+                    : 'border-border bg-card text-foreground hover:bg-hover',
+                )}>
+                {p.name.trim().slice(0, 1).toUpperCase() || '·'}
+                {running && <span className="absolute -right-0.5 -top-0.5 h-2 w-2 animate-pulse rounded-full bg-brand" />}
+              </button>
+            ))}
+          </div>
+        )}
+        <div className="mt-auto pb-1">
+          <EngineDot status={engineStatus.status} />
+        </div>
       </div>
     </aside>
   );

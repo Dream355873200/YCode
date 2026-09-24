@@ -1,0 +1,6 @@
+{
+  "id": "vision",
+  "name": "视觉裁决",
+  "description": "多模态目视判断（vision_ask）：白屏、错位、布局异常等像素对比说不清的问题。需模型支持图片输入且 FLAI_VISION=1",
+  "toolsets": ["vision"]
+}

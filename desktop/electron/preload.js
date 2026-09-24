@@ -16,7 +16,7 @@ contextBridge.exposeInMainWorld('amc', {
     restart: () => ipcRenderer.invoke('engine:restart'),
     status: () => ipcRenderer.invoke('engine:status'),
     listModels: () => ipcRenderer.invoke('engine:listModels'),
-    bindProject: (sessionId, dir) => ipcRenderer.invoke('engine:bindProject', sessionId, dir),
+    bindProject: (sessionId, dir, mode) => ipcRenderer.invoke('engine:bindProject', sessionId, dir, mode),
     onStatus: (cb) => {
       const h = (_e, s) => cb(s);
       ipcRenderer.on('engine:status', h);
@@ -41,6 +41,7 @@ contextBridge.exposeInMainWorld('amc', {
   projects: {
     list: () => ipcRenderer.invoke('projects:list'),
     create: (p) => ipcRenderer.invoke('projects:create', p),
+    setMode: (dir, mode) => ipcRenderer.invoke('projects:setMode', dir, mode),
     remove: (dir) => ipcRenderer.invoke('projects:remove', dir),
     pickDir: () => ipcRenderer.invoke('projects:pickDir'),
     filetree: (dir) => ipcRenderer.invoke('projects:filetree', dir),

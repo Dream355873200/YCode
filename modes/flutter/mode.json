@@ -2,13 +2,16 @@
   "id": "flutter",
   "name": "Flutter 开发",
   "description": "自然语言 → 可运行的 Flutter 应用（SPEC 驱动、设备实测、视觉验收）",
-  "engine": {
-    "domainRules": "domain-rules.md",
-    "skillsDir": "../../knowledge/skills",
-    "toolsets": ["flutter", "device", "test-report", "vision"]
-  },
+  "prompts": "flutter",
+  "plugins": ["flutter-dev", "android-device", "vision"],
+  "scaffold": "flutter-app",
   "projectFields": [
     { "id": "name", "label": "项目名称", "type": "text", "required": true, "placeholder": "例如：记账小助手" },
-    { "id": "idea", "label": "产品想法", "type": "textarea", "required": true, "placeholder": "一句话描述你想做的应用", "hint": "开始对话后也可以继续补充" }
+    { "id": "dir", "label": "项目目录", "type": "folder", "required": true, "placeholder": "选择一个空目录" },
+    { "id": "idea", "label": "产品想法", "type": "textarea", "required": true, "placeholder": "想做一个什么样的 App？核心功能是什么？", "hint": "开始对话后也可以继续补充" },
+    { "id": "kind", "label": "应用形态", "type": "choice", "default": "app", "options": [
+      { "value": "app", "label": "纯移动 App" },
+      { "value": "go", "label": "App + Go 后端" }
+    ] }
   ]
 }

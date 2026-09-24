@@ -135,8 +135,9 @@ function Shell() {
         <TitleBar />
         <div className="flex min-h-0 flex-1">
           <SessionFrame />
-          {/* Side Pane（tab 化：Git 辅助对话 / 任务 / 计划；标题栏右端钮开合） */}
-          {sidePaneOpen && <SidePane />}
+          {/* Side Pane（tab 化：Git 辅助对话 / 任务 / 计划；标题栏右端钮开合）。
+              常驻挂载收 open 做宽度动画，内容在组件内部按 open 延迟挂卸 */}
+          <SidePane open={sidePaneOpen} />
         </div>
       </div>
       <NewProjectDialog />

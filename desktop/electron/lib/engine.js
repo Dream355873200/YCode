@@ -57,20 +57,24 @@ function probeEngine(addr) {
   return httpJSON('GET', addr, '/health').then((r) => r.status === 200).catch(() => false);
 }
 
-// sessionMapPath 会话→项目映射文件（引擎按会话扎根项目目录的真源）。
-// 引擎侧 WithSessionWorkDir 读它解析每个 session 的项目路径——
-// 切项目只是换 session_id，引擎进程不重启（多项目并行）。
+// sessionMapPath 会话绑定文件（引擎按会话解析项目目录与模式的真源）。
+// 引擎侧 WithSessionWorkDir / 会话级能力解析器读它——切项目只是换
+// session_id，切模式只是改绑定，引擎进程不重启（多项目、多模式并行）。
 function sessionMapPath() {
   return path.join(os.homedir(), '.amobilecreater', 'session-map.json');
 }
 
-// bindSession 登记会话→项目映射并即时写盘（引擎 mtime 缓存会自动重读）。
-function bindSession(sessionId, projectDir) {
+// bindSession 登记会话绑定 {dir, mode} 并即时写盘（引擎 mtime 缓存会自动重读）。
+// mode 省略时保留该会话已有的模式（旧格式字符串条目视为无模式 → 引擎取默认）。
+function bindSession(sessionId, projectDir, mode) {
   if (!sessionId || !projectDir) return false;
   const file = sessionMapPath();
   let map = {};
   try { map = JSON.parse(fs.readFileSync(file, 'utf8')) || {}; } catch { /* 首次/损坏：重建 */ }
-  map[sessionId] = projectDir;
+  const prev = map[sessionId];
+  const keepMode = prev && typeof prev === 'object' ? prev.mode : undefined;
+  const nextMode = mode || keepMode;
+  map[sessionId] = nextMode ? { dir: projectDir, mode: nextMode } : { dir: projectDir };
   try {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, JSON.stringify(map, null, 2));
@@ -106,8 +110,8 @@ async function ensure(cfg) {
   };
   // 最大输出（推理模型的 reasoning 也占此额度）；未配置走引擎缺省 393216
   if (cfg.engine.maxOutputTokens) env.FLAI_MAX_OUTPUT_TOKENS = String(cfg.engine.maxOutputTokens);
-  // --mode 决定引擎装配哪个模式包（工具集/领域规范/技能目录）；未配置
-  // 时不传参，走引擎自身缺省（flutter），老配置文件无需迁移。
+  // --mode 是引擎的默认模式（未绑定模式的会话使用）；引擎一次加载全部
+  // 模式，会话实际模式由 session-map.json 的绑定决定。未配置时不传参。
   const args = ['--addr', cfg.engine.addr];
   if (cfg.engine.mode) args.push('--mode', cfg.engine.mode);
   state.proc = spawn(cfg.engine.binary, args, {

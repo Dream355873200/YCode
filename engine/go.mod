@@ -2,10 +2,7 @@ module github.com/amobileCreater/engine
 
 go 1.25.5
 
-// 本地 replace：待 goagent 修复推送后移除并升级版本号（GOAGENT_CHANGES.md 有记录）
-replace github.com/Dream355873200/GoAgent => E:/claude-code-rev-study-main/claude-code-rev-study-main/goagent
-
-require github.com/Dream355873200/GoAgent v0.0.0-20260826134450-ddad5c2f5a19
+require github.com/Dream355873200/GoAgent v0.0.0-20260924050946-08b14903505f
 
 require (
 	github.com/anthropics/anthropic-sdk-go v1.4.0 // indirect
