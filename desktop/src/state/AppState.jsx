@@ -1,5 +1,6 @@
 // 全局应用状态：当前项目 / 会话 / 引擎状态 / 屏幕路由
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import { projectSessionId } from '../v2/app/sessionId';
 
 const AppCtx = createContext(null);
 export const useApp = () => useContext(AppCtx);
@@ -26,9 +27,8 @@ export function AppProvider({ children }) {
     return () => { off(); clearInterval(t); };
   }, []);
 
-  // 会话 ID 规则：每项目一个持久会话（amc-<目录名>），重开项目可恢复历史
-  const sessionIdOf = (p) =>
-    p && p.dir ? 'amc-' + p.dir.split(/[\\/]/).filter(Boolean).pop() : null;
+  // 会话 ID 规则：每项目一个持久会话（与 v2 共用 sessionId.ts），重开项目可恢复历史
+  const sessionIdOf = (p) => projectSessionId(p && p.dir);
 
   const openProject = useCallback((p) => {
     setProject(p);

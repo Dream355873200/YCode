@@ -40,6 +40,7 @@ func PromptGroupDir(name string) string {
 // PromptGroup 一个提示词组的运行时视图。
 type PromptGroup struct {
 	Name  string   `json:"name"`
+	Dir   string   `json:"dir"` // 组目录绝对路径（设置页预览分段内容）
 	Files []string `json:"files,omitempty"`
 }
 
@@ -55,8 +56,8 @@ func LoadPromptGroups() []PromptGroup {
 		if !e.IsDir() || strings.HasPrefix(e.Name(), ".") {
 			continue
 		}
-		g := PromptGroup{Name: e.Name()}
-		files, err := os.ReadDir(filepath.Join(root, e.Name()))
+		g := PromptGroup{Name: e.Name(), Dir: filepath.Join(root, e.Name())}
+		files, err := os.ReadDir(g.Dir)
 		if err == nil {
 			for _, f := range files {
 				if !f.IsDir() && strings.HasSuffix(f.Name(), ".md") {

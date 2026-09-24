@@ -124,6 +124,15 @@ ipcMain.handle('fs:readImage', (_e, p) => {
 // ---------- IPC：项目 ----------
 ipcMain.handle('projects:list', async () => {
   const reg = loadRegistry();
+  // 模式字段出现前注册的老项目：按内容一次性定格模式并写回（有 pubspec.yaml
+  // 即 Flutter 工程，其余取当前默认模式），此后改默认模式不会隐式改变它们
+  let pinned = false;
+  for (const p of reg.projects) {
+    if (p.mode) continue;
+    p.mode = fs.existsSync(path.join(p.dir, 'pubspec.yaml')) ? 'flutter' : loadConfig().engine.mode;
+    pinned = true;
+  }
+  if (pinned) saveRegistry(reg);
   const projects = [];
   for (const p of reg.projects) {
     const exists = fs.existsSync(p.dir);

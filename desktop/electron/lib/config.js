@@ -19,9 +19,10 @@ function defaultConfig() {
       binary: path.join(projectRoot(), 'engine', 'flai-engine.exe'),
       addr: '127.0.0.1:8420',
       // 默认模式（modes/ 目录下的模式包 id）：新建项目的预选模式，以及
-      // 未记录模式的老项目的回落值。模式是项目级的（projects.json 的
-      // mode 字段），切换不重启引擎。缺省 flutter 兼容老项目。
-      mode: 'flutter',
+      // 未记录模式的项目的回落值。模式是项目级的（projects.json 的 mode
+      // 字段），切换不重启引擎。缺省 code（通用代码 Agent）；可在设置页
+      //「模式」里改。
+      mode: 'code',
       model: 'DeepSeek-V4-Flash',
       baseUrl: 'http://localhost:11434/v1',
       apiKey: '',
@@ -34,10 +35,13 @@ function defaultConfig() {
 }
 
 function loadConfig() {
+  const def = defaultConfig();
   try {
-    return { ...defaultConfig(), ...JSON.parse(fs.readFileSync(configPath(), 'utf-8')) };
+    const saved = JSON.parse(fs.readFileSync(configPath(), 'utf-8'));
+    // engine 段逐字段合并：旧配置缺的新字段（如 mode）取默认值
+    return { ...def, ...saved, engine: { ...def.engine, ...(saved.engine || {}) } };
   } catch {
-    return defaultConfig();
+    return def;
   }
 }
 function saveConfig(cfg) {

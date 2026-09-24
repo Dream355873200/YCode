@@ -1,0 +1,6 @@
+{
+  "id": "explore",
+  "name": "代码探索子代理",
+  "description": "Agent_explore：只读探索代码库的独立子代理（Read/Glob/Grep），多步检索在子代理里完成，只把结论带回主对话，不撑爆主上下文",
+  "agents": "agents"
+}

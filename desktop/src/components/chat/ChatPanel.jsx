@@ -22,7 +22,7 @@ export default function ChatPanel({ chatApi, onAct }) {
   const [mode, setMode] = useState('plan');
   const bodyRef = useRef(null);
 
-  // 会话 ID 由 AppState.openProject 按项目派生（amc-<目录名>），此处只消费。
+  // 会话 ID 由 AppState.openProject 按项目派生（amc-<目录名>-<路径哈希>），此处只消费。
 
   // 换项目/换会话/引擎就绪时恢复历史。直播状态在模块级 store（不随组件
   // 卸载丢失）：退出项目再进来，进行中的 run 直播直接续上；只有应用整个

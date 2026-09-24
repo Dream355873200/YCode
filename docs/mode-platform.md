@@ -1,8 +1,34 @@
-# Mode 平台化设计（草案 v1）
+# Mode 平台化设计
 
-> 2026-09-22 规划。目标：amc 从 Flutter 开发专用转型为可扩展的 agent 平台——
-> 高度可自定义，默认形态是 code 开发（ZCode 形态），Flutter 变成其中一个模式包。
+> 2026-09-22 规划，2026-09-24 按实现更新。目标：从 Flutter 开发专用转型为可扩展的 agent 平台——
+> 高度可自定义，默认形态是通用代码 Agent，Flutter 变成其中一个模式包。
 > 未来在平台层叠加 agent 协作（pipeline / 多 agent）。
+
+## 0. 实现现状（先读这一节）
+
+草案里的「模式直接声明全部槽位」在实现时改成了**三层**：
+
+```
+原生工具集（Go，toolsets.go 注册表）← 插件（plugins/<id>/plugin.json）← 模式（modes/<id>/mode.json）
+```
+
+- **模式**只做装配：`prompts`（提示词组）+ `plugins`（插件列表）+ `projectFields`（新建项目表单）
+  + `scaffold`（脚手架）。模式不直接声明工具、技能、规范或面板
+- **插件**是能力的打包单位：`toolsets` 引用 + `rules`（领域规范）+ `skills` + `agents`（只读子代理）
+  + `mcpServers` + `sidePanels`。编写约定见 [plugins/README.md](../plugins/README.md)
+- **提示词组** `prompts/<name>/` 只放要覆盖的分段，见 [prompts/README.md](../prompts/README.md)
+- **全局技能** `skills/` 对所有模式生效
+- **会话级**：一个引擎进程加载全部模式，每个会话按 session-map 绑定的模式过滤工具、
+  选提示词组、注入规范、挑技能——切模式不重启引擎，多模式会话并存
+- **严格校验**：清单未知字段、引用悬空、id 与目录名不一致都拒绝启动
+- **设置页即能力目录**：模式 / 插件 / 提示词 / 工具集 / 子代理 / MCP / 技能各一个 tab，
+  上层详情以卡片列出下层能力，点击进入详情
+
+第 2 节的 7 个槽位对照实现：prompt-overlay → 提示词组；skills / toolsets → 插件；
+project-fields → 模式；left-panel → 插件 `sidePanels`（右栏）；stage 与 artifact-types 尚未做成
+独立槽位（flutter 的手机与测试报告目前是 `sidePanels` 面板）。
+
+第 7 节阶段进度：P1、P2、P3 已完成（外加插件子代理与 MCP 接入），P4 起未开始。
 
 ## 1. 两条设计原则
 
@@ -12,7 +38,7 @@
 
 **机制进内核，内容进 mode**。内核不知道任何产物/流程叫什么名字，只提供机制与槽位。
 
-## 2. 槽位清单（第一期 7 个）
+## 2. 槽位清单（草案，实现形态见第 0 节）
 
 | 槽位 | 内容 | 形态 |
 |---|---|---|
@@ -26,33 +52,24 @@
 
 第二期再加：tool-renderers（工具卡渲染扩展）、composer-actions（快捷操作）。
 
-**模式包目录约定**：
+**模式包目录约定**（实际布局）：
 
 ```
-modes/
-  code/               ← 默认模式（ZCode 形态：无手机、无设备）
-    mode.json
-    prompts/system.md
-    skills/
-  flutter/
-    mode.json
-    prompts/*.md
-    skills/
-    panels/…tsx        ← 由左栏/stage 槽位注册
+modes/<id>/mode.json      ← 只做装配：提示词组 + 插件 + 新建项目字段 + 脚手架
+plugins/<id>/             ← 能力：plugin.json + rules.md + skills/ + agents/
+prompts/<name>/           ← 提示词组：只放覆盖的分段
+skills/                   ← 全局技能
 ```
 
 ```jsonc
-// mode.json 示意
+// modes/flutter/mode.json（实际清单）
 {
   "id": "flutter",
   "name": "Flutter 开发",
-  "engine": { "baseToolsets": ["core", "bgtask"], "add": ["flutter", "device", "vision"] },
-  "systemPrompt": "prompts/system.md",
-  "skills": "skills/",
-  "projectFields": [...],
-  "stage": "phone",
-  "panels": [{ "slot": "left.bottom", "component": "testTimeline" }],
-  "artifactTypes": ["acceptance-report"]
+  "prompts": "flutter",
+  "plugins": ["flutter-dev", "android-device", "vision", "explore"],
+  "scaffold": "flutter-app",
+  "projectFields": [ ... ]
 }
 ```
 
@@ -115,7 +132,7 @@ modes/
 1. **纯资产包**（先行）：md + json——prompt/skills/工具集配置/recipe，无需编译代码，覆盖大部分扩展需求
 2. **组件级插件**（后期）：面板/舞台/工具卡组件——需要运行时加载或插件宿主，成本高，等第一方模式稳定后再定形态
 
-### 5.1 做 mode 一定要写代码吗？——创作阶梯
+### 6.1 做 mode 一定要写代码吗？——创作阶梯
 
 诚实回答：**槽位里放「新内容」不需要代码，发明「新种类的界面」才需要**。按需要写代码的程度分三阶：
 
@@ -140,7 +157,8 @@ modes/
 
 ### 内置「模式作者」agent
 
-同意用户的提议：平台自带一个创建新 mode 的内置插件（类比 ZCode 里让 agent 帮你写 skill/hook）。用户用自然语言描述想要什么，agent 全程代做：
+同意用户的提议：平台自带一个创建新 mode 的内置能力（让 agent 帮你写 skill / 插件）。现状：全局技能
+`skill-creator` 已能按真实清单格式代写插件、技能、子代理、MCP 接入与模式清单；以下是完整形态。用户用自然语言描述想要什么，agent 全程代做：
 
 1. **访谈**：问清领域、需要什么工具、要看到什么（对话即可，产出 mode.json + md 资产）
 2. **生成资产**：prompt/skills/表单 schema/产物模板/recipe——纯声明部分全自动
@@ -151,9 +169,10 @@ modes/
 
 ## 7. 实施阶段（每步独立可验收）
 
-- **P1 引擎装配**：main.go 工具注册按 mode 配置装配；prompt/技能路径改由 mode 声明；**mode 改为会话级属性**（为跨 mode 组队铺路——每个会话按自己的 mode 装配工具集与 prompt，而不是进程级）
-- **P2 桌面槽位化**：`modeRegistry.ts`（槽位 + 注册 API + activeMode）；现有 Flutter 组件平移进 `modes/flutter/`
-- **P3 code 默认模式**：极简形态（无舞台/设备，base 工具集），跑通即证明内核干净
+- **P1 引擎装配** ✅：工具注册按模式装配；提示词 / 技能路径由清单声明；mode 为会话级属性
+- **P2 桌面槽位化** ✅：`modeRegistry.ts` + 右栏面板按插件 `sidePanels` 注册；声明式新建项目
+- **P3 code 默认模式** ✅：插件 `dev-discipline` + `explore`，内置通用提示词，无设备能力
+- **P3.5 插件扩展** ✅：插件内只读子代理（`Agent_<name>`）、MCP server 接入（stdio / Streamable HTTP）
 - **P4 artifact 机制**：通用产物面板 + 测试报告作为第一个注册实例迁入
 - **P5 Team 协作层**：协作区 UI + 四原语（具名成员/寻址消息/任务板认领/文件域锁）+ 跨 mode 组队
 - **P6 pipeline recipes**：验收流水线（flutter）与评审流水线（code）——pipeline run 的节点即 team 成员
@@ -161,15 +180,13 @@ modes/
 
 ## 8. 现有资产归类对照
 
-## 7. 现有资产归类对照
-
 | 现有资产 | 归属 |
 |---|---|
-| SPEC 引导、generate-login-screen、testing/design 等 skills | mode（md） |
-| flutter / device / ui_tree / tap / vision / bgexec 工具 | mode 工具集声明 |
-| 新建项目表单 | mode project-fields schema |
-| StagePanel / PhoneWindow / 截图流 | flutter mode 的 stage 槽位 |
-| 左栏测试时间线 / 测试报告卡 | artifact-types + left-panel 槽位 |
-| Read/Edit/Bash/Glob/Grep/Task | base 工具集（内核提供，code 类模式共用） |
+| SPEC 引导、generate-login-screen、testing/design 等 skills | 插件技能（flutter-dev / android-device） |
+| flutter / device / ui_tree / tap / vision 工具 | 原生工具集，由插件引用 |
+| 新建项目表单 | 模式 projectFields |
+| StagePanel / PhoneWindow / 截图流 | android-device 插件的「手机」面板 |
+| 测试报告 | android-device 插件的「测试报告」面板（artifact 机制未做） |
+| Read/Edit/Bash/Glob/Grep/Task/bgexec | base 工具（内核提供，所有模式可见） |
 | 对话流 / 工作段 / 提问 / 审批 / 队列 / 轮次轨 | 内核 |
 | goagent 引擎 / 会话 / SSE 协议 / pipeline 运行时 | 内核 |

@@ -49,7 +49,7 @@ export function Sidebar() {
         <button type="button" aria-label="收起侧栏" title="收起侧栏"
           className="flex h-6 w-6 items-center justify-center rounded-md bg-primary text-ui-sm font-bold text-primary-foreground transition-colors hover:bg-primary/80"
           onClick={() => setSidebarOpen(false)}>
-          A
+          Y
         </button>
       </div>
       {/* 导航行：主操作 + 搜索（ZCode 式：icon + 文案 + 快捷键标注右对齐） */}
@@ -78,7 +78,7 @@ export function Sidebar() {
       <nav className="mt-1 min-h-0 flex-1 overflow-y-auto px-2 pb-2">
         {shown.map((p) => {
           const active = project?.dir === p.dir;
-          const sid = 'amc-' + p.dir.split(/[\\/]/).filter(Boolean).pop();
+          const sid = sessionIdOf(p);
           const running = !!(sid && sessions[sid]?.busy);
           return (
             <button key={p.dir} type="button" onClick={() => openProject(p)}

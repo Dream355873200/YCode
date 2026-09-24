@@ -2,7 +2,7 @@ module github.com/amobileCreater/engine
 
 go 1.25.5
 
-require github.com/Dream355873200/GoAgent v0.0.0-20260924050946-08b14903505f
+require github.com/Dream355873200/GoAgent v0.0.0-20260924063101-d604571845eb
 
 require (
 	github.com/anthropics/anthropic-sdk-go v1.4.0 // indirect

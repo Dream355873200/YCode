@@ -108,7 +108,7 @@ function HelperChat({ gitSid }: { gitSid: string }) {
 }
 
 export function GitPanel() {
-  const { sid, project } = useApp();
+  const { sid, project, projectMode } = useApp();
   const [st, setSt] = useState<GitStatus | null>(null);
   const dir = project?.dir || '';
 
@@ -128,10 +128,10 @@ export function GitPanel() {
   const restore = useConversation((s) => s.restore);
   useEffect(() => {
     if (gitSid && dir) {
-      void engine.bindProject(gitSid, dir).catch(() => {});
+      void engine.bindProject(gitSid, dir, projectMode).catch(() => {});
       void restore(gitSid);
     }
-  }, [gitSid, dir, restore]);
+  }, [gitSid, dir, projectMode, restore]);
 
   if (!project) {
     return <div className="p-6 text-center text-ui-xs text-foreground-subtlest">选择项目后查看 Git 状态</div>;

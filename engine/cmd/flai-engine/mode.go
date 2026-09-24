@@ -116,11 +116,11 @@ func validateFields(modeID string, fields []ProjectField) error {
 type ModeView struct {
 	PromptDir  string      `json:"promptDir,omitempty"` // 提示词组绝对路径（空 = 内置）
 	Toolsets   []string    `json:"toolsets"`            // 原生工具集
-	Tools      []string    `json:"tools"`               // 领域工具名（base 工具之外本模式可见的）
+	Tools      []string    `json:"tools"`               // 领域工具名（工具集工具 + 子代理工具；MCP 工具见 /mcp）
 	Rules      []string    `json:"rules"`               // 规范文件绝对路径（会话级注入）
 	SkillDirs  []string    `json:"skillDirs"`           // 插件技能目录（全局 skills/ 另行追加）
-	AgentDirs  []string    `json:"agentDirs"`           // 子代理定义目录（声明位）
-	MCPServers []MCPServer `json:"mcpServers"`          // MCP 声明（声明位）
+	Agents     []string    `json:"agents"`              // 子代理名（工具名 Agent_<name>）
+	MCPServers []MCPServer `json:"mcpServers"`          // MCP 服务器声明（连接状态见 /mcp）
 	SidePanels []SidePanel `json:"sidePanels"`          // 右栏面板槽位
 
 	contextFiles []string // 会话项目上下文 = Rules + 工具集附带的动态上下文
@@ -128,12 +128,12 @@ type ModeView struct {
 
 // HasToolset 模式是否启用某工具集。
 func (m *Mode) HasToolset(name string) bool {
-	for _, t := range m.Resolved.Toolsets {
-		if t == name {
-			return true
-		}
-	}
-	return false
+	return contains(m.Resolved.Toolsets, name)
+}
+
+// HasPlugin 模式是否引用某插件。
+func (m *Mode) HasPlugin(id string) bool {
+	return contains(m.Plugins, id)
 }
 
 // modesDir 模式包根目录定位：FLAI_MODES_DIR > 应用根/modes。
@@ -195,7 +195,7 @@ func loadModes() ([]*Mode, error) {
 func resolveMode(m *Mode, pluginByID map[string]*Plugin) (*ModeView, error) {
 	v := &ModeView{
 		Toolsets: []string{}, Tools: []string{}, Rules: []string{}, SkillDirs: []string{},
-		AgentDirs: []string{}, MCPServers: []MCPServer{}, SidePanels: []SidePanel{},
+		Agents: []string{}, MCPServers: []MCPServer{}, SidePanels: []SidePanel{},
 	}
 	if m.Prompts != "" {
 		if v.PromptDir = PromptGroupDir(m.Prompts); v.PromptDir == "" {
@@ -228,8 +228,9 @@ func resolveMode(m *Mode, pluginByID map[string]*Plugin) (*ModeView, error) {
 		if d := p.SkillsPath(); d != "" {
 			v.SkillDirs = append(v.SkillDirs, d)
 		}
-		if d := p.AgentsPath(); d != "" {
-			v.AgentDirs = append(v.AgentDirs, d)
+		for _, d := range p.AgentDefs {
+			v.Agents = append(v.Agents, d.Name)
+			v.Tools = append(v.Tools, d.ToolName())
 		}
 		v.MCPServers = append(v.MCPServers, p.MCPServers...)
 		for _, sp := range p.SidePanels {

@@ -59,7 +59,7 @@ func main() {
 	model := flag.String("model", envOr("FLAI_MODEL", "qwen2.5:7b"), "模型名称")
 	contextWindow := flag.Int("context-window", envOrInt("FLAI_CONTEXT_WINDOW", 1_000_000), "模型上下文窗口 token 数（决定压缩阈值，须与真实模型一致）")
 	maxOutput := flag.Int("max-output-tokens", envOrInt("FLAI_MAX_OUTPUT_TOKENS", 393216), "模型最大输出 token 数（推理模型的 reasoning 也占此额度，默认 4096 会导致正文被截断）")
-	modeID := flag.String("mode", envOr("FLAI_MODE", "flutter"), "默认模式（未绑定模式的会话使用；模式是会话级的，见 session-map.json）")
+	modeID := flag.String("mode", envOr("FLAI_MODE", "code"), "默认模式（未绑定模式的会话使用；模式是会话级的，见 session-map.json）")
 	flag.Parse()
 
 	// 会话绑定：单引擎多项目、多模式并存的地基。桌面壳把每个 session
@@ -113,7 +113,8 @@ func main() {
 		goagent.WithCostTracking(),
 		goagent.WithHTTPRoutes(userEditRoutes()), // 编辑器写回通知端点（/notify/user-edit，app 创建后经 engineApp 接线）
 		goagent.WithHTTPRoutes(modesRoutes()),    // 模式发现端点（全部模式 + 聚合视图 + 工具集明细）
-		goagent.WithHTTPRoutes(pluginsRoutes()),  // 插件发现端点（设置页插件清单）
+		goagent.WithHTTPRoutes(pluginsRoutes()),  // 插件发现端点（设置页插件清单 + MCP 状态）
+		goagent.WithHTTPRoutes(mcpRoutes()),      // MCP 服务器状态端点
 		goagent.WithHTTPRoutes(skillsRoutes()),   // 技能清单端点（按插件/全局归属）
 		goagent.WithHTTPRoutes(promptsRoutes()),  // 提示词组端点（设置页管理提示词组）
 	}
@@ -175,12 +176,23 @@ func main() {
 		app.Tool(t.Name, t.Def)
 	}
 
+	// 插件子代理：agents/*.md → Agent_<name>（只读工具集的独立 agent 循环，
+	// 归属插件、按模式可见）。须在全部工具注册之后——引用的工具要已存在。
+	if err := installAgents(app); err != nil {
+		log.Fatalf("装配插件子代理: %v", err)
+	}
+
+	// 插件 MCP 服务器：后台并行连接，不阻塞启动；工具连上后按插件归属可见。
+	startPluginMCP(app)
+	defer stopPluginMCP()
+
 	fmt.Printf("flai-engine 启动 · 默认模式 %s\n", catalog.DefaultMode)
 	for _, m := range catalog.Modes {
-		fmt.Printf("  模式 %s（%s）: 插件 %v · 工具集 %v\n", m.ID, m.Name, m.Plugins, m.Resolved.Toolsets)
+		fmt.Printf("  模式 %s（%s）: 插件 %v · 工具集 %v · 子代理 %v\n", m.ID, m.Name, m.Plugins, m.Resolved.Toolsets, m.Resolved.Agents)
 	}
 	fmt.Printf("  模型: %s @ %s\n  监听: http://%s\n", *model, *baseURL, *addr)
 	if err := app.RunHTTP(*addr); err != nil {
+		stopPluginMCP()
 		log.Fatalf("HTTP 服务退出: %v", err)
 	}
 }

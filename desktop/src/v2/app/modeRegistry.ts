@@ -7,23 +7,47 @@ import { useApp } from './appState';
 
 export interface ModeSidePanel { id: string; label: string }
 
-/** MCP server 声明（stdio：command/args/env；远程：url）。 */
+/** MCP server 声明（stdio：command/args/env；远程：url/headers）。 */
 export interface MCPServerDecl {
   name: string;
   command?: string;
   args?: string[];
   env?: Record<string, string>;
   url?: string;
+  headers?: Record<string, string>;
+}
+
+/** MCP server 运行状态（引擎 GET /mcp；工具名形如 mcp__<server>__<tool>）。 */
+export interface MCPServerStatus {
+  plugin: string;
+  name: string;
+  transport: 'stdio' | 'http';
+  status: 'connecting' | 'connected' | 'error';
+  error?: string;
+  /** 服务端自报名/版本。 */
+  server?: string;
+  tools: string[];
+}
+
+/** 插件子代理（agents/<name>.md 解析产物；注册为 Agent_<name> 工具）。 */
+export interface AgentDecl {
+  name: string;
+  description: string;
+  tools: string[];
+  maxTurns?: number;
+  file: string;
 }
 
 /** 模式经插件聚合后的能力视图（引擎 ModeView）。 */
 export interface ModeResolved {
   promptDir?: string;
   toolsets: string[];
+  /** 领域工具名（工具集工具 + Agent_<name>；MCP 工具见 /mcp）。 */
   tools: string[];
   rules: string[];
   skillDirs: string[];
-  agentDirs: string[];
+  /** 子代理名。 */
+  agents: string[];
   mcpServers: MCPServerDecl[];
   sidePanels: ModeSidePanel[];
 }

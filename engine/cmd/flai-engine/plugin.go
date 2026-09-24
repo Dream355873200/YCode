@@ -12,7 +12,11 @@
 //	plugin.json  插件清单（字段见 Plugin；未知字段即清单错误）
 //	rules.md     领域规范（会话级注入项目上下文，等同 CLAUDE.md 地位）
 //	skills/      技能目录（平铺 <name>.md 或目录式 <name>/SKILL.md）
-//	agents/      子代理定义目录（声明位，装配待 agents 系统落地）
+//	agents/      子代理目录（<name>.md → Agent_<name> 工具，见 agents.go）
+//
+// mcpServers 声明的 MCP 服务器在引擎启动后后台连接，发现的工具以
+// mcp__<server>__<tool> 注册（见 mcp.go）。子代理与 MCP 工具都归属声明
+// 它的插件：只有引用该插件的模式的会话可见。
 //
 // 校验严格：id 必须等于目录名、引用的工具集必须在注册表、声明的
 // 文件/目录必须存在——清单写错拒绝启动，不静默丢能力。
@@ -35,14 +39,17 @@ type SidePanel struct {
 	Label string `json:"label"`
 }
 
-// MCPServer MCP server 声明（stdio 用 command/args/env，远程用 url，二选一）。
-// 声明位：MCP client 落地前只做校验与展示，不连接。
+// MCPServer MCP 服务器声明（stdio 用 command/args/env，远程用 url + headers，
+// 二选一）。name 全局唯一、限 [A-Za-z0-9_-]（进工具名 mcp__<name>__<tool>）。
+// command/args/env/url/headers 中的 ${PLUGIN_DIR} 展开为插件目录，其余
+// ${VAR} 取引擎进程环境变量（密钥不落清单）；stdio 进程工作目录为插件目录。
 type MCPServer struct {
 	Name    string            `json:"name"`
 	Command string            `json:"command,omitempty"`
 	Args    []string          `json:"args,omitempty"`
 	Env     map[string]string `json:"env,omitempty"`
 	URL     string            `json:"url,omitempty"`
+	Headers map[string]string `json:"headers,omitempty"`
 }
 
 // Plugin 一个能力插件（清单字段 + 解析后的绝对路径）。
@@ -53,11 +60,12 @@ type Plugin struct {
 	Toolsets    []string    `json:"toolsets,omitempty"`   // 原生工具集引用（toolsets.go 注册表的 key）
 	Rules       string      `json:"rules,omitempty"`      // 领域规范文件（相对插件目录）
 	Skills      string      `json:"skills,omitempty"`     // 技能目录（相对插件目录）
-	Agents      string      `json:"agents,omitempty"`     // 子代理定义目录（相对插件目录；声明位）
-	MCPServers  []MCPServer `json:"mcpServers,omitempty"` // MCP server 声明（声明位）
+	Agents      string      `json:"agents,omitempty"`     // 子代理目录（相对插件目录）
+	MCPServers  []MCPServer `json:"mcpServers,omitempty"` // MCP 服务器声明
 	SidePanels  []SidePanel `json:"sidePanels,omitempty"` // 右栏面板槽位（桌面壳消费）
 
-	Dir string `json:"dir"` // 插件目录绝对路径（解析产物，非清单字段）
+	Dir       string      `json:"dir"`       // 插件目录绝对路径（解析产物，非清单字段）
+	AgentDefs []*AgentDef `json:"agentDefs"` // agents 目录解析出的子代理（解析产物）
 }
 
 // pluginManifest plugin.json 的严格解码形状（不含解析产物字段）。
@@ -166,11 +174,28 @@ func loadPlugin(dir, manifest string) (*Plugin, error) {
 		if s.Name == "" || (s.Command == "") == (s.URL == "") {
 			return nil, fmt.Errorf("插件 %s: mcpServers 每项须有 name，且 command 与 url 二选一", p.ID)
 		}
+		if !idPattern.MatchString(s.Name) {
+			return nil, fmt.Errorf("插件 %s: MCP 服务器名 %q 只能含字母、数字、_、-", p.ID, s.Name)
+		}
+		if s.Command != "" && len(s.Headers) > 0 {
+			return nil, fmt.Errorf("插件 %s: MCP 服务器 %s 是 stdio 形态，headers 只用于 url 形态", p.ID, s.Name)
+		}
+		if s.URL != "" && (len(s.Args) > 0 || len(s.Env) > 0) {
+			return nil, fmt.Errorf("插件 %s: MCP 服务器 %s 是 url 形态，args/env 只用于 command 形态", p.ID, s.Name)
+		}
 	}
 	for _, sp := range p.SidePanels {
 		if sp.ID == "" || sp.Label == "" {
 			return nil, fmt.Errorf("插件 %s: sidePanels 每项须有 id 与 label", p.ID)
 		}
+	}
+	defs, err := loadAgentDefs(p.ID, p.AgentsPath())
+	if err != nil {
+		return nil, err
+	}
+	p.AgentDefs = defs
+	if p.AgentDefs == nil {
+		p.AgentDefs = []*AgentDef{}
 	}
 	return p, nil
 }
@@ -190,25 +215,20 @@ func decodeStrict(path string, v any) error {
 	return nil
 }
 
-// pluginsRoutes 插件发现端点（设置页插件清单；附带引用该插件的模式）。
+// pluginsRoutes 插件发现端点（设置页插件清单；附带引用该插件的模式与
+// MCP 服务器运行状态）。
 func pluginsRoutes() map[string]func(http.ResponseWriter, *http.Request) {
 	return map[string]func(http.ResponseWriter, *http.Request){
 		"GET /plugins": func(w http.ResponseWriter, r *http.Request) {
 			type pluginItem struct {
 				*Plugin
-				UsedBy []string `json:"usedBy"`
+				RulesFile string            `json:"rulesFile,omitempty"` // 规范文件绝对路径（设置页预览）
+				UsedBy    []string          `json:"usedBy"`
+				MCPStatus []mcpServerStatus `json:"mcpStatus"`
 			}
 			items := []pluginItem{}
 			for _, p := range catalog.Plugins {
-				used := []string{}
-				for _, m := range catalog.Modes {
-					for _, pid := range m.Plugins {
-						if pid == p.ID {
-							used = append(used, m.ID)
-						}
-					}
-				}
-				items = append(items, pluginItem{Plugin: p, UsedBy: used})
+				items = append(items, pluginItem{Plugin: p, RulesFile: p.RulesPath(), UsedBy: catalog.PluginUsedBy(p.ID), MCPStatus: mcpHub.forPlugin(p.ID)})
 			}
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]any{"plugins": items})

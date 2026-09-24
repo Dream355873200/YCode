@@ -1,11 +1,12 @@
 // appState — v2 应用级状态：项目列表 / 当前项目与会话 / 引擎状态 / 模式目录。
-// 会话 ID 规则沿用 legacy：每项目一个持久会话（amc-<目录名>），
+// 会话 ID：每项目一个持久会话（规则见 sessionId.ts），
 // 引擎按会话扎根项目目录，切项目只是切会话。
 // 模式是项目级的：project.mode（缺省回落 config.engine.mode），写进会话
 // 绑定后引擎按会话裁剪工具/提示词/规范/技能——切模式不重启引擎。
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
 import { engine } from '../protocol';
 import type { ModeDecl, ModesBody } from './modeRegistry';
+import { projectSessionId } from './sessionId';
 
 export interface Project {
   name: string;
@@ -20,8 +21,7 @@ export interface Project {
   dirty?: boolean;
 }
 
-export const sessionIdOf = (p: Project | null): string | null =>
-  p && p.dir ? 'amc-' + p.dir.split(/[\\/]/).filter(Boolean).pop()! : null;
+export const sessionIdOf = (p: Project | null): string | null => projectSessionId(p?.dir);
 
 interface AppCtxValue {
   projects: Project[];
@@ -67,7 +67,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [sidePaneOpen, setSidePaneOpen] = useState(true);
   const [modes, setModes] = useState<ModeDecl[]>([]);
-  const [defaultMode, setDefaultMode] = useState('flutter');
+  const [defaultMode, setDefaultMode] = useState('code');
 
   const refreshProjects = useCallback(async () => {
     try {

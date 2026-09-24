@@ -44,6 +44,9 @@ function ModeSwitcher() {
               {m.id === projectMode && <CheckIcon className="mt-0.5 size-4 shrink-0 text-brand" />}
             </button>
           ))}
+          <div className="mt-1 border-t border-border/50 px-2.5 pb-1 pt-1.5 text-ui-2xs text-foreground-subtlest">
+            只改当前项目：右栏面板立即切换，工具 / 提示词 / 技能从下一轮对话起按新模式装配，对话历史保留。
+          </div>
         </div>
       )}
     </div>
@@ -60,7 +63,7 @@ export function TitleBar() {
           <button type="button" aria-label="展开侧栏" title="展开侧栏"
             className="no-drag flex h-6 w-6 shrink-0 animate-in fade-in items-center justify-center rounded-md bg-primary text-ui-sm font-bold text-primary-foreground transition-colors hover:bg-primary/80"
             onClick={() => setSidebarOpen(true)}>
-            A
+            Y
           </button>
         )}
         {project ? (
@@ -70,7 +73,7 @@ export function TitleBar() {
             <span className="hidden min-w-0 truncate text-ui-xs text-foreground-subtlest md:block">{project.dir}</span>
           </>
         ) : (
-          <span className="text-ui-sm font-medium text-foreground-subtle">amobileCreater</span>
+          <span className="text-ui-sm font-medium text-foreground-subtle">YCode</span>
         )}
       </div>
       {/* 右端钮簇：整组 no-drag——头部是拖拽区，不豁免点击全被窗口拖拽吞掉 */}
