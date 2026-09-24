@@ -3,7 +3,7 @@
 // Markdown）。数据来自主进程 projects:filetree（磁盘遍历 + git status 标记，
 // 已跳过 .git/node_modules/build 等内容目录）。
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ChevronDownIcon, ChevronRightIcon, FolderIcon, RefreshCwIcon, XIcon } from 'lucide-react';
+import { ChevronDownIcon, ChevronRightIcon, FileArchiveIcon, FileCodeIcon, FileIcon, FileSpreadsheetIcon, FileTextIcon, FolderIcon, FolderOpenIcon, ImageIcon, PresentationIcon, RefreshCwIcon, XIcon } from 'lucide-react';
 import { useApp } from '../app/appState';
 import { Button } from '../components/ui/button';
 import { cn } from '../components/lib/utils';
@@ -64,6 +64,26 @@ export default function FileTree({ onClose }: { onClose?: () => void }) {
     return tree.map((n) => matchFilter(n, q)).filter(Boolean) as Node[];
   }, [tree, q]);
 
+// 扩展名 → 文件类型图标与颜色（VSCode/ZCode 式直观辨识）
+const EXT_STYLE: Array<[RegExp, typeof FileCodeIcon, string]> = [
+  [/\.(tsx|jsx)$/, FileCodeIcon, 'text-sky-400'],
+  [/\.(ts|js|mjs|cjs)$/, FileCodeIcon, 'text-amber-400'],
+  [/\.(json|ya?ml|toml)$/, FileCodeIcon, 'text-yellow-500'],
+  [/\.(css|scss|less)$/, FileCodeIcon, 'text-blue-400'],
+  [/\.(md|mdx)$/, FileTextIcon, 'text-slate-300'],
+  [/\.(png|jpe?g|gif|webp|svg|ico)$/, ImageIcon, 'text-emerald-400'],
+  [/\.(pdf)$/, FileTextIcon, 'text-red-400'],
+  [/\.(docx?|odt)$/, FileTextIcon, 'text-blue-500'],
+  [/\.(xlsx?|xlsm|csv|ods)$/, FileSpreadsheetIcon, 'text-green-500'],
+  [/\.(pptx?|odp)$/, PresentationIcon, 'text-orange-400'],
+  [/\.(zip|tar|gz|7z|rar)$/, FileArchiveIcon, 'text-amber-600'],
+  [/\.(go|py|java|kt|rs|c|cpp|h|sh|bat|ps1|lua|dart)$/, FileCodeIcon, 'text-violet-400'],
+];
+function fileIconOf(name: string) {
+  for (const [re, Icon, cls] of EXT_STYLE) if (re.test(name.toLowerCase())) return { Icon, cls };
+  return { Icon: FileIcon, cls: 'text-foreground-subtlest' };
+}
+
   const renderNode = (n: Node, depth: number) => {
     if (n.type === 'dir') {
       const open = expanded.has(n.path) || !!q;
@@ -79,20 +99,28 @@ export default function FileTree({ onClose }: { onClose?: () => void }) {
             })}>
             {open ? <ChevronDownIcon className="size-3.5 shrink-0 text-foreground-subtle" />
               : <ChevronRightIcon className="size-3.5 shrink-0 text-foreground-subtle" />}
-            <FolderIcon className="size-3.5 shrink-0 text-brand" />
-            <span className="min-w-0 flex-1 truncate text-ui-xs text-foreground">{n.name}</span>
+            {open ? <FolderOpenIcon className="size-3.5 shrink-0 text-brand" />
+              : <FolderIcon className="size-3.5 shrink-0 text-brand" />}
+            <span className="min-w-0 flex-1 truncate text-foreground">{n.name}</span>
           </button>
-          {open && (n.children || []).map((c) => renderNode(c, depth + 1))}
+          {open && (
+            <div className="ml-3 border-l border-border/40 pl-1">
+              {(n.children || []).map((c) => renderNode(c, depth + 1))}
+            </div>
+          )}
         </div>
       );
     }
     const st = n.st ? ST_COLOR[n.st] ?? ST_COLOR[n.st.trim()] ?? 'text-warning' : null;
+    const { Icon: FIcon, cls: fcls } = fileIconOf(n.name);
     return (
       <button key={n.path} type="button" title={n.path}
-        className="flex w-full items-center gap-1.5 rounded-md py-1 pr-1.5 text-left hover:bg-hover"
+        className="group flex w-full items-center gap-1.5 rounded-md py-1 pr-1.5 text-left hover:bg-hover"
         style={{ paddingLeft: depth * 12 + 22 }}
         onClick={() => openViewerFile(project?.dir ? `${project.dir}/${n.path}`.replace(/\\/g, '/') : n.path)}>
-        <span className={cn('min-w-0 flex-1 truncate text-ui-xs text-foreground-subtle hover:text-foreground')}>{n.name}</span>
+        <FIcon className={cn('size-3.5 shrink-0', fcls)} />
+        <span className={cn('min-w-0 flex-1 truncate group-hover:text-foreground',
+          n.st ? 'font-medium ' + (st ?? '') : 'text-foreground-subtle')}>{n.name}</span>
         {n.st && <span className={cn('shrink-0 text-ui-2xs font-semibold', st)}>{n.st === '??' ? 'U' : n.st}</span>}
       </button>
     );

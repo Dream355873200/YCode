@@ -71,6 +71,7 @@ function ToolCard({ row }: { row: Extract<Row, { kind: 'tool' }> }) {
         {R.expandable && (
           <span className={`inline-block w-3 text-foreground-subtlest transition-transform duration-200 ${open ? 'rotate-90' : ''}`}>▸</span>
         )}
+        {R.Icon && <R.Icon className="size-3.5 shrink-0 text-foreground-subtle" />}
         <span className="text-foreground-subtle">{label}</span>
         {obj && <span className="min-w-0 truncate text-foreground-subtlest">{obj}</span>}
         {stats && (

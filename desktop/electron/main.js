@@ -127,6 +127,12 @@ ipcMain.handle('fs:readImage', (_e, p) => {
     return { ok: true, dataUrl: `data:image/${mime};base64,${b.toString('base64')}` };
   } catch (e) { return { ok: false, error: e.message }; }
 });
+// 读二进制为 base64（右栏 PDF/Office 预览器用）
+ipcMain.handle('fs:readFileBase64', (_e, p) => {
+  try {
+    return { ok: true, b64: fs.readFileSync(p).toString('base64') };
+  } catch (e) { return { ok: false, error: e.message }; }
+});
 
 // ---------- IPC：用户资产（设置页编辑器；写删限定在用户资产目录） ----------
 assets.register(ipcMain);

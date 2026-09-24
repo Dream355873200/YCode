@@ -96,13 +96,21 @@ const flutterSt = (r = '') => {
 
 // 每条目可选字段：
 //   label      人话动词（行动条目 + 状态行共用；缺省原样显示工具名）
+//   Icon       lucide 图标组件（行动条目头部；替代旧 emoji）
 //   obj(i)     入参 → 一行对象摘要
 //   st(r)      结果 → { st, cls }（缺省走通用推断）
 //   expandable 是否默认可展开
 //   Detail     展开细节组件（缺省 <pre> 原始结果）
+import {
+  PenLineIcon, FilePlusIcon, BookOpenIcon, SquareTerminalIcon, WrenchIcon,
+  GitBranchIcon, SearchIcon, ListChecksIcon, TriangleAlertIcon, CircleCheckIcon,
+  MousePointer2Icon, GlobeIcon, ImageIcon, EyeIcon, RefreshCwIcon, FileCodeIcon,
+  ClipboardListIcon, CrosshairIcon, ScrollTextIcon, KeyRoundIcon, PlayIcon,
+} from 'lucide-react';
+
 export const TOOL_RENDERERS = {
   Edit: {
-    label: '✏️ 修改了', expandable: true, Detail: DiffDetail,
+    label: '修改了', Icon: PenLineIcon, expandable: true, Detail: DiffDetail,
     obj: (i = {}) => base(i.file_path || i.path),
     st: (r = '') => {
       const m = r.match(/已替换\s*(\d+)\s*处匹配\s*\(([^)]+)\)/);
@@ -110,7 +118,7 @@ export const TOOL_RENDERERS = {
     },
   },
   Write: {
-    label: '📝 创建了', expandable: true, Detail: WriteDetail,
+    label: '创建了', Icon: FilePlusIcon, expandable: true, Detail: WriteDetail,
     obj: (i = {}) => base(i.file_path || i.path),
     st: (r = '') => {
       const m = r.match(/已写入\s+(\S+)/);
@@ -119,40 +127,87 @@ export const TOOL_RENDERERS = {
       return { st: '✓' + (lines ? ` +${lines} 行` : ''), cls: 'ok' };
     },
   },
-  Read: { label: '📖 查看了', expandable: true, obj: (i = {}) => base(i.file_path || i.path) },
-  Bash: { label: '⚙️ 执行命令', expandable: true, Detail: CmdDetail, obj: (i = {}) => String(i.command || i.cmd || '').slice(0, 60) },
-  Shell: { label: '⚙️ 执行命令', expandable: true, Detail: CmdDetail, obj: (i = {}) => String(i.command || i.cmd || '').slice(0, 60) },
-  flutter: { label: '🛠️ 构建应用', expandable: true, Detail: CmdDetail, obj: (i = {}) => (i.action ? `flutter ${i.action}` : ''), st: flutterSt },
-  Git: { label: '💾 保存版本', expandable: true, Detail: CmdDetail, obj: (i = {}) => String(i.command || '').slice(0, 60) },
-  Glob: { label: '🔍 查找文件', expandable: true, obj: (i = {}) => i.pattern },
-  Grep: { label: '🔍 搜索代码', expandable: true, obj: (i = {}) => i.query || i.pattern },
-  TaskCreate: { label: '📋 记录任务', obj: (i = {}) => i.subject },
-  TaskUpdate: { label: '📋 更新任务', obj: (i = {}) => i.subject || i.task_id },
-  TaskList: { label: '📋 查看任务' },
-  TaskGet: { label: '📋 查看任务', obj: (i = {}) => i.task_id },
-  IssueReport: { label: '⚠️ 记录问题', obj: (i = {}) => String(i.title || i.description || '').slice(0, 24) },
-  IssueResolve: { label: '✔️ 解决问题', obj: (i = {}) => i.issue_id },
-  Skill: { label: '📖 调用技能', obj: (i = {}) => i.name || i.skill },
-  EnterPlanMode: { label: '🧭 进入规划' },
-  ExitPlanMode: { label: '🧭 提交方案' },
-  test_report: { label: '📱 生成测试报告', expandable: true, Detail: TestDetail },
+  Read: { label: '查看了', Icon: BookOpenIcon, expandable: true, obj: (i = {}) => base(i.file_path || i.path) },
+  Bash: { label: '执行命令', Icon: SquareTerminalIcon, expandable: true, Detail: CmdDetail, obj: (i = {}) => String(i.command || i.cmd || '').slice(0, 60) },
+  Shell: { label: '执行命令', Icon: SquareTerminalIcon, expandable: true, Detail: CmdDetail, obj: (i = {}) => String(i.command || i.cmd || '').slice(0, 60) },
+  flutter: { label: '构建应用', Icon: WrenchIcon, expandable: true, Detail: CmdDetail, obj: (i = {}) => (i.action ? `flutter ${i.action}` : ''), st: flutterSt },
+  Git: { label: '保存版本', Icon: GitBranchIcon, expandable: true, Detail: CmdDetail, obj: (i = {}) => String(i.command || '').slice(0, 60) },
+  Glob: { label: '查找文件', Icon: SearchIcon, expandable: true, obj: (i = {}) => i.pattern },
+  Grep: { label: '搜索代码', Icon: SearchIcon, expandable: true, obj: (i = {}) => i.query || i.pattern },
+  TaskCreate: { label: '记录任务', Icon: ListChecksIcon, obj: (i = {}) => i.subject },
+  TaskUpdate: { label: '更新任务', Icon: ListChecksIcon, obj: (i = {}) => i.subject || i.task_id },
+  TaskList: { label: '查看任务', Icon: ListChecksIcon },
+  TaskGet: { label: '查看任务', Icon: ListChecksIcon, obj: (i = {}) => i.task_id },
+  IssueReport: { label: '记录问题', Icon: TriangleAlertIcon, obj: (i = {}) => String(i.title || i.description || '').slice(0, 24) },
+  IssueResolve: { label: '解决问题', Icon: CircleCheckIcon, obj: (i = {}) => i.issue_id },
+  Skill: { label: '调用技能', Icon: BookOpenIcon, obj: (i = {}) => i.name || i.skill },
+  EnterPlanMode: { label: '进入规划', Icon: ClipboardListIcon },
+  ExitPlanMode: { label: '提交方案', Icon: ClipboardListIcon },
+  test_report: { label: '生成测试报告', Icon: ClipboardListIcon, expandable: true, Detail: TestDetail },
 };
 
 // 测试工具（AI 操作 App 的每一步）批量注册：对象摘要沿用测试时间线的
 // 参数提取（testLogArg），保证对话流与左栏时间线说法一致。
 for (const [k, v] of Object.entries(TOOL_LABELS)) {
   TOOL_RENDERERS[k] = {
-    label: '📱 ' + v, expandable: true, Detail: TestDetail,
+    label: v, Icon: PlayIcon, expandable: true, Detail: TestDetail,
     obj: (i = {}) => testLogArg({ input: i }),
   };
 }
 
+// ---------- MCP 工具（computer-use / browser-use 插件）：人话标签 ----------
+// 命名规则 mcp__<server>__<tool>；按 server+tool 注册中文动词与对象摘要。
+const MCP_TARGET = (t) => (typeof t === 'number' ? `#${t}` : (t && typeof t === 'object') ? `${t.x},${t.y}` : (t != null ? `#${t}` : ''));
+
+const MCP_RENDERERS = {
+  computer: {
+    Icon: MousePointer2Icon,
+    tools: {
+      list_apps: ['列出应用'], list_windows: ['列出窗口'],
+      open_app: ['打开应用', (i) => i?.name],
+      get_app_state: ['观察应用界面'], screenshot: ['截取屏幕'],
+      left_click: ['点击', (i) => MCP_TARGET(i?.target)],
+      left_click_drag: ['拖拽', (i) => MCP_TARGET(i?.from_target)],
+      scroll: ['滚动', (i) => i?.scroll_direction],
+      type: ['输入文本', (i) => String(i?.text || '').slice(0, 30)],
+      key: ['按键', (i) => i?.text], paste: ['粘贴剪贴板'],
+      set_value: ['设置元素值', (i) => i?.value],
+    },
+  },
+  browser: {
+    Icon: GlobeIcon,
+    tools: {
+      browser_list: ['列出浏览器标签'], browser_new: ['新开网页', (i) => i?.url],
+      browser_close: ['关闭网页'], browser_navigate: ['打开网页', (i) => i?.url],
+      browser_back: ['后退'], browser_forward: ['前进'], browser_reload: ['刷新页面'],
+      browser_snapshot: ['读取页面元素'],
+      browser_click: ['点击元素', (i) => i?.ref || (i?.x != null ? `${i.x},${i.y}` : '')],
+      browser_type: ['输入文本', (i) => String(i?.text || '').slice(0, 30)],
+      browser_key: ['按键', (i) => i?.key], browser_scroll: ['滚动页面'],
+      browser_screenshot: ['网页截图', ], browser_console: ['读取控制台'],
+      browser_evaluate: ['执行页面脚本', (i) => String(i?.expression || '').slice(0, 40)],
+    },
+  },
+};
+for (const [server, def] of Object.entries(MCP_RENDERERS)) {
+  for (const [tool, [label, obj]] of Object.entries(def.tools)) {
+    TOOL_RENDERERS[`mcp__${server}__${tool}`] = {
+      label, Icon: def.Icon, expandable: true, ...(obj ? { obj } : {}),
+    };
+  }
+}
+
 const DEFAULT_RENDERER = { expandable: false };
 
-// resolveRenderer 按工具名取渲染器；未注册工具走默认骨架（原样工具名 +
-// 通用状态推断 + <pre> 细节）。
+// resolveRenderer 按工具名取渲染器；未注册工具走默认骨架——mcp__ 前缀的
+// 剥出短名显示（mcp__xx__yyy → yyy），其余原样。
 export function resolveRenderer(name) {
-  return TOOL_RENDERERS[name] || DEFAULT_RENDERER;
+  if (TOOL_RENDERERS[name]) return TOOL_RENDERERS[name];
+  if (typeof name === 'string' && name.startsWith('mcp__')) {
+    const short = name.split('__').pop();
+    return { label: short, expandable: false };
+  }
+  return DEFAULT_RENDERER;
 }
 
 // actObj 工具入参 → 一行对象摘要（注册表 obj 优先，通用兜底链次之）。

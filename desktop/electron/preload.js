@@ -52,6 +52,7 @@ contextBridge.exposeInMainWorld('amc', {
     writeFile: (p, content) => ipcRenderer.invoke('fs:writeFile', p, content),
     listDir: (p) => ipcRenderer.invoke('fs:listDir', p),
     readImage: (p) => ipcRenderer.invoke('fs:readImage', p),
+    readFileBase64: (p) => ipcRenderer.invoke('fs:readFileBase64', p),
   },
   // 用户资产目录（设置页编辑器：路径可相对用户资产根；写删限定在其内）
   assets: {

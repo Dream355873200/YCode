@@ -83,6 +83,7 @@ declare global {
         writeFile(p: string, content: string): Promise<unknown>;
         listDir(p: string): Promise<unknown>;
         readImage(p: string): Promise<unknown>;
+        readFileBase64(p: string): Promise<{ ok: boolean; b64?: string; error?: string }>;
       };
       assets: AssetsBridge;
       devices: Record<string, (...args: unknown[]) => unknown> & {

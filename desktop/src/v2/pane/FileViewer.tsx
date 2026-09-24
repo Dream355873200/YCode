@@ -4,7 +4,7 @@
 //   图片      —— dataUrl 预览
 //   Markdown —— 预览（renderMD）⇄ 源码
 // 刷新钮重读磁盘（AI 改文件后看最新版）。
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { EyeIcon, PencilIcon, RefreshCwIcon, SaveIcon } from 'lucide-react';
 import { highlightLines, langOf } from '../../lib/codediff.js';
 import { renderMD } from '../../lib/markdown.js';
@@ -12,17 +12,34 @@ import { useApp } from '../app/appState';
 import { Button } from '../components/ui/button';
 import { cn } from '../components/lib/utils';
 
+const PdfViewer = lazy(() => import('./viewers/PdfViewer'));
+const SheetViewer = lazy(() => import('./viewers/SheetViewer'));
+const DocxViewer = lazy(() => import('./viewers/DocxViewer'));
+const PptxViewer = lazy(() => import('./viewers/PptxViewer'));
+
 const IMAGE_RE = /\.(png|jpe?g|gif|webp|bmp|svg|ico|avif)$/i;
 const MD_RE = /\.(md|markdown|mdx)$/i;
+// 二进制/富格式（专用查看器渲染，走 base64 读取；不可编辑）
+const PDF_RE = /\.pdf$/i;
+const SHEET_RE = /\.(xlsx|xlsm|xls|csv|tsv|ods)$/i;
+const DOCX_RE = /\.(docx|odt)$/i;
+const PPTX_RE = /\.(pptx|odp)$/i;
 export const fileBasename = (p: string) => p.split(/[\\/]/).pop() || p;
 
 interface ReadResult { ok: boolean; content?: string; error?: string }
 interface ImageResult { ok: boolean; dataUrl?: string; error?: string }
+interface B64Result { ok: boolean; b64?: string; error?: string }
 
 export default function FileView({ file }: { file: string }) {
   const { sid, bumpViewerTick } = useApp();
   const image = IMAGE_RE.test(file);
   const md = MD_RE.test(file);
+  const pdf = PDF_RE.test(file);
+  const sheet = SHEET_RE.test(file);
+  const docx = DOCX_RE.test(file);
+  const pptx = PPTX_RE.test(file);
+  const rich = pdf || sheet || docx || pptx; // base64 读取 + 专用查看器
+  const [b64, setB64] = useState<string | null>(null);
   const [img, setImg] = useState<string | null>(null);
   const [code, setCode] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
@@ -40,14 +57,20 @@ export default function FileView({ file }: { file: string }) {
       }).catch((e: unknown) => setError(String(e)));
       return;
     }
+    if (rich) {
+      window.amc.fs.readFileBase64(file).then((r) => (r as B64Result)).then((r: B64Result) => {
+        if (r.ok) setB64(r.b64 ?? null); else setError(r.error || '读取失败');
+      }).catch((e: unknown) => setError(String(e)));
+      return;
+    }
     window.amc.fs.readFile(file).then((r) => (r as ReadResult)).then((r: ReadResult) => {
       if (r.ok) { setCode(r.content ?? ''); setDraft(r.content ?? ''); }
       else setError(r.error || '读取失败');
     }).catch((e: unknown) => setError(String(e)));
-  }, [file, image]);
+  }, [file, image, rich]);
 
   useEffect(() => {
-    setEditing(false); setDirty(false); setMdPreview(true);
+    setEditing(false); setDirty(false); setMdPreview(true); setB64(null);
     load();
   }, [load]);
 
@@ -82,13 +105,13 @@ export default function FileView({ file }: { file: string }) {
             {mdPreview ? <><PencilIcon className="size-3" /> 源码</> : <><EyeIcon className="size-3" /> 预览</>}
           </Button>
         )}
-        {!image && !editing && (
+        {!image && !rich && !editing && (
           <Button variant="ghost" size="sm" className="h-5 px-1.5 text-ui-2xs text-foreground-subtle hover:text-foreground"
             onClick={() => { setDraft(code ?? ''); setEditing(true); }}>
             <PencilIcon className="size-3" /> 编辑
           </Button>
         )}
-        {!image && editing && (
+        {!image && !rich && editing && (
           <Button variant="ghost" size="sm" className={cn('h-5 px-1.5 text-ui-2xs', dirty ? 'text-brand hover:text-brand' : 'text-foreground-subtlest')}
             onClick={() => save()} disabled={!dirty}>
             <SaveIcon className="size-3" /> {dirty ? '保存 •' : '保存'}
@@ -104,10 +127,22 @@ export default function FileView({ file }: { file: string }) {
       {error && <div className="shrink-0 px-3 py-1 text-ui-2xs text-destructive">{error}</div>}
 
       {/* 内容区 */}
-      <div className="min-h-0 flex-1 overflow-auto">
+      <div className="flex min-h-0 flex-1 flex-col overflow-auto">
         {image ? (
           img
             ? <div className="flex h-full items-center justify-center p-3"><img src={img} alt={fileBasename(file)} className="max-h-full max-w-full object-contain" /></div>
+            : <div className="p-4 text-ui-xs text-foreground-subtlest">加载中…</div>
+        ) : pdf ? (
+          b64 ? <Suspense fallback={<div className="p-4 text-ui-xs text-foreground-subtlest">加载查看器…</div>}><PdfViewer b64={b64} /></Suspense>
+            : <div className="p-4 text-ui-xs text-foreground-subtlest">加载中…</div>
+        ) : sheet ? (
+          b64 ? <Suspense fallback={<div className="p-4 text-ui-xs text-foreground-subtlest">加载查看器…</div>}><SheetViewer b64={b64} file={file} /></Suspense>
+            : <div className="p-4 text-ui-xs text-foreground-subtlest">加载中…</div>
+        ) : docx ? (
+          b64 ? <Suspense fallback={<div className="p-4 text-ui-xs text-foreground-subtlest">加载查看器…</div>}><DocxViewer b64={b64} /></Suspense>
+            : <div className="p-4 text-ui-xs text-foreground-subtlest">加载中…</div>
+        ) : pptx ? (
+          b64 ? <Suspense fallback={<div className="p-4 text-ui-xs text-foreground-subtlest">加载查看器…</div>}><PptxViewer b64={b64} /></Suspense>
             : <div className="p-4 text-ui-xs text-foreground-subtlest">加载中…</div>
         ) : editing ? (
           <textarea value={draft} spellCheck={false} autoFocus
