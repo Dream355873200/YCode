@@ -44,6 +44,7 @@ export default function BrowserPanel() {
   };
 
   const amc = () => (window as any).amc;
+  const act = (fn: () => unknown) => { try { Promise.resolve(fn()).catch(() => {}); } catch { /* 忽略 */ } };
   const cur = insts.find((i) => i.active);
 
   return (
@@ -52,7 +53,7 @@ export default function BrowserPanel() {
       <div className="flex h-8 shrink-0 items-center gap-1 overflow-x-auto border-b border-border/50 px-1.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {insts.map((i) => (
           <button key={i.id} type="button" title={i.title || i.url}
-            onClick={() => amc().browser.activate(i.id)}
+            onClick={() => act(() => amc().browser.activate(i.id))}
             className={cn(
               'group flex min-w-24 max-w-40 shrink-0 items-center gap-1 rounded-t-md px-2 py-1 text-ui-xs',
               i.active ? 'bg-selected text-foreground' : 'text-foreground-subtle hover:bg-hover',
@@ -64,7 +65,7 @@ export default function BrowserPanel() {
         ))}
         <Button variant="ghost" size="icon-sm" aria-label="新建标签"
           className="shrink-0 text-foreground-subtle hover:bg-hover hover:text-foreground"
-          onClick={() => amc().browser.open('about:blank')}>
+          onClick={() => act(() => amc().browser.open('about:blank'))}>
           <PlusIcon />
         </Button>
       </div>
@@ -73,16 +74,17 @@ export default function BrowserPanel() {
       <div className="flex h-9 shrink-0 items-center gap-1 border-b border-border/50 px-1.5">
         <Button variant="ghost" size="icon-sm" aria-label="后退" disabled={!cur}
           className="text-foreground-subtle hover:bg-hover hover:text-foreground"
-          onClick={() => open(cur!.url)}>
+          onClick={() => act(() => cur && amc().browser.back(cur.id))}>
           <ArrowLeftIcon />
         </Button>
         <Button variant="ghost" size="icon-sm" aria-label="前进" disabled={!cur}
-          className="text-foreground-subtle hover:bg-hover hover:text-foreground">
+          className="text-foreground-subtle hover:bg-hover hover:text-foreground"
+          onClick={() => act(() => cur && amc().browser.forward(cur.id))}>
           <ArrowRightIcon />
         </Button>
         <Button variant="ghost" size="icon-sm" aria-label="刷新" disabled={!cur}
           className="text-foreground-subtle hover:bg-hover hover:text-foreground"
-          onClick={() => cur && open(cur.url)}>
+          onClick={() => act(() => cur && amc().browser.reload(cur.id))}>
           <RotateCwIcon />
         </Button>
         <input

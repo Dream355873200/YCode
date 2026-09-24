@@ -358,10 +358,15 @@ async function scroll(inst, { dx = 0, dy = 0, ref, x, y }) {
   let px = x, py = y;
   if (ref) { const r = refPoint(inst, ref); px = r.x; py = r.y; }
   return enqueue(inst, async () => {
-    const wc = inst.view.webContents;
-    if (px === undefined) { px = wc.getVisibleContents().width ?? 0; }
-    // 视口中心兜底
-    if (!px) px = 400; if (!py) py = 300;
+    // 未指定位置：滚视口中心（布局尺寸从 CDP 取，避免瞎猜坐标）
+    if (px === undefined || py === undefined) {
+      try {
+        const m = await cdp(inst, 'Page.getLayoutMetrics');
+        const vw = m.cssVisualViewport || m.contentSize || {};
+        px = Math.round((vw.clientWidth || vw.width || 400) / 2);
+        py = Math.round((vw.clientHeight || vw.height || 300) / 2);
+      } catch { px = 400; py = 300; }
+    }
     await cdp(inst, 'Input.dispatchMouseEvent', {
       type: 'mouseWheel', x: Math.round(px), y: Math.round(py),
       deltaX: Math.round(dx), deltaY: Math.round(dy),
@@ -514,6 +519,9 @@ function registerIpc() {
     return activate(inst.id);
   });
   ipcMain.handle('browser:activate', (_e, id) => activate(id));
+  ipcMain.handle('browser:back', (_e, id) => routes['POST /browser/back']({ browser: id }));
+  ipcMain.handle('browser:forward', (_e, id) => routes['POST /browser/forward']({ browser: id }));
+  ipcMain.handle('browser:reload', (_e, id) => routes['POST /browser/reload']({ browser: id }));
   ipcMain.handle('browser:close', (_e, id) => routes['POST /browser/close']({ browser: id }));
   ipcMain.handle('browser:rect', (_e, rect) => {
     state.panelRect = rect;
