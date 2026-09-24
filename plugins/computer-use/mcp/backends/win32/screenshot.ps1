@@ -20,8 +20,27 @@ function Read-Payload() {
 try {
   $in = (Read-Payload) | ConvertFrom-Json
   $x = 0; $y = 0; $w = 0; $h = 0
+  $restored = $false
+  # 只给了 name/pid 时先解析成 hwnd——否则会静默退化成"截整屏"，模型以为拿到了窗口画面
+  if (-not $in.hwnd -and ($in.name -or $in.pid)) {
+    $cands = @()
+    if ($in.pid) { $cands = Get-Process | Where-Object { $_.Id -eq [int]$in.pid -and $_.MainWindowHandle -ne 0 } }
+    if (-not $cands -and $in.name) {
+      $cands = Get-Process | Where-Object { $_.ProcessName -ieq $in.name -and $_.MainWindowHandle -ne 0 }
+      if (-not $cands) { $cands = Get-Process | Where-Object { $_.MainWindowTitle -like "*$($in.name)*" -and $_.MainWindowHandle -ne 0 } }
+    }
+    if ($cands) { $in | Add-Member -NotePropertyName hwnd -NotePropertyValue ([int64]$cands[0].MainWindowHandle) -Force }
+  }
   if ($in.hwnd) {
     $hwnd = [IntPtr]$in.hwnd
+    # 最小化窗口的矩形是 (-32000,-32000,219,30)，截出来只有灰底——先恢复再取矩形
+    try {
+      if ([YCodeNative]::IsIconic($hwnd)) {
+        [void][YCodeNative]::ShowWindow($hwnd, [YCodeNative]::SW_RESTORE)
+        Start-Sleep -Milliseconds 350
+        $restored = $true
+      }
+    } catch {}
     # DWM 扩展边框（不含隐形边）；失败退回 GetWindowRect
     $r = New-Object YCodeNative+RECT
     if ([YCodeNative]::DwmGetWindowAttribute($hwnd, 9, [ref]$r, 16) -ne 0) { [void][YCodeNative]::GetWindowRect($hwnd, [ref]$r) }
@@ -33,7 +52,11 @@ try {
     $x = $vs.X; $y = $vs.Y; $w = $vs.Width; $h = $vs.Height
   }
 
-  $bytes = [YCodeNative]::CaptureScreen($x, $y, $w, $h, 1280, 60)
+  # 窗口截图走 PrintWindow（遮挡/硬件加速窗口也能拿到画面）；全屏走 GDI 拷屏
+  if ($in.hwnd) { $shot = [YCodeNative]::CaptureWindow($hwnd, $x, $y, $w, $h, 1280, 60) }
+  else { $shot = [YCodeNative]::CaptureScreen($x, $y, $w, $h, 1280, 60) }
+  $bytes = $shot.Jpeg
+  if (-not $bytes -or $bytes.Length -lt 100) { Out @{ __error = '截图失败：画面数据为空' } | Write-Output; exit 0 }
   $b64 = [Convert]::ToBase64String($bytes)
 
   $dir = Join-Path $env:TEMP 'ycode-cua'
@@ -45,7 +68,7 @@ try {
   $long = [Math]::Max($w, $h)
   $scale = 1.0
   if ($long -gt 1280) { $scale = 1280.0 / $long }
-  Out @{ b64 = $b64; w = [int]($w * $scale); h = [int]($h * $scale); path = $p } | Write-Output
+  Out @{ b64 = $b64; w = [int]($w * $scale); h = [int]($h * $scale); path = $p; blank = [bool]$shot.Blank; restored = $restored } | Write-Output
 } catch {
   @{ __error = $_.Exception.Message } | ConvertTo-Json -Compress | Write-Output
 }

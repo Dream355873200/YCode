@@ -1,5 +1,11 @@
 ﻿# value.ps1 — UIA ValuePattern 直接设值（set_value）
 # server 传 hwnd + runtime_id（观察时冻结的身份），重枚举找到同一元素再 SetValue。
+#
+# 定位策略（两遍，兼顾安全与可用）：
+#   1) 按序号 expect_i 取元素，身份（runtimeId / 类型+名称）一致 → 直接用；
+#   2) 序号已错位（浏览器地址栏这类元素树毫秒级重排）→ 全树按 (类型,名称) 找，
+#      唯一匹配才用（唯一性保证不会设错元素），多个匹配仍判 STALE。
+# 只有两遍都失败才抛 STALE_STATE——避免"元素明明还在却一直设不上值"。
 param([string]$Payload)
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
@@ -17,35 +23,75 @@ function Read-Payload() {
   return $sr.ReadToEnd()
 }
 
-try {
-  $in = (Read-Payload) | ConvertFrom-Json
-  $root = [System.Windows.Automation.AutomationElement]::FromHandle([IntPtr]$in.hwnd)
-  $el = $null; $idx = 0
+function Get-TypeName($el) {
+  $t = ''
+  try { $t = $el.Current.ControlType.ProgrammaticName -replace '^ControlType\.', '' } catch {}
+  $n = ''
+  try { $n = $el.Current.Name } catch {}
+  if ($n) { $n = $n.Trim() }
+  return @($t, $n)
+}
+
+# DFS 枚举顺序必须与 state.ps1 / input.ps1 完全一致（逆序压栈 + 深度上限 20 +
+# 子节点上限 80 + 全量计数），否则 @eN 序号跨脚本错位。
+function Enumerate-Tree($root) {
   $walker = [System.Windows.Automation.TreeWalker]::ControlViewWalker
   $stack = New-Object System.Collections.Stack
   $depths = New-Object System.Collections.Stack
   $stack.Push($root); $depths.Push(0)
-  while ($stack.Count -gt 0 -and -not $el) {
+  $out = New-Object System.Collections.ArrayList
+  while ($stack.Count -gt 0) {
     $cur = $stack.Pop(); $depth = $depths.Pop()
     if ($depth -gt 20) { continue }
-    if ($idx -eq [int]$in.expect_i) {
-      $rt = ($cur.GetRuntimeId() | ForEach-Object { $_ }) -join ','
-      if ($rt -ne $in.runtime_id) {
-        # 易变 UI（浏览器地址栏等）：runtimeId 变了，但同序同类型同名视为同一元素
-        $ctype = ''
-        try { $ctype = $cur.Current.ControlType.ProgrammaticName -replace '^ControlType\.', '' } catch {}
-        if ($ctype -ne $in.expect.t -or ($cur.Current.Name -or '') -ne $in.expect.n) {
-          throw "STALE_STATE: 元素已变化——重新 get_app_state"
-        }
-      }
-      $el = $cur; break
-    }
-    $idx++
+    [void]$out.Add($cur)
     $child = $walker.GetFirstChild($cur); $kids = @(); $n = 0
     while ($child -ne $null -and $n -lt 80) { $kids += $child; $child = $walker.GetNextSibling($child); $n++ }
     for ($k = $kids.Count - 1; $k -ge 0; $k--) { $stack.Push($kids[$k]); $depths.Push($depth + 1) }
   }
-  if (-not $el) { throw "STALE_STATE: 元素已不存在——重新 get_app_state" }
+  return $out
+}
+
+function Get-RuntimeId($el) {
+  $rt = ''
+  try { $rt = ($el.GetRuntimeId() | ForEach-Object { $_ }) -join ',' } catch {}
+  return $rt
+}
+
+try {
+  $in = (Read-Payload) | ConvertFrom-Json
+  $root = [System.Windows.Automation.AutomationElement]::FromHandle([IntPtr]$in.hwnd)
+  $all = Enumerate-Tree $root
+  $wantT = ''
+  if ($in.expect) { $wantT = [string]$in.expect.t }
+  $wantN = ''
+  if ($in.expect) { $wantN = [string]$in.expect.n }
+
+  $el = $null
+  # ---- 第一遍：序号 + 身份 ----
+  $i = [int]$in.expect_i
+  if ($i -ge 0 -and $i -lt $all.Count) {
+    $cand = $all[$i]
+    if ((Get-RuntimeId $cand) -eq $in.runtime_id) { $el = $cand }
+    else {
+      # 易变 UI（浏览器地址栏等）：runtimeId 变了，但同序同类型同名视为同一元素
+      $tn = Get-TypeName $cand
+      if ($tn[0] -eq $wantT -and $tn[1] -eq $wantN) { $el = $cand }
+    }
+  }
+
+  # ---- 第二遍：序号错位 → 按 (类型,名称) 全树唯一匹配 ----
+  if (-not $el -and $wantT) {
+    $hits = @()
+    foreach ($c in $all) {
+      $tn = Get-TypeName $c
+      if ($tn[0] -eq $wantT -and $tn[1] -eq $wantN) { $hits += ,$c }
+    }
+    if ($hits.Count -eq 1) { $el = $hits[0] }
+    elseif ($hits.Count -gt 1) {
+      throw "STALE_STATE: 元素 [$i] 序号已错位且 (类型,名称) 有 $($hits.Count) 个匹配，无法安全定位——重新 get_app_state 获取新索引"
+    }
+  }
+  if (-not $el) { throw "STALE_STATE: 元素 [$i] 已不存在——重新 get_app_state" }
 
   if (-not $el.Current.IsValuePatternAvailable) { throw "NOT_SETTABLE: 该元素不支持 ValuePattern（用 left_click + type 代替）" }
   $vp = $el.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern)

@@ -10,9 +10,20 @@ public class YCodeNative
     [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
     [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr h);
+    [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int nCmdShow);
+
+    // SW_RESTORE：最小化窗口的矩形是 (-32000,-32000,219,30)，UIA 树几乎是空的、
+    // 截图必是一片灰。观察/截图前先恢复窗口，否则拿到的是无意义的空状态。
+    public const int SW_RESTORE = 9;
     [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);
     [DllImport("dwmapi.dll")] public static extern int DwmGetWindowAttribute(IntPtr h, int attr, out RECT r, int size);
     [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
+    [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr hwnd, IntPtr hdcBlt, uint nFlags);
+
+    // PrintWindow 的 PW_RENDERFULLCONTENT：让窗口把自己渲染进 DC，而不是从屏幕表面拷。
+    // 没有它，被遮挡的窗口、以及硬件加速的窗口（浏览器 / Electron / 播放器）会截出
+    // 一片灰或黑——这正是"截图返回灰色画面"的根因。
+    public const uint PW_RENDERFULLCONTENT = 0x00000002;
 
     [StructLayout(LayoutKind.Sequential)]
     public struct RECT { public int Left, Top, Right, Bottom; }
@@ -64,29 +75,112 @@ public class YCodeNative
         SendInput(1, up, Marshal.SizeOf(typeof(INPUT)));
     }
 
-    // ---- 屏幕截取（GDI 拷屏 + JPEG 编码；C# 侧实现，见文件头说明）----
-    public static byte[] CaptureScreen(int x, int y, int w, int h, int maxEdge, long quality)
+    // ---- 屏幕截取（窗口走 PrintWindow，全屏走 GDI 拷屏；JPEG 编码共用）----
+    //
+    // 返回 ShotResult：Jpeg 字节 + Blank 标记。Blank 用于把"截到一片纯色"这种
+    // 静默失败显式暴露给模型，避免它把灰图当真实画面做判断。
+    public class ShotResult
+    {
+        public byte[] Jpeg;
+        public bool Blank;
+    }
+
+    public static ShotResult CaptureScreen(int x, int y, int w, int h, int maxEdge, long quality)
     {
         using (var bmp = new System.Drawing.Bitmap(w, h))
-        using (var g = System.Drawing.Graphics.FromImage(bmp))
         {
-            g.CopyFromScreen(x, y, 0, 0, new System.Drawing.Size(w, h));
-            var outBmp = bmp;
-            var scale = Math.Max(w, h) > maxEdge ? (double)maxEdge / Math.Max(w, h) : 1.0;
-            if (scale < 1.0)
+            using (var g = System.Drawing.Graphics.FromImage(bmp))
             {
-                outBmp = new System.Drawing.Bitmap(bmp, (int)(w * scale), (int)(h * scale));
+                g.CopyFromScreen(x, y, 0, 0, new System.Drawing.Size(w, h));
             }
-            using (var ms = new System.IO.MemoryStream())
+            return Finish(bmp, maxEdge, quality);
+        }
+    }
+
+    // 窗口截图：优先 PrintWindow(PW_RENDERFULLCONTENT)（可见性/遮挡无关，
+    // 硬件加速窗口也能拿到内容），失败再回退到按窗口矩形拷屏。
+    public static ShotResult CaptureWindow(IntPtr hwnd, int x, int y, int w, int h, int maxEdge, long quality)
+    {
+        using (var bmp = new System.Drawing.Bitmap(w, h))
+        {
+            bool printed = false;
+            using (var g = System.Drawing.Graphics.FromImage(bmp))
             {
-                var codec = FindEncoder("image/jpeg");
-                var ep = new System.Drawing.Imaging.EncoderParameters(1);
-                ep.Param[0] = new System.Drawing.Imaging.EncoderParameter(System.Drawing.Imaging.Encoder.Quality, quality);
-                outBmp.Save(ms, codec, ep);
-                if (!ReferenceEquals(outBmp, bmp)) outBmp.Dispose();
-                return ms.ToArray();
+                IntPtr hdc = g.GetHdc();
+                try { printed = PrintWindow(hwnd, hdc, PW_RENDERFULLCONTENT); }
+                finally { g.ReleaseHdc(hdc); }
+                if (!printed)
+                {
+                    g.CopyFromScreen(x, y, 0, 0, new System.Drawing.Size(w, h));
+                }
+            }
+            var r = Finish(bmp, maxEdge, quality);
+            // 用"客户区是否纯色"判断，而不是整图：Chromium 类窗口的标题栏/标签栏是 GDI
+            // 绘制的、PrintWindow 能截到，页面内容（GPU 合成）截不到——整图看是"非纯色"，
+            // 只有客户区看才是纯色。整图判断会让回退永不触发。
+            if (printed && IsUniformRegion(bmp, 0.12))
+            {
+                // 客户区一片纯色：多半是 GPU 合成内容没渲染出来，再拷屏试一次，
+                // 谁的内容多就用谁（窗口可见时拷屏能拿到完整页面）。
+                using (var bmp2 = new System.Drawing.Bitmap(w, h))
+                {
+                    using (var g2 = System.Drawing.Graphics.FromImage(bmp2))
+                    {
+                        g2.CopyFromScreen(x, y, 0, 0, new System.Drawing.Size(w, h));
+                    }
+                    if (!IsUniformRegion(bmp2, 0.12)) return Finish(bmp2, maxEdge, quality);
+                }
+            }
+            return r;
+        }
+    }
+
+    static ShotResult Finish(System.Drawing.Bitmap bmp, int maxEdge, long quality)
+    {
+        bool blank = IsUniform(bmp);
+        var outBmp = bmp;
+        var scale = Math.Max(bmp.Width, bmp.Height) > maxEdge ? (double)maxEdge / Math.Max(bmp.Width, bmp.Height) : 1.0;
+        if (scale < 1.0)
+        {
+            outBmp = new System.Drawing.Bitmap(bmp, (int)(bmp.Width * scale), (int)(bmp.Height * scale));
+        }
+        using (var ms = new System.IO.MemoryStream())
+        {
+            var codec = FindEncoder("image/jpeg");
+            var ep = new System.Drawing.Imaging.EncoderParameters(1);
+            ep.Param[0] = new System.Drawing.Imaging.EncoderParameter(System.Drawing.Imaging.Encoder.Quality, quality);
+            outBmp.Save(ms, codec, ep);
+            if (!ReferenceEquals(outBmp, bmp)) outBmp.Dispose();
+            return new ShotResult { Jpeg = ms.ToArray(), Blank = blank };
+        }
+    }
+
+    // 抽样判断整图是否近似纯色（>=99% 采样点同色）——灰图/黑图检测
+    static bool IsUniform(System.Drawing.Bitmap bmp)
+    {
+        return IsUniformRegion(bmp, 0.0);
+    }
+
+    // 同上，但可跳过顶部 topSkip 比例（标题栏/标签栏）与底部 8%（状态栏）
+    static bool IsUniformRegion(System.Drawing.Bitmap bmp, double topSkip)
+    {
+        int y0 = (int)(bmp.Height * topSkip);
+        int y1 = bmp.Height - (int)(bmp.Height * 0.08);
+        if (y1 - y0 < 8) { y0 = 0; y1 = bmp.Height; }
+        int stepX = Math.Max(1, bmp.Width / 24), stepY = Math.Max(1, (y1 - y0) / 24);
+        var counts = new System.Collections.Generic.Dictionary<int, int>();
+        int total = 0, top = 0;
+        for (int y = y0; y < y1; y += stepY)
+        {
+            for (int x = 0; x < bmp.Width; x += stepX)
+            {
+                int c = bmp.GetPixel(x, y).ToArgb();
+                int n; counts.TryGetValue(c, out n); counts[c] = n + 1;
+                total++;
+                if (counts[c] > top) top = counts[c];
             }
         }
+        return total > 0 && top >= total * 0.99;
     }
 
     static System.Drawing.Imaging.ImageCodecInfo FindEncoder(string mime)

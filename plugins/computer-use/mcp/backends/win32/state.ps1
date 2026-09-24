@@ -43,6 +43,17 @@ try {
   }
   if ($hwnd -eq [IntPtr]::Zero) { Out @{ __error = 'APP_NOT_FOUND: 找不到目标窗口——先 list_apps / open_app' } | Write-Output; exit 0 }
 
+  # 最小化的窗口 UIA 树几乎是空的（只剩一个 Pane），先恢复再枚举，
+  # 否则模型会以为"这个窗口没有控件"。
+  $restored = $false
+  try {
+    if ([YCodeNative]::IsIconic($hwnd)) {
+      [void][YCodeNative]::ShowWindow($hwnd, [YCodeNative]::SW_RESTORE)
+      Start-Sleep -Milliseconds 350
+      $restored = $true
+    }
+  } catch {}
+
   $root = [System.Windows.Automation.AutomationElement]::FromHandle($hwnd)
   $procId = $root.Current.ProcessId
   $title = $root.Current.Name
@@ -107,7 +118,7 @@ try {
 
   Out @{
     hwnd = [int64]$hwnd; pid = $procId; title = $title
-    truncated = $truncated; elements = $elements
+    truncated = $truncated; elements = $elements; restored = $restored
   } | Write-Output
 } catch {
   @{ __error = $_.Exception.Message } | ConvertTo-Json -Compress | Write-Output

@@ -137,7 +137,7 @@ def("get_app_state", "读取目标应用的 UI 语义元素树（辅助功能树
   properties: {
     app_ref: AppRef,
     include_screenshot: { type: "boolean", description: "附带截图（默认 false）" },
-    max_elements: { type: "integer", description: "元素数量上限（默认 250，超限截断并提示）" },
+    max_elements: { type: "integer", description: "元素数量上限（默认 400，超限截断并提示）" },
   },
   required: [],
 }, async (a) => {
@@ -148,7 +148,7 @@ def("get_app_state", "读取目标应用的 UI 语义元素树（辅助功能树
   lastState.set(key, r);
   lastState.set("foreground", r);
   const lines = [
-    `窗口: ${r.title} (pid ${r.pid}, hwnd ${r.hwnd})${r.truncated ? ` —— 元素过多已截断到 ${r.elements.length} 个，可用 max_elements 提高` : ""}`,
+    `窗口: ${r.title} (pid ${r.pid}, hwnd ${r.hwnd})${r.truncated ? ` —— 元素过多已截断到 ${r.elements.length} 个，可用 max_elements 提高` : ""}${r.restored ? " —— 窗口原为最小化，已自动恢复" : ""}`,
     "",
     ...r.elements.map((e) => {
       const bits = [`[${e.i}]`, e.t];
@@ -163,7 +163,8 @@ def("get_app_state", "读取目标应用的 UI 语义元素树（辅助功能树
   if (a.include_screenshot) {
     const shot = await ps("screenshot.ps1", { hwnd: r.hwnd }, 60_000);
     if (shot.b64 && shot.b64.length >= 100) {
-      text = `[IMAGE jpeg ${shot.b64}]\n` + text + `\n（附图: ${shot.path} ${shot.w}x${shot.h}）`;
+      text = `[IMAGE jpeg ${shot.b64}]\n` + text + `\n（附图: ${shot.path} ${shot.w}x${shot.h}${shot.restored ? "，窗口原为最小化已恢复" : ""}）`;
+      if (shot.blank) text += "\n（注意：截图为纯色画面，可能窗口未真正渲染——别把空白当布局判断依据）";
     } else {
       text += "\n（附图失败：画面数据为空，可单独调用 screenshot 重试）";
     }
@@ -171,12 +172,12 @@ def("get_app_state", "读取目标应用的 UI 语义元素树（辅助功能树
   return { __text: text };
 });
 
-def("screenshot", "截取当前屏幕或指定应用窗口，返回内联图片。用于视觉判断（布局/颜色/自绘界面）；元素操作优先 get_app_state。", {
+def("screenshot", "截取当前屏幕或指定应用窗口，返回内联图片。用于视觉判断（布局/颜色/自绘界面）；元素操作优先 get_app_state。窗口最小化时会自动恢复后再截。", {
   type: "object",
   properties: { app_ref: AppRef },
   required: [],
 }, async (a) => {
-  const r = await ps("screenshot.ps1", { hwnd: a.app_ref && a.app_ref.hwnd }, 60_000);
+  const r = await ps("screenshot.ps1", { hwnd: a.app_ref && a.app_ref.hwnd, name: a.app_ref && a.app_ref.name, pid: a.app_ref && a.app_ref.pid }, 60_000);
   return { __image: r };
 });
 
@@ -360,7 +361,8 @@ async function handle(msg) {
           if (!img.b64 || img.b64.length < 100) {
             return { id, result: textResult("截图失败：画面数据为空——检查窗口是否最小化", true) };
           }
-          return { id, result: textResult(`[IMAGE jpeg ${img.b64}]\n截图 ${img.w}x${img.h}: ${img.path}（画面已附上）`) };
+          const extra = `${img.restored ? "，窗口原为最小化已恢复" : ""}${img.blank ? "；⚠ 画面为纯色，可能未真正渲染" : ""}`;
+          return { id, result: textResult(`[IMAGE jpeg ${img.b64}]\n截图 ${img.w}x${img.h}: ${img.path}（画面已附上${extra}）`) };
         }
         if (r && r.__text !== undefined) return { id, result: textResult(r.__text) };
         return { id, result: textResult(typeof r === "string" ? r : JSON.stringify(r, null, 2)) };
