@@ -136,6 +136,7 @@ func main() {
 		goagent.WithHTTPRoutes(promptsRoutes()),  // 提示词组端点（设置页管理提示词组）
 		goagent.WithHTTPRoutes(reloadRoutes()),   // 能力目录热重载 + 目录错误
 		goagent.WithHTTPRoutes(debugRoutes()),    // 诊断端点（卡死时导出 goroutine 调用栈）
+		goagent.WithHTTPRoutes(pipelineRoutes()), // pipeline 运行历史（列表/详情，快照由 GoAgent 落盘）
 		goagent.WithHTTPRoutes(teamsRoutes()),    // 团队端点（创建/列表/详情/群聊/插话/实时事件）
 	}
 	// 工具集装配：注册表内全部工具集进程内装一次（会话可见性由工具

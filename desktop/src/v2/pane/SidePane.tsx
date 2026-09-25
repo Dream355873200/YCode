@@ -23,6 +23,7 @@ import BrowserTab from './BrowserTab';
 import { useBrowserInsts } from './browserStore';
 import { TeamPanel } from './TeamPanel';
 import { PipelinePanel } from './PipelinePanel';
+import { NodeTracePane, parseNodeTraceTabId } from './NodeTracePane';
 
 // mode 面板组件注册表：plugin.json 只声明 id/label（纯数据，引擎/壳都不
 // import 组件），id → 组件的绑定只存在于这份表——新增面板 = 写组件
@@ -158,6 +159,7 @@ export function SidePane({ open }: { open: boolean }) {
   const fileOf = activeTab?.kind === 'file' ? activeTab.id.slice(5) : null;
   const instOf = activeTab?.kind === 'browser' ? insts.find((i) => i.id === activeTab.id.slice(8)) : null;
   const ModePanel = activeTab?.kind === 'mode' ? MODE_PANELS[activeTab.id.slice(5)] : null;
+  const nodeTrace = activeTab?.kind === 'pipelineNode' ? parseNodeTraceTabId(activeTab.id) : null;
   const BuiltinPanel = activeTab?.kind === 'git' ? GitPanel
     : activeTab?.kind === 'tasks' ? TasksPanel
     : activeTab?.kind === 'plan' ? PlanPanel
@@ -250,6 +252,7 @@ export function SidePane({ open }: { open: boolean }) {
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
             {fileOf ? <FileView key={fileOf} file={fileOf} />
               : instOf ? <BrowserTab key={instOf.id} inst={instOf} />
+              : nodeTrace ? <NodeTracePane key={activeTab!.id} runId={nodeTrace.runId} node={nodeTrace.node} />
               : BuiltinPanel ? <BuiltinPanel />
               : ModePanel ? <ModePanel />
               : <EmptyCards cards={cards} onPick={openCard} />}
