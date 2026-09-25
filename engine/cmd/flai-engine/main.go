@@ -192,7 +192,7 @@ func main() {
 	// 按会话模式取用（描述里的技能清单也随会话变化）；项目 .yume/commands/
 	// 由 Skill 工具按会话工作目录现场读取、优先级最高。每 30s 重扫。
 	skills.watch(30 * time.Second)
-	for _, t := range builtin.ManagementTools(builtin.ManagementDeps{SkillRegistryFn: skills.forSession}) {
+	for _, t := range builtin.ManagementTools(builtin.ManagementDeps{SkillRegistryFn: teamAwareSkillRegistry}) {
 		app.Tool(t.Name, t.Def)
 	}
 

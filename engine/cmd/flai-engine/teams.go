@@ -40,6 +40,7 @@ import (
 
 	goagent "github.com/Dream355873200/GoAgent"
 	"github.com/Dream355873200/GoAgent/message"
+	"github.com/Dream355873200/GoAgent/skill"
 )
 
 // ---- 实体 ----
@@ -47,15 +48,16 @@ import (
 // TeamMember 团队成员定义（team.json）。
 type TeamMember struct {
 	Name     string   `json:"name"`               // 成员标识（team-<name>-<member> 会话）
-	Role     string   `json:"role"`               // 角色卡：身份/职责/产出规范
-	Toolsets []string `json:"toolsets,omitempty"` // 工具白名单（工具集词；base 恒可见）
+	Role     string   `json:"role"`               // 角色卡：身份/职责/产出规范（身份与协作关系）
+	Mode     string   `json:"mode,omitempty"`     // 能力基底模式（可选）：继承该模式的工具集/规范/技能——角色卡与 mode 正交但可复用
+	Toolsets []string `json:"toolsets,omitempty"` // 额外工具白名单（在 mode 基底上追加；无 mode 时即全量白名单）
 }
 
 // TeamLeader 队长定义。
 type TeamLeader struct {
 	Role     string   `json:"role"`
-	Toolsets []string `json:"toolsets,omitempty"` // 额外工具集（team 工具集自动授予）
 	Mode     string   `json:"mode,omitempty"`     // 权限模式（默认 accept_edits）
+	Toolsets []string `json:"toolsets,omitempty"` // 额外工具集（team 工具集自动授予）
 }
 
 // Team 团队实体。
@@ -72,6 +74,7 @@ type Team struct {
 type member struct {
 	name     string
 	role     string
+	mode     string   // 能力基底模式（空 = 仅按 toolsets）
 	toolsets []string
 	isLeader bool
 }
@@ -79,7 +82,7 @@ type member struct {
 func (t *Team) iterMembers() []member {
 	out := []member{{name: "leader", role: t.Leader.Role, toolsets: t.Leader.Toolsets, isLeader: true}}
 	for _, m := range t.Members {
-		out = append(out, member{name: m.Name, role: m.Role, toolsets: m.Toolsets})
+		out = append(out, member{name: m.Name, role: m.Role, mode: m.Mode, toolsets: m.Toolsets})
 	}
 	return out
 }
@@ -264,12 +267,24 @@ func teamSessionDir(sessionID string) string {
 	return ""
 }
 
-// teamToolVisible 成员工具白名单：team 工具集按绑定授予（leader 恒有、
-// 成员恒无——递归防护），其余按成员 toolsets 判断，base 工具恒可见。
-// 插件工具（子代理/MCP）v1 不对团队成员开放。
+// memberBaseMode 成员的能力基底模式（配置了 mode 且该模式存在时返回之）。
+// 角色卡与 mode 正交但可复用：mode 提供能力面（工具集/规范/技能），
+// 角色卡只管身份——成员不必重复配置一份能力。
+func (b teamBinding) baseMode() *Mode {
+	if b.member.mode == "" {
+		return nil
+	}
+	return catalog().Mode(b.member.mode)
+}
+
+// teamToolVisible 成员工具白名单：team/orchestration 工具集按身份授予
+// （leader 恒有、成员恒无——递归防护，引用 mode 也绕不开）；其余工具集
+// = 显式 toolsets ∪ 能力基底模式的 toolsets；插件工具（子代理/MCP）仅在
+// 成员引用了 mode 且该 mode 引用插件时开放；base 工具恒可见。
 func teamToolVisible(b teamBinding, toolName string) bool {
+	base := b.baseMode()
 	if ts, owned := toolsetOwner[toolName]; owned {
-		if ts == "team" {
+		if ts == "team" || ts == "orchestration" {
 			return b.member.isLeader
 		}
 		for _, s := range b.member.toolsets {
@@ -277,10 +292,10 @@ func teamToolVisible(b teamBinding, toolName string) bool {
 				return true
 			}
 		}
-		return false
+		return base != nil && base.HasToolset(ts)
 	}
-	if _, owned, _ := pluginTools.lookup(toolName); owned {
-		return false
+	if pid, owned, hidden := pluginTools.lookup(toolName); owned {
+		return !hidden && base != nil && base.HasPlugin(pid)
 	}
 	return true
 }
@@ -894,21 +909,39 @@ func teamAwareWorkDir(sessionID string) string {
 	return sessMap.resolve(sessionID)
 }
 
-// teamAwarePromptDir 团队会话不用模式提示词组（身份由角色卡承载，内置
-// 通用 Agent 提示词打底）。
+// teamAwarePromptDir 团队会话提示词组：成员引用了能力基底模式则用该模式
+// 的提示词组；否则空（角色卡承载身份，内置通用提示词打底）。
 func teamAwarePromptDir(sessionID string) string {
-	if _, ok := teamsReg.binding(sessionID); ok {
+	if b, ok := teamsReg.binding(sessionID); ok {
+		if m := b.baseMode(); m != nil {
+			return m.Resolved.PromptDir
+		}
 		return ""
 	}
 	return sessionPromptDir(sessionID)
 }
 
-// teamAwareContextFiles 团队会话不注入模式插件规范（角色卡即上下文）。
+// teamAwareContextFiles 团队会话项目上下文：成员引用了能力基底模式则注入
+// 该模式的插件规范与工具集动态上下文；否则空（角色卡即上下文）。
 func teamAwareContextFiles(sessionID string) []string {
-	if _, ok := teamsReg.binding(sessionID); ok {
+	if b, ok := teamsReg.binding(sessionID); ok {
+		if m := b.baseMode(); m != nil {
+			return m.Resolved.contextFiles
+		}
 		return nil
 	}
 	return sessionContextFiles(sessionID)
+}
+
+// teamAwareSkillRegistry 团队会话技能注册表：成员引用了能力基底模式则用
+// 该模式的注册表；否则默认模式（skills.forSession 的回退行为）。
+func teamAwareSkillRegistry(sessionID string) *skill.Registry {
+	if b, ok := teamsReg.binding(sessionID); ok {
+		if m := b.baseMode(); m != nil {
+			return skills.forMode(m.ID)
+		}
+	}
+	return skills.forSession(sessionID)
 }
 
 // teamAwareToolVisible 团队会话按成员白名单过滤，其余按模式过滤。

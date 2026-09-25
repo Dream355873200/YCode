@@ -286,10 +286,14 @@ var skills = &skillCatalog{byMode: map[string]*skill.Registry{}}
 
 // forSession 会话模式的技能注册表（Skill 工具的 SkillRegistryFn）。
 func (sc *skillCatalog) forSession(sessionID string) *skill.Registry {
-	id := sessionMode(sessionID).ID
+	return sc.forMode(sessionMode(sessionID).ID)
+}
+
+// forMode 指定模式的技能注册表（团队成员按能力基底模式取用）。
+func (sc *skillCatalog) forMode(modeID string) *skill.Registry {
 	sc.mu.RLock()
 	defer sc.mu.RUnlock()
-	return sc.byMode[id]
+	return sc.byMode[modeID]
 }
 
 // rebuild 按当前技能文件重建全部模式的注册表。
