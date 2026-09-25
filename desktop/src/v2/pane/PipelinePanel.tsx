@@ -2,7 +2,7 @@
 // 节点拓扑（依赖分层）+ 实时状态 + 历史回看（GoAgent 落盘快照，跨重启）。
 // 点节点 → 打开右栏「节点时间线」tab（NodeTracePane，只读工作过程，
 // 复刻 ZCode 的子代理查看形态）。实时数据来自 SSE 帧，历史来自 /pipelines。
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   CheckIcon, ChevronDownIcon, CircleAlertIcon, HistoryIcon, Loader2Icon,
   WorkflowIcon, XIcon,
@@ -78,6 +78,28 @@ export function PipelinePanel() {
   useEffect(() => {
     if (dir) void loadPipelineHistory(dir);
   }, [dir]);
+  // 实时运行结束后刷新历史（快照已定格落盘）
+  useEffect(() => {
+    if (finishedAt && dir) void loadPipelineHistory(dir);
+  }, [finishedAt, dir]);
+
+  const openRun = useCallback((id: string) => {
+    if (!dir) return;
+    engine.get(`/pipelines/${id}?dir=${encodeURIComponent(dir)}`).then((r) => {
+      const body = r.body as unknown as RunSnapshot | undefined;
+      if (body?.nodes) setViewSnap(body);
+    }).catch(() => {});
+  }, [dir]);
+
+  // 打开面板且没有进行中的实时数据：自动回看最近一次运行（持久化可见性）
+  const autoOpened = useRef(false);
+  useEffect(() => {
+    if (autoOpened.current) return;
+    if (nodes.length === 0 && history.length > 0 && dir) {
+      autoOpened.current = true;
+      openRun(history[0]!.id);
+    }
+  }, [nodes.length, history, dir, openRun]);
 
   useEffect(() => {
     if (!wrapRef.current) return;
@@ -125,14 +147,45 @@ export function PipelinePanel() {
   }, [viewNodes]);
 
   if (viewNodes.length === 0) {
-    return (
-      <div className="flex h-full flex-col items-center justify-center gap-2.5 p-6 text-center">
-        <div className="flex size-11 items-center justify-center rounded-2xl border border-border bg-surface">
-          <WorkflowIcon className="size-5 text-foreground-subtlest" />
+    if (history.length === 0) {
+      return (
+        <div className="flex h-full flex-col items-center justify-center gap-2.5 p-6 text-center">
+          <div className="flex size-11 items-center justify-center rounded-2xl border border-border bg-surface">
+            <WorkflowIcon className="size-5 text-foreground-subtlest" />
+          </div>
+          <div className="text-ui-sm font-medium text-foreground">还没有流水线运行</div>
+          <div className="text-ui-xs leading-relaxed text-foreground-subtlest">
+            Agent 用 create_pipeline 编排 DAG 时<br />节点拓扑与实时状态会出现在这里
+          </div>
         </div>
-        <div className="text-ui-sm font-medium text-foreground">还没有流水线运行</div>
-        <div className="text-ui-xs leading-relaxed text-foreground-subtlest">
-          Agent 用 create_pipeline 编排 DAG 时<br />节点拓扑与实时状态会出现在这里
+      );
+    }
+    // 无实时数据但有历史：直接列出过往运行（点击回看 DAG 与节点产出）
+    return (
+      <div className="flex h-full flex-col overflow-hidden">
+        <div className="shrink-0 border-b border-border/50 px-3 py-2 text-ui-xs font-medium text-foreground">历史运行</div>
+        <div className="min-h-0 flex-1 overflow-y-auto p-2">
+          <div className="grid gap-1.5">
+            {history.map((h) => {
+              const ok = h.statuses.filter((x) => x === 'done').length;
+              const fail = h.statuses.filter((x) => x === 'error').length;
+              return (
+                <button key={h.id} type="button"
+                  className="rounded-xl border border-border bg-card px-3 py-2 text-left transition-colors hover:border-brand/50 hover:bg-hover"
+                  onClick={() => openRun(h.id)}>
+                  <div className="flex items-center gap-1.5 text-ui-xs">
+                    <HistoryIcon className="size-3 shrink-0 text-foreground-subtlest" />
+                    <span className="font-medium text-foreground">{new Date(h.started_at).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false })}</span>
+                    <span className="ml-auto shrink-0 text-ui-2xs text-foreground-subtlest">
+                      {fail > 0 ? `${fail} 失败` : '已完成'} · {h.nodes.length} 节点
+                    </span>
+                  </div>
+                  <div className="mt-1 truncate text-ui-2xs text-foreground-subtlest">{h.nodes.join(' → ')}</div>
+                  <div className="mt-0.5 text-ui-2xs text-foreground-subtlest">{ok}/{h.nodes.length} 完成 · 点击查看 DAG 与节点产出</div>
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
     );
@@ -172,13 +225,7 @@ export function PipelinePanel() {
               className="shrink-0 rounded-md border border-border bg-input px-1 py-0.5 text-ui-2xs text-foreground-subtle outline-none"
               defaultValue=""
               onChange={(e) => {
-                const snap = history.find((h) => h.id === e.target.value);
-                if (snap && dir) {
-                  engine.get(`/pipelines/${snap.id}?dir=${encodeURIComponent(dir)}`).then((r) => {
-                    const body = r.body as unknown as RunSnapshot | undefined;
-                    if (body?.nodes) setViewSnap(body);
-                  }).catch(() => {});
-                }
+                if (e.target.value) openRun(e.target.value);
                 e.target.value = '';
               }}>
               <option value="">历史…</option>
