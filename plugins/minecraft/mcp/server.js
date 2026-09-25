@@ -81,6 +81,7 @@ async function ensureBot() {
     b.on("death", () => { try { b.chat("我死了，正在重生……"); } catch {} });
     bot = b;
     ready = true;
+    b.on("chat", (username, text) => { try { onGameChat(username, text); } catch {} });
     return b;
   })();
   try {
@@ -91,6 +92,55 @@ async function ensureBot() {
 }
 
 let lastKick = "";
+
+// ---------- 游戏聊天：缓冲 + 推送桥 ----------
+//
+// chatLog 缓存最近 40 条（mc_chat_log 拉取用）。chat_push.enabled 时，
+// 游戏聊天按过滤条件 POST 到引擎 /chat 唤醒指定会话（忙则 guide 车道插话，
+// 闲则新开一轮）——agent 于是能「听到」游戏里说话并响应。
+const chatLog = [];
+const CHAT_LOG_MAX = 40;
+
+function pushCfg() {
+  let file = {};
+  try { file = JSON.parse(fs.readFileSync(path.join(__dirname, "config.json"), "utf8")); } catch {}
+  const c = file.chat_push || {};
+  return {
+    enabled: c.enabled !== false && !!c.session_id,
+    engineUrl: c.engine_url || process.env.MC_ENGINE_URL || "http://127.0.0.1:8420",
+    sessionId: c.session_id || "",
+    mentionOnly: !!c.mention_only,
+    cooldownMs: Math.max(5, Number(c.cooldown_s || 20)) * 1000,
+  };
+}
+let lastPush = 0;
+
+function onGameChat(username, text) {
+  chatLog.push({ ts: Date.now(), from: username, text });
+  if (chatLog.length > CHAT_LOG_MAX) chatLog.shift();
+  const cfg = pushCfg();
+  if (!cfg.enabled || username === (bot && bot.username)) return;
+  if (cfg.mentionOnly && !text.toLowerCase().includes((bot && bot.username || "").toLowerCase())) return;
+  const now = Date.now();
+  if (now - lastPush < cfg.cooldownMs) return;
+  lastPush = now;
+  fetch(`${cfg.engineUrl}/chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message: `[MC游戏聊天] ${username} 说: ${text}（用 mc_chat 回应，mc_state 了解处境）`, session_id: cfg.sessionId }),
+  }).catch(() => {});
+}
+
+def("mc_chat_log", "翻看最近的 Minecraft 游戏聊天（缓存最近 40 条）。bot 上线期间别人说的话都在这里。", {
+  type: "object",
+  properties: { limit: { type: "integer", description: "最近 N 条（默认 20）" } },
+  required: [],
+}, async (a) => {
+  const n = Math.min(40, Math.max(1, a.limit || 20));
+  const recent = chatLog.slice(-n);
+  if (!recent.length) return { __text: "还没有聊天记录（bot 在线期间才会缓存）" };
+  return { __text: recent.map((c) => `[${new Date(c.ts).toLocaleTimeString("zh-CN", { hour12: false })}] ${c.from}: ${c.text}`).join("\n") };
+});
 
 // ---------- 工具 ----------
 const tools = [];
