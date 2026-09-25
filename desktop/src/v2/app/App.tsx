@@ -11,7 +11,6 @@ import { SidePane } from '../pane/SidePane';
 import { Timeline } from '../conversation/Timeline';
 import { Composer } from '../conversation/Composer';
 import { QueuePanel } from '../conversation/QueuePanel';
-import ContextMeter from '../conversation/ContextMeter';
 import { QuestionPanel } from '../conversation/QuestionPanel';
 import { useConversation, useSession } from '../conversation/store';
 
@@ -84,7 +83,6 @@ function SessionFrame() {
             <>
               <Timeline rows={session.rows} sid={sid} />
               <div className="shrink-0 px-4 pb-3">
-                <ContextMeter sid={sid} />
                 <QueuePanel sid={sid} />
                 {pendingAsk
                   ? <QuestionPanel row={pendingAsk} sid={sid} />

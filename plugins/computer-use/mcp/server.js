@@ -185,7 +185,15 @@ def("screenshot", "截取当前屏幕或指定应用窗口，返回内联图片�
   return { __image: r };
 });
 
-def("left_click", "点击目标：优先元素索引（最近一次 get_app_state 的 [index]），坐标是最后手段。支持按键修饰与双击/右键。", {
+def("invoke", "用 UIA 模式激活元素（invoke / toggle / select / expand）——不注入鼠标键盘、不需要目标在前台、不抢焦点，是后台操作的正路。优先用它而不是 left_click。元素没有任何可用模式时报 NOT_INVOKABLE，此时只能用 left_click（要求目标在前台且该点未被遮挡）。", {
+  type: "object",
+  properties: {
+    target: { type: "integer", description: "元素索引（最近一次 get_app_state 的 [index]）" },
+  },
+  required: ["target"],
+}, (a) => act("invoke", a));
+
+def("left_click", "真实鼠标点击目标（优先元素索引，坐标是最后手段）。支持按键修饰与双击/右键。注意：SendInput 的点击会落到「该坐标点上最顶层的窗口」，因此目标被遮挡时会被拒绝（OBSCURED_TARGET）——纯后台激活请改用 invoke。", {
   type: "object",
   properties: {
     target: { description: "元素索引（number）或 {x,y} 屏幕坐标", oneOf: [{ type: "integer" }, { type: "object", properties: { x: { type: "integer" }, y: { type: "integer" } }, required: ["x", "y"] }] },

@@ -56,7 +56,7 @@ try {
     # 完整路径直接 Start-Process（.lnk 走 ShellExecute）
     Start-Process -FilePath $name
   } else {
-    # 应用名：先试 PATH / App Paths；再搜 Start 菜单 .lnk
+    # 应用名：先试 PATH / App Paths；再搜 Start 菜单 .lnk；最后走 shell:AppsFolder（UWP）
     try { Start-Process -FilePath $name; $target = $name }
     catch {
       $roots = @(
@@ -67,9 +67,28 @@ try {
         Where-Object { $_.BaseName -ieq $name } | Select-Object -First 1
       if (-not $lnk) { $lnk = Get-ChildItem $roots -Recurse -Filter *.lnk -ErrorAction SilentlyContinue |
         Where-Object { $_.BaseName -like "*$name*" } | Select-Object -First 1 }
-      if (-not $lnk) { throw "APP_NOT_FOUND: 找不到应用 '$name'——用 list_apps 看已开应用，或给完整 exe 路径" }
-      Start-Process -FilePath $lnk.FullName
-      $target = $lnk.BaseName
+      if ($lnk) {
+        Start-Process -FilePath $lnk.FullName
+        $target = $lnk.BaseName
+      } else {
+        # UWP / Store 应用（计算器、设置、照片…）没有传统 .lnk 可执行入口，
+        # 只在 shell:AppsFolder 命名空间里。按显示名匹配后 InvokeVerb 启动。
+        $launched = $false
+        try {
+          $shellApp = New-Object -ComObject Shell.Application
+          $items = @($shellApp.NameSpace('shell:AppsFolder').Items())
+          $hit = $items | Where-Object { $_.Name -ieq $name } | Select-Object -First 1
+          if (-not $hit) { $hit = $items | Where-Object { $_.Name -like "*$name*" } | Select-Object -First 1 }
+          if ($hit) {
+            $hit.InvokeVerb()
+            $target = $hit.Name
+            $launched = $true
+          }
+        } catch {}
+        if (-not $launched) {
+          throw "APP_NOT_FOUND: 找不到应用 '$name'——用 list_apps 看已开应用，或给完整 exe 路径（UWP 应用请用其显示名，如 计算器 / 设置）"
+        }
+      }
     }
   }
 

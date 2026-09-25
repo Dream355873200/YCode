@@ -10,6 +10,7 @@ import {
   ShieldCheckIcon, SquareIcon, ZapIcon,
 } from 'lucide-react';
 import { useConversation } from './store';
+import ContextRing from './ContextRing';
 import { useApp } from '../app/appState';
 import { engine } from '../protocol';
 import { Button } from '../components/ui/button';
@@ -264,6 +265,8 @@ export function Composer({ sid, variant = 'docked', seed = '' }: {
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
+          {/* 上下文用量圆环（ZCode 式：模型选择器旁的小圈，悬停出明细面板） */}
+          <ContextRing sid={sid} />
           {/* 模型选择器（OpenAI 兼容 /models；切换 = 写 config + 重启引擎） */}
           <div ref={modelRef} className="relative">
             <button type="button"

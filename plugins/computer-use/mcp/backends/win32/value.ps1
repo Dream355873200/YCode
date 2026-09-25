@@ -43,6 +43,8 @@ function Enumerate-Tree($root) {
   while ($stack.Count -gt 0) {
     $cur = $stack.Pop(); $depth = $depths.Pop()
     if ($depth -gt 20) { continue }
+    # 与 state.ps1 一致：.Current 取不到的节点跳过且不占序号，否则两侧 @eN 会错位
+    try { $null = $cur.Current } catch { continue }
     [void]$out.Add($cur)
     $child = $walker.GetFirstChild($cur); $kids = @(); $n = 0
     while ($child -ne $null -and $n -lt 80) { $kids += $child; $child = $walker.GetNextSibling($child); $n++ }
@@ -94,8 +96,17 @@ try {
   }
   if (-not $el) { throw "STALE_STATE: 元素 [$i] 已不存在——重新 get_app_state" }
 
-  if (-not $el.Current.IsValuePatternAvailable) { throw "NOT_SETTABLE: 该元素不支持 ValuePattern（用 left_click + type 代替）" }
-  $vp = $el.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern)
+  # 能力判定必须与 state.ps1 完全一致：state 用 GetCurrentPattern 探测并标注 'settable'，
+  # 这里若用 IsValuePatternAvailable 会出现"state 说可设值、set_value 说 NOT_SETTABLE"
+  # 的自相矛盾（Chromium 等 provider 上该属性不可靠，实测返回空）。
+  $vp = $null
+  try { $vp = $el.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern) } catch {}
+  if (-not $vp) { throw "NOT_SETTABLE: 该元素不支持 ValuePattern（用 left_click + type 代替）" }
+  # 只读元素（浏览器 Document、地址栏等）提前给出可操作的错误，别把 provider 的
+  # "Value is read-only" 原始异常抛给模型
+  $ro = $false
+  try { $ro = [bool]$vp.Current.IsReadOnly } catch {}
+  if ($ro) { throw "NOT_SETTABLE: 该元素的值是只读的（Document / 浏览器地址栏等）——用 left_click 获得焦点后 type 输入" }
   $vp.SetValue([string]$in.value)
   Out @{ ok = $true } | Write-Output
 } catch {

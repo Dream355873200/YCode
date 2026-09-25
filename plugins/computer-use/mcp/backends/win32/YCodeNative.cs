@@ -25,6 +25,27 @@ public class YCodeNative
     // 一片灰或黑——这正是"截图返回灰色画面"的根因。
     public const uint PW_RENDERFULLCONTENT = 0x00000002;
 
+    // ---- 点击前的遮挡校验 ----
+    //
+    // SendInput 注入的鼠标事件由系统派发给"该坐标点上最顶层的窗口"，不是派发给"我们想点的窗口"。
+    // 目标窗口被遮挡（或根本不在那个位置）时，坐标点击会落到别的应用上——必须先问系统
+    // "这个点上是哪个窗口"，与目标窗口的根祖先比对，不一致就拒绝点击。
+    [DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(POINT p);
+    [DllImport("user32.dll")] public static extern IntPtr GetAncestor(IntPtr hwnd, uint flags);
+    public const uint GA_ROOT = 2;
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct POINT { public int X, Y; }
+
+    // 该屏幕点上最顶层的窗口是否属于 target（target 自身或其子/后代窗口）
+    public static bool IsPointOnWindow(int x, int y, IntPtr target)
+    {
+        var p = new POINT { X = x, Y = y };
+        IntPtr hit = WindowFromPoint(p);
+        if (hit == IntPtr.Zero) return false;
+        return GetAncestor(hit, GA_ROOT) == GetAncestor(target, GA_ROOT);
+    }
+
     [StructLayout(LayoutKind.Sequential)]
     public struct RECT { public int Left, Top, Right, Bottom; }
 

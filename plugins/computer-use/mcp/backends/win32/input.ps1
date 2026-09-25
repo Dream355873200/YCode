@@ -87,6 +87,8 @@ function Enumerate-Tree($root) {
   while ($stack.Count -gt 0) {
     $cur = $stack.Pop(); $depth = $depths.Pop()
     if ($depth -gt 20) { continue }
+    # 与 state.ps1 一致：.Current 取不到的节点跳过且不占序号，否则两侧 @eN 会错位
+    try { $null = $cur.Current } catch { continue }
     [void]$out.Add($cur)
     $child = $walker.GetFirstChild($cur); $kids = @(); $n = 0
     while ($child -ne $null -and $n -lt 80) { $kids += $child; $child = $walker.GetNextSibling($child); $n++ }
@@ -95,8 +97,9 @@ function Enumerate-Tree($root) {
   return $out
 }
 
-function Resolve-Point([object]$in) {
-  # 带元素目标：在 hwnd 窗口重枚举复核身份。两遍定位：
+function Resolve-Element([object]$in) {
+  # 带元素目标：在 hwnd 窗口重枚举复核身份，返回元素本身（不涉及坐标）。
+  # 两遍定位：
   #   1) 序号 + 身份（runtimeId 或 类型+名称）一致 → 直接用；
   #   2) 序号已错位（浏览器地址栏这类元素树毫秒级重排）→ 全树按 (类型,名称) 找，
   #      名称非空且唯一匹配才用（唯一性 + 有名 双重约束，避免点到同名/无名元素）；
@@ -130,13 +133,36 @@ function Resolve-Point([object]$in) {
       elseif ($hits.Count -gt 1) { throw "STALE_STATE: 元素 [$i] 序号已错位且 (类型,名称) 有 $($hits.Count) 个匹配，无法安全定位——重新 get_app_state" }
     }
     if (-not $el) { throw "STALE_STATE: 元素 [$i] 已不存在——重新 get_app_state" }
-    $pt = $null
-    try { $pt = $el.GetClickablePoint() } catch {}
-    if (-not $pt -or $pt.X -eq 0) {
-      $b = $el.Current.BoundingRectangle
-      $pt = [System.Windows.Point]::new($b.X + $b.Width / 2, $b.Y + $b.Height / 2)
-    }
-    return @([int]$pt.X, [int]$pt.Y)
+    return $el
+  }
+  return $null
+}
+
+function Get-PointOf($el) {
+  $pt = $null
+  try { $pt = $el.GetClickablePoint() } catch {}
+  if (-not $pt -or $pt.X -eq 0) {
+    $b = $el.Current.BoundingRectangle
+    $pt = [System.Windows.Point]::new($b.X + $b.Width / 2, $b.Y + $b.Height / 2)
+  }
+  return @([int]$pt.X, [int]$pt.Y)
+}
+
+# 点击前的遮挡校验：SendInput 的鼠标事件由系统派发给"该坐标点上最顶层的窗口"，
+# 不是派发给"我们想点的窗口"。目标被遮挡时坐标点击会落到别的应用上（本次会话就
+# 发生过：点计算器结果打到了前台的游戏）。这里先问系统该点上是哪个窗口，
+# 与目标窗口的根祖先不一致就拒绝。
+function Assert-PointClickable([int]$x, [int]$y, $hwnd) {
+  if (-not $hwnd) { return }
+  if (-not [YCodeNative]::IsPointOnWindow($x, $y, [IntPtr]$hwnd)) {
+    throw "OBSCURED_TARGET: 目标点 ($x,$y) 上的最顶层窗口不是目标窗口——目标被遮挡或不在该位置，坐标点击会落到别的应用上，已拒绝执行。改用 invoke（UIA 模式，后台安全、不碰鼠标），或先把目标窗口带到前台"
+  }
+}
+
+function Resolve-Point([object]$in) {
+  if ($in.runtime_id) {
+    $el = Resolve-Element $in
+    return Get-PointOf $el
   }
   return @([int]$in.x, [int]$in.y)
 }
@@ -146,6 +172,7 @@ try {
   switch ($in.action) {
     'click' {
       $pt = Resolve-Point $in
+      Assert-PointClickable $pt[0] $pt[1] $in.hwnd
       [void][YCodeNative]::SetCursorPos($pt[0], $pt[1])
       Start-Sleep -Milliseconds 40
       $flags = @{ 'left'=@([YCodeNative]::MOUSE_LEFTDOWN,[YCodeNative]::MOUSE_LEFTUP); 'right'=@([YCodeNative]::MOUSE_RIGHTDOWN,[YCodeNative]::MOUSE_RIGHTUP); 'middle'=@([YCodeNative]::MOUSE_MIDDLEDOWN,[YCodeNative]::MOUSE_MIDDLEUP) }[[string]$in.button]
@@ -160,6 +187,7 @@ try {
     }
     'drag' {
       $from = Resolve-Point $in
+      Assert-PointClickable $from[0] $from[1] $in.hwnd
       [void][YCodeNative]::SetCursorPos($from[0], $from[1])
       Start-Sleep -Milliseconds 60
       if ($in.modifiers) { ($in.modifiers -split '\+') | ForEach-Object { [void][YCodeNative]::Key((Vk $_), $false, $false) } }
@@ -190,6 +218,17 @@ try {
       Out @{ ok = $true } | Write-Output
     }
     'type' {
+      # 带元素目标时必须先点它拿到焦点：否则文字会打进"当前焦点窗口"，
+      # 而那可能完全是另一个应用（本次会话就发生过：给计算器输入打进了前台的游戏）。
+      # 这一步同样受遮挡校验保护——挡着就报错，不盲打。
+      if ($in.runtime_id) {
+        $pt = Resolve-Point $in
+        Assert-PointClickable $pt[0] $pt[1] $in.hwnd
+        [void][YCodeNative]::SetCursorPos($pt[0], $pt[1])
+        Start-Sleep -Milliseconds 40
+        [void][YCodeNative]::Mouse([YCodeNative]::MOUSE_LEFTDOWN, 0); Start-Sleep -Milliseconds 30
+        [void][YCodeNative]::Mouse([YCodeNative]::MOUSE_LEFTUP, 0); Start-Sleep -Milliseconds 80
+      }
       # 归一换行；逐字符 Unicode SendInput（支持中文）
       $text = [string]$in.text -replace "`r`n", "`n"
       foreach ($ch in $text.ToCharArray()) {
@@ -197,6 +236,40 @@ try {
         else { [void][YCodeNative]::KeyChar($ch); Start-Sleep -Milliseconds 2 }
       }
       Out @{ ok = $true; chars = $text.Length } | Write-Output
+    }
+    'invoke' {
+      # UIA 模式激活：直接调用控件的模式接口，不注入鼠标键盘、不需要前台、不抢焦点。
+      # 这是"后台操作"的正路；坐标点击（left_click）只在没有可用模式时作为兜底。
+      $el = Resolve-Element $in
+      $used = ''
+      if (-not $used) {
+        try {
+          $pat = $el.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
+          if ($pat) { $pat.Invoke(); $used = 'invoke' }
+        } catch {}
+      }
+      if (-not $used) {
+        try {
+          $pat = $el.GetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern)
+          if ($pat) { $pat.Toggle(); $used = 'toggle' }
+        } catch {}
+      }
+      if (-not $used) {
+        try {
+          $pat = $el.GetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern)
+          if ($pat) { $pat.Select(); $used = 'select' }
+        } catch {}
+      }
+      if (-not $used) {
+        try {
+          $pat = $el.GetCurrentPattern([System.Windows.Automation.ExpandCollapsePattern]::Pattern)
+          if ($pat) { $pat.Expand(); $used = 'expand' }
+        } catch {}
+      }
+      if (-not $used) {
+        throw "NOT_INVOKABLE: 元素 [$($in.expect.i)] 没有可用的 UIA 模式（invoke/toggle/select/expand）——该控件只能靠坐标点击：用 left_click，但要求目标窗口在前台且该点未被遮挡"
+      }
+      Out @{ ok = $true; pattern = $used } | Write-Output
     }
     'key' {
       1..([int]($in.repeat)) | ForEach-Object { Send-Chord ([string]$in.text); Start-Sleep -Milliseconds 30 }

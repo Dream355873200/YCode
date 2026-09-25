@@ -52,7 +52,7 @@ function TurnBlock({ unit, sid, live }: { unit: Extract<TurnUnit, { type: 'turn'
   const showBody = open && (hasWork || running || aborted);
   
   return (
-    <div className="my-1">
+    <div className="my-1" style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 600px' }}>
       {(hasWork || running) && (
         <div className="mb-0.5">
           <button type="button" onClick={() => { if (!running && !aborted) setManual(!open); }}
@@ -113,11 +113,15 @@ function TurnRail({ turns, containerRef, onJump }: {
     return () => ro.disconnect();
   }, []);
 
-  // 当前轮次高亮：视口 35% 高度线以上最近的轮次
+  // 当前轮次高亮：视口 35% 高度线以上最近的轮次。
+  // rAF 节流：滚动高频触发，逐轮 getElementById+getBoundingClientRect
+  // 是布局抖动，消息多时是缩放/滚动卡顿的元凶之一。
   useEffect(() => {
     const el = containerRef.current;
     if (!el || turns.length === 0) return;
-    const onScroll = () => {
+    let raf = 0;
+    const compute = () => {
+      raf = 0;
       const line = el.scrollTop + el.clientHeight * 0.35;
       let a = -1;
       turns.forEach((t, i) => {
@@ -128,21 +132,36 @@ function TurnRail({ turns, containerRef, onJump }: {
       });
       setActive(a);
     };
+    const onScroll = () => { if (!raf) raf = requestAnimationFrame(compute); };
     el.addEventListener('scroll', onScroll, { passive: true });
-    onScroll();
-    return () => el.removeEventListener('scroll', onScroll);
+    compute();
+    return () => { el.removeEventListener('scroll', onScroll); if (raf) cancelAnimationFrame(raf); };
   }, [turns, containerRef]);
 
   if (turns.length === 0) return null;
   const n = turns.length;
-  // tick 间距：固定 10px 起步，组超长后压缩到刚好放下
-  const GAP = 10;
+  // tick 间距：固定 10px；放不下时压缩到最小 6px 并转为可滚动列表
+  //（对齐 ZCode：不再无限压缩挤成一团，滚动查看即可），溢出时自动把
+  // 当前/悬停 tick 滚进可视区。
+  const GAP_MAX = 10;
+  const GAP_MIN = 6;
   const usable = Math.max(0, railH - 16);
-  const gap = n > 1 ? Math.min(GAP, usable / (n - 1)) : GAP;
-  const center = railH / 2;
+  const gap = n > 1 ? Math.min(GAP_MAX, Math.max(GAP_MIN, usable / (n - 1))) : GAP_MAX;
+  const contentH = n > 1 ? (n - 1) * gap + 6 : 6;
+  const overflow = contentH > usable;
+  // 溢出滚动模式：当前轮次变化时把对应 tick 滚进轨道可视区
+  useEffect(() => {
+    if (!overflow || active < 0 || !railRef.current) return;
+    const el = railRef.current;
+    const top = 3 + active * gap;
+    if (top < el.scrollTop + 2 || top > el.scrollTop + el.clientHeight - 2) {
+      el.scrollTop = top - el.clientHeight / 2;
+    }
+  }, [active, overflow, gap]);
+  const center = overflow ? 3 + contentH / 2 : railH / 2;
   return (
     <div ref={railRef} onMouseLeave={() => setHover(-1)}
-      className="pointer-events-none absolute bottom-2 left-0 top-2 z-10 w-5">
+      className={`absolute bottom-2 left-0 top-2 z-10 w-5 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${overflow ? 'pointer-events-auto' : 'pointer-events-none'}`}>
       {turns.map((t, i) => {
         // 视觉规则：当前位置的 tick「点亮」= 白色（尺寸不变）；鼠标触发 =
         // 左端固定、向右伸展（最长），并向两侧按距离递减成波浪；非悬停时
@@ -153,7 +172,7 @@ function TurnRail({ turns, containerRef, onJump }: {
         return (
           <button key={t.id} type="button" aria-label="跳转到这轮对话"
             className="group pointer-events-auto absolute left-0 flex h-4 w-5 -translate-y-1/2 items-center justify-start"
-            style={{ top: center + (i - (n - 1) / 2) * gap }}
+            style={{ top: overflow ? 3 + i * gap : center + (i - (n - 1) / 2) * gap }}
             onMouseEnter={() => setHover(i)}
             onClick={() => onJump(t.id)}>
             <span
@@ -268,7 +287,8 @@ export const Timeline = memo(function Timeline({ rows, sid }: { rows: Row[]; sid
           {units.map((u, i) =>
             u.type === 'user'
               ? (
-                <div key={u.id} id={`turn-${u.id}`} className="scroll-mt-2">
+                <div key={u.id} id={`turn-${u.id}`} className="scroll-mt-2"
+                  style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 200px' }}>
                   <RowView row={{ kind: 'user', id: u.id, text: u.text, steered: u.steered } as Row} sid={sid} />
                 </div>
               )
