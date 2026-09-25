@@ -82,7 +82,7 @@ var toolsetRegistry = map[string]toolsetInstaller{
 	},
 	"team": {
 		install: installTeam,
-		tools:   []string{"team_dispatch", "team_status", "team_read"},
+		tools:   []string{"team_dispatch", "team_status", "team_read", "team_say"},
 		notes: []string{
 			"Teams v3 跨会话驱动（对用户创建的常驻团队）：team_dispatch 向成员" +
 				"持久会话分派子任务（成员进度实时透出，忙则排队）+ team_status/" +

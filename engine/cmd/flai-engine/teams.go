@@ -292,6 +292,11 @@ func teamToolVisible(b teamBinding, toolName string) bool {
 	base := b.baseMode()
 	if ts, owned := toolsetOwner[toolName]; owned {
 		if ts == "team" || ts == "orchestration" {
+			// team_say 是群聊发言工具（无害），全体成员可用——类人群聊的
+			// 基本盘：群里说话不只能是任务分派。
+			if toolName == "team_say" {
+				return true
+			}
 			return b.member.isLeader
 		}
 		for _, s := range b.member.toolsets {
@@ -319,12 +324,14 @@ func teamRoleCard(sessionID string) string {
 			"- 拆解目标（团队目标：" + b.team.Goal + "），用 team_dispatch 工具把子任务分派给成员（可在同一轮并行分派多个）\n" +
 			"- 汇总成员产出，直接输出结论文本（Markdown）——会进入团队群聊\n" +
 			"- 成员的审批请求会以插话通知你；需要用户决策的，直接说明即可，用户会在团队面板处理\n" +
+			"- 群聊沟通用 team_say 工具：广播安排、点名成员（@对方）都在群里说\n" +
 			"- 你向用户汇报，不直接操作成员的工具域之外的事务\n")
 	} else {
 		sb.WriteString("# 角色卡：团队成员 " + b.member.name + "\n\n你是团队「" + b.team.Name + "」的成员。\n\n" + b.member.role + "\n\n## 协作规范\n" +
 			"- 团队目标：" + b.team.Goal + "\n" +
 			"- 任务由队长通过分派下达；完成后直接输出结果文本（Markdown），会回传队长并进入群聊\n" +
 			"- 遇到需要用户审批的危险操作会自动升级，等待即可；不要尝试联系用户\n" +
+			"- 群聊沟通用 team_say 工具：向队长汇报进展、请求协助、对其他成员提问都发群里（@对方）；不要用它派任务\n" +
 			"- 你没有创建 pipeline 或团队的能力，也不要越权执行其他成员的职责\n")
 	}
 	sb.WriteString("\n成员间交付默认 Markdown 片段；供 UI 渲染的结构化字段用内嵌 JSON 围栏。\n")
@@ -453,8 +460,9 @@ func notifyLeader(t *Team, text string) {
 	go drainToChat(t, "leader", lsid, "")
 }
 
-// routeToTeamMember 用户 @成员：忙 → 插话；闲 → 拉起其会话。
-func routeToTeamMember(t *Team, m member, text string) error {
+// routeToTeamMember 群聊消息 @成员：忙 → 插话；闲 → 拉起其会话。
+// from 是群聊署名（"user" 或发言成员名）。
+func routeToTeamMember(t *Team, m member, text, from string) error {
 	b, ok := teamsReg.binding(teamSessionID(t.Name, m.name))
 	if !ok {
 		return fmt.Errorf("成员 %s 未注册", m.name)
@@ -463,12 +471,12 @@ func routeToTeamMember(t *Team, m member, text string) error {
 	if teamBusy(sid) {
 		if hub := engineApp.Steering(); hub != nil {
 			_ = hub.Steer(sid, text)
-			appendChat(t, TeamChatMsg{From: "user", To: m.name, Type: "steer", Text: text})
+			appendChat(t, TeamChatMsg{From: from, To: m.name, Type: "steer", Text: text})
 			return nil
 		}
 		return fmt.Errorf("成员 %s 正在运行且插话通道不可用", m.name)
 	}
-	appendChat(t, TeamChatMsg{From: "user", To: m.name, Type: "chat", Text: text})
+	appendChat(t, TeamChatMsg{From: from, To: m.name, Type: "chat", Text: text})
 	if hub := engineApp.Steering(); hub != nil {
 		hub.Enqueue(sid, text)
 	}
@@ -565,6 +573,44 @@ func installTeam(app *goagent.App) {
 			return sb.String(), nil
 		},
 	})
+	app.Tool("team_say", goagent.ToolDef{
+		Description: "在团队群聊里发言（不派任务）：全体成员可见。at 留空 = 群里广播；" +
+			"@某成员 = 点名对其说话（对方忙则插话，闲则拉起其会话）。成员间协作沟通、" +
+			"向队长汇报进展、请求协助都用它。",
+		Input:      teamSayInput{},
+		Permission: goagent.ReadOnly,
+		Concurrent: true,
+		Execute: func(ctx goagent.Context, in teamSayInput) (string, error) {
+			t, err := resolveCallerTeam(ctx, in.Team)
+			if err != nil {
+				return "", err
+			}
+			if strings.TrimSpace(in.Text) == "" {
+				return "", fmt.Errorf("text 不能为空")
+			}
+			sender := "leader"
+			if b, ok := teamsReg.binding(ctx.SessionID); ok && !b.member.isLeader {
+				sender = b.member.name
+			}
+			if in.At == "" || in.At == sender {
+				appendChat(t, TeamChatMsg{From: sender, Type: "chat", Text: in.Text})
+				return "已发到群聊", nil
+			}
+			m, ok := t.find(in.At)
+			if !ok {
+				return "", fmt.Errorf("群成员 %q 不存在（%s）", in.At, memberNames(t))
+			}
+			if m.isLeader {
+				notifyLeader(t, fmt.Sprintf("[群聊 @leader] %s: %s", sender, in.Text))
+				appendChat(t, TeamChatMsg{From: sender, To: "leader", Type: "chat", Text: in.Text})
+				return "已发给队长", nil
+			}
+			if err := routeToTeamMember(t, m, fmt.Sprintf("[群聊 @%s] %s: %s", m.name, sender, in.Text), sender); err != nil {
+				return "", err
+			}
+			return "已发给 " + m.name, nil
+		},
+	})
 	app.Tool("team_read", goagent.ToolDef{
 		Description: "读取成员的产出与历史摘要（从其持久会话提取最近若干条消息）。",
 		Input:       teamReadInput{},
@@ -609,6 +655,11 @@ type teamDispatchInput struct {
 }
 type teamStatusInput struct {
 	Team string `json:"team" desc:"团队名"`
+}
+type teamSayInput struct {
+	Team string `json:"team" desc:"团队名"`
+	Text string `json:"text" desc:"要说的话"`
+	At   string `json:"at,omitempty" desc:"@的成员名（留空 = 群里广播）"`
 }
 type teamReadInput struct {
 	Team   string `json:"team" desc:"团队名"`
@@ -935,7 +986,7 @@ func teamsRoutes() map[string]func(http.ResponseWriter, *http.Request) {
 				http.Error(w, "成员不存在: "+req.At, http.StatusBadRequest)
 				return
 			}
-			if err := routeToTeamMember(t, m, "[群聊 @"+m.name+"] 用户: "+req.Text); err != nil {
+			if err := routeToTeamMember(t, m, "[群聊 @"+m.name+"] 用户: "+req.Text, "user"); err != nil {
 				http.Error(w, err.Error(), http.StatusConflict)
 				return
 			}
