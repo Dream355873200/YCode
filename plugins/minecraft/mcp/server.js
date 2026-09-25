@@ -453,6 +453,47 @@ def("mc_schem_list", "列出 schematics 目录里的蓝图文件（.schem/.litem
     return { __text: files.map((f) => `${f} (${(fs.statSync(path.join(dir, f)).size / 1024).toFixed(1)} KB)`).join("\n") };
   });
 
+def("mc_schem_write", "把程序化生成的体素数据写成 .schem 蓝图文件（森林/地形等规则几何的程序化生成产物落盘，之后 mc_build_schematic 建造）。palette 传方块英文名数组（第一项必须是 air）；blocks 是一维调色板索引数组，索引顺序 idx=(y*sizeZ+z)*sizeX+x，长度必须等于三维乘积。", {
+  type: "object",
+  properties: {
+    name: { type: "string", description: "蓝图名（存为 <name>.schem）" },
+    version: { type: "string", description: "游戏版本（默认配置里的版本）" },
+    size: { type: "object", properties: { x: { type: "integer" }, y: { type: "integer" }, z: { type: "integer" } }, required: ["x", "y", "z"] },
+    palette: { type: "array", items: { type: "string" }, description: "方块英文名数组（索引 0 必须是 air）" },
+    blocks: { type: "array", items: { type: "integer" }, description: "逐格的调色板索引，按 y→z→x 顺序" },
+  },
+  required: ["name", "size", "palette", "blocks"],
+}, async (a) => {
+  const { Schematic } = require("prismarine-schematic");
+  const version = a.version || loadConfig().version || "1.20.4";
+  const reg = require("minecraft-data")(version);
+  const paletteIds = a.palette.map((n) => {
+    const bl = reg.blocksByName[String(n).toLowerCase()];
+    if (!bl) throw new Error(`未知方块: ${n}（用英文小写方块名，索引 0 放 air）`);
+    return bl.defaultState;
+  });
+  const expect = a.size.x * a.size.y * a.size.z;
+  if (!Array.isArray(a.blocks) || a.blocks.length !== expect) {
+    throw new Error(`blocks 长度 ${a.blocks ? a.blocks.length : 0} ≠ 三维乘积 ${expect}（顺序 idx=(y*sizeZ+z)*sizeX+x）`);
+  }
+  const schem = Schematic.fromJSON(JSON.stringify({ version, size: a.size, offset: { x: 0, y: 0, z: 0 }, palette: paletteIds, blocks: a.blocks }));
+  if (!schem) throw new Error("fromJSON 解析失败");
+  const dir = path.join(PLUGIN_ROOT, "schematics");
+  fs.mkdirSync(dir, { recursive: true });
+  const out = path.join(dir, path.basename(a.name) + ".schem");
+  fs.writeFileSync(out, await schem.write());
+  const mats = {};
+  for (const idx of a.blocks) {
+    const n = a.palette[idx];
+    if (n && n !== "air") mats[n] = (mats[n] || 0) + 1;
+  }
+  const list = Object.entries(mats).sort((x, y) => y[1] - x[1]).slice(0, 25).map(([n2, c]) => `${n2} x${c}`).join(", ");
+  return { __text: `已生成蓝图 ${out}
+尺寸 ${a.size.x}x${a.size.y}x${a.size.z} · 实体方块 ${Object.values(mats).reduce((x, y) => x + y, 0)}
+材料: ${list}
+用 mc_build_schematic 建造` };
+});
+
 def("mc_schem_info", "解析蓝图：尺寸、方块总数、材料清单（按数量排序）。建造前用它规划采集。", {
   type: "object",
   properties: { file: { type: "string", description: "蓝图文件名（mc_schem_list 里看到的）" } },
