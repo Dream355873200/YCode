@@ -6,7 +6,7 @@ import { Bot, Brain, FileTextIcon, PanelRightIcon } from 'lucide-react';
 import type { Row, ToolRow } from './projection/rows';
 import { useConversation } from './store';
 import { useApp } from '../app/appState';
-import { subAgentTraceTabId } from '../pane/SubAgentTracePane';
+import { subAgentTraceTabId } from '../lib/traceTabs';
 import { resolveRenderer, actObj, actVerbPlain, toolStats } from '../../lib/toolRender';
 import { renderMD } from '../../lib/markdown';
 import { Button } from '../components/ui/button';

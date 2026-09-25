@@ -15,13 +15,13 @@ describe('applyFrame 文本与思考', () => {
     expect(rows[0]).toMatchObject({ kind: 'assistant_text', text: '你好，世界' });
   });
 
-  it('thinking 追加到相邻 reasoning；文本打断后思考另起一行', () => {
+  it('thinking 追加到相邻 reasoning；正文后的交错思考并回本轮思考卡', () => {
     let rows = applyFrame([], f({ type: 'thinking', thinking: '想' }));
     rows = applyFrame(rows, f({ type: 'thinking', thinking: '一下' }));
     rows = applyFrame(rows, f({ text: '答' }));
     rows = applyFrame(rows, f({ type: 'thinking', thinking: '再想' }));
-    expect(kinds(rows)).toEqual(['reasoning', 'assistant_text', 'reasoning']);
-    expect(rows[0]).toMatchObject({ text: '想一下' });
+    expect(kinds(rows)).toEqual(['reasoning', 'assistant_text']);
+    expect(rows[0]).toMatchObject({ text: '想一下再想' });
   });
 
   it('steer 剥 reminder 标记后入提示行（引擎内部通知，非用户气泡）', () => {
@@ -192,5 +192,30 @@ describe('纯函数性质', () => {
     const before = [...a];
     applyFrame(a, f({ text: 'x' }));
     expect(a).toEqual(before);
+  });
+});
+
+describe('交错思考归并', () => {
+  it('正文之后来的思考增量并回本轮已有的思考卡，不在正文后新开', () => {
+    let rows: Row[] = [];
+    rows = applyFrame(rows, { type: 'thinking', thinking: '先想一下' } as Envelope);
+    rows = applyFrame(rows, { type: 'text_delta', text: '这是正文回答。' } as Envelope);
+    rows = applyFrame(rows, { type: 'thinking', thinking: '复述刚写的片段……' } as Envelope);
+    const kinds = rows.map((r) => r.kind);
+    expect(kinds).toEqual(['reasoning', 'assistant_text']);
+    expect((rows[0] as { text: string }).text).toContain('先想一下');
+    expect((rows[0] as { text: string }).text).toContain('复述刚写的片段');
+  });
+
+  it('新用户轮次开始后，思考开新卡（不跨轮合并）', () => {
+    let rows: Row[] = [];
+    rows = applyFrame(rows, { type: 'text_delta', text: '第一轮正文' } as Envelope);
+    rows = applyFrame(rows, { type: 'thinking', thinking: '第一轮尾巴思考' } as Envelope);
+    rows = applyFrame(rows, { type: 'queue_run', text: '下一个问题' } as Envelope);
+    rows = applyFrame(rows, { type: 'thinking', thinking: '新一轮思考' } as Envelope);
+    const kinds = rows.map((r) => r.kind);
+    expect(kinds).toEqual(['assistant_text', 'reasoning', 'user', 'reasoning']);
+    expect((rows[1] as { text: string }).text).toBe('第一轮尾巴思考');
+    expect((rows[3] as { text: string }).text).toBe('新一轮思考');
   });
 });

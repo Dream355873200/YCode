@@ -185,7 +185,17 @@ export function applyFrame(rows: readonly Row[], frame: Envelope): Row[] {
       if (last && last.kind === 'reasoning') {
         out[out.length - 1] = { ...last, text: stripThinkMarks(last.text + text) };
       } else {
-        out.push({ kind: 'reasoning', id: nextRowId(), text });
+        // 正文之后又来的思考增量（DeepSeek-V4 交错思考：正文发完还会继续
+        // reasoning，且常复述刚写的内容）——并回本轮已有的思考卡，不在
+        // 正文后新开卡片，否则思考和正文交错、碎片成排。
+        const prev = out.findLast((r): r is Extract<Row, { kind: 'reasoning' }> => r.kind === 'reasoning');
+        const ri = prev ? out.indexOf(prev) : -1;
+        const afterUser = prev ? out.slice(ri + 1).some((r) => r.kind === 'user') : false;
+        if (prev && !afterUser) {
+          out[ri] = { ...prev, text: stripThinkMarks(prev.text + text) };
+        } else {
+          out.push({ kind: 'reasoning', id: nextRowId(), text });
+        }
       }
       break;
     }
