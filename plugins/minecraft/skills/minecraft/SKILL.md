@@ -17,6 +17,19 @@ bot 连接参数来自环境变量 `MC_HOST / MC_PORT / MC_USERNAME / MC_PASSWOR
 - **正版在线服**：设 `MC_PASSWORD`（Microsoft 账号），auth 走微软。
 - 改完配置不用重启应用：工具下一次调用会重新连接。
 
+## 游戏聊天感知
+
+- `mc_chat_log`：翻看 bot 在线期间的游戏聊天（缓存最近 40 条）。
+- **主动响应**：`mcp/config.json` 加 `chat_push` 后，游戏里有人说话会自动唤醒指定会话去回应：
+  ```json
+  { "host": "127.0.0.1", "port": 25565, "username": "YCode",
+    "chat_push": { "enabled": true, "session_id": "<要响应的会话 id>",
+                   "mention_only": false, "cooldown_s": 20 } }
+  ```
+  `session_id` 填主对话的会话 id（应用会话列表里能看到）；`mention_only: true` 表示
+  只有 @YCode 才唤醒（不被闲聊打扰）；`cooldown_s` 限速防止刷屏唤醒。
+  唤醒的消息会带上「用 mc_chat 回应」的指引。
+
 ## 工作循环（每个任务都按这个来）
 
 1. `mc_state` —— 我在哪、生命/饥饿多少、背包里有什么
