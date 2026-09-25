@@ -54,38 +54,42 @@ export default function ContextRing({ sid }: { sid: string }) {
       .catch(() => {});
   }, []);
 
-  const used = usage?.input_tokens || 0;
+  // 分类估算 → 分段（token 粗估：文本字符/4，截图每张 ≈1.5k，系统+工具定义常数）
+  const { segments, estTotal } = useMemo(() => {
+    let messages = 0, tool = 0;
+    for (const r of rows || []) {
+      const row = r as { kind?: string; text?: string; input?: unknown; result?: string };
+      if (row.kind === 'tool') {
+        const resultLen = (row.result || '').length;
+        const isImage = (row.result || '').startsWith('[IMAGE');
+        tool += (isImage ? 1500 : resultLen / 4) + JSON.stringify(row.input || '').length / 4 + 40;
+      } else if (row.text) {
+        messages += row.text.length / 4;
+      }
+    }
+    const raw = [
+      { source: 'messages', label: '对话消息', tokens: Math.round(messages) },
+      { source: 'tool_prompt', label: '工具结果', tokens: Math.round(tool) },
+      { source: 'system_prompt', label: '系统提示', tokens: 4_000 },
+      { source: 'system_tool_schemas', label: '工具定义', tokens: 1_500 },
+    ].filter((s) => s.tokens > 0);
+    const total = raw.reduce((sum, s) => sum + s.tokens, 0) || 1;
+    return { segments: raw.map((s) => ({ ...s, percent: s.tokens / total })), estTotal: total };
+  }, [rows]);
+
+  // 已用 token：优先引擎实时 usage（精确）；无帧（恢复会话/新会话未跑完一轮）
+  // 时用本地估算兜底，标记 ≈——保证打开有消息的会话立刻可见，不再等一轮。
+  const isEstimated = !usage?.input_tokens;
+  const used = usage?.input_tokens || estTotal;
   const percent = ctx > 0 ? Math.min(Math.max(used / ctx, 0), 1) : 0;
-  const hitRate = usage?.cache_read_input_tokens && used
+  const hitRate = !isEstimated && usage?.cache_read_input_tokens
     ? usage.cache_read_input_tokens / used
     : null;
   // ZCode：生产面板只展示明显有收益的缓存命中（≥78%）
   const hitLabel = hitRate != null && hitRate >= CACHE_HIT_RATE_DISPLAY_THRESHOLD
     ? fmtPct(hitRate)
     : null;
-
-  // 分类估算 → 分段（字符/4；截图每张 ≈1.5k token 粗估并入工具结果）
-  const segments = useMemo(() => {
-    let messages = 0, tool = 0;
-    for (const r of rows || []) {
-      const row = r as { kind?: string; text?: string; input?: unknown; result?: string };
-      if (row.kind === 'tool') {
-        tool += ((row.result || '').length + JSON.stringify(row.input || '').length) / 4 + 40;
-      } else if (row.text) {
-        messages += row.text.length / 4;
-      }
-    }
-    const raw = [
-      { source: 'messages', label: '对话消息', chars: Math.round(messages) },
-      { source: 'tool_prompt', label: '工具结果', chars: Math.round(tool) },
-      { source: 'system_prompt', label: '系统提示', chars: 12_000 },
-      { source: 'system_tool_schemas', label: '工具定义', chars: 5_000 },
-    ].filter((s) => s.chars > 0);
-    const total = raw.reduce((sum, s) => sum + s.chars, 0) || 1;
-    return raw
-      .map((s) => ({ ...s, percent: s.chars / total }))
-      .sort((a, b) => b.chars - a.chars);
-  }, [rows]);
+  const usedLabel = `${isEstimated ? '≈' : ''}${fmtK(used)}`;
 
   const ring = (() => {
     const circumference = 2 * Math.PI * ICON_RADIUS;
@@ -123,7 +127,7 @@ export default function ContextRing({ sid }: { sid: string }) {
             <div className="mb-3 flex items-center gap-3">
               <span className="shrink-0 text-ui-base font-medium text-foreground">上下文</span>
               <span className="ml-auto shrink-0 text-right font-mono text-ui-sm text-foreground-subtle">
-                {fmtK(used)}/{fmtK(ctx)} ({fmtPct(percent)})
+                {usedLabel}/{fmtK(ctx)} ({fmtPct(percent)})
               </span>
             </div>
             {/* 分类分段进度条（对齐 ZCode Progress segments） */}
