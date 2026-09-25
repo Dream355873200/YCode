@@ -2,7 +2,7 @@
 // 工具卡片复用 legacy 渲染器注册表（toolRender.jsx，P0 平移资产）；
 // 交互卡（审批/确认/提问）直接挂 store 回传。
 import { memo, useEffect, useRef, useState } from 'react';
-import { Bot, Brain, FileTextIcon, PanelRightIcon } from 'lucide-react';
+import { Bot, Brain, Check as CheckIco, FileTextIcon, Loader2 as Loader2Ico, PanelRightIcon, X as XIco } from 'lucide-react';
 import type { Row, ToolRow } from './projection/rows';
 import { useConversation } from './store';
 import { useApp } from '../app/appState';
@@ -82,6 +82,14 @@ function Reasoning({ row, live }: { row: Extract<Row, { kind: 'reasoning' }>; li
   );
 }
 
+
+/** 工具状态图标（lucide，替换 glyph 字符）：running 转圈 / err 叉 / done 勾。 */
+function StatusIco({ running, err }: { running: boolean; err: boolean }) {
+  if (running) return <Loader2Ico size={12} className="shrink-0 animate-spin text-brand" />;
+  if (err) return <XIco size={12} className="shrink-0 text-destructive" />;
+  return <CheckIco size={12} className="shrink-0 text-success" />;
+}
+
 // ---------- 工具卡（ToolLayout 骨架 + 注册表分发） ----------
 
 function ToolCard({ row }: { row: Extract<Row, { kind: 'tool' }> }) {
@@ -90,8 +98,8 @@ function ToolCard({ row }: { row: Extract<Row, { kind: 'tool' }> }) {
   const input = typeof row.input === 'string' ? safeJson(row.input) : row.input;
   const obj = R.obj && input ? R.obj(input) : '';
   const label = actVerbPlain(row.name);
-  const stIcon = row.state === 'running' ? '◌' : row.state === 'err' ? '✕' : '✓';
   const stCls = row.state === 'running' ? 'text-brand' : row.state === 'err' ? 'text-destructive' : 'text-success';
+  const stIco = <StatusIco running={row.state === 'running'} err={row.state === 'err'} />;
   const expandable = !!R.expandable && (open || !!row.result);
   // 编辑/写入的 ± 行数徽标（+3 −8，ZCode 式）
   const stats = toolStats(row.name, input);
@@ -116,7 +124,7 @@ function ToolCard({ row }: { row: Extract<Row, { kind: 'tool' }> }) {
             {stats.del > 0 && <span className="text-destructive">−{stats.del}</span>}
           </span>
         )}
-        <span className={`${stats ? '' : 'ml-auto'} shrink-0 text-ui-xs ${stCls}`}>{stIcon}</span>
+        <span className={`shrink-0 ${stCls}`}>{stIco}</span>
       </button>
       {/* 截图类工具：结果图片直接内联（ZCode 式） */}
       {(() => {
@@ -292,8 +300,8 @@ function ReadItem({ row }: { row: ToolRow }) {
   const path = input && typeof input === 'object'
     ? String((input as Record<string, unknown>).file_path || '')
     : '';
-  const stIcon = row.state === 'running' ? '◌' : row.state === 'err' ? '✕' : '✓';
   const stCls = row.state === 'running' ? 'text-brand' : row.state === 'err' ? 'text-destructive' : 'text-success';
+  const stIco = <StatusIco running={row.state === 'running'} err={row.state === 'err'} />;
   return (
     <div className="border-t border-border">
       <button
@@ -304,7 +312,7 @@ function ReadItem({ row }: { row: ToolRow }) {
         <span className="min-w-0 truncate text-foreground-subtle">
           {path.split(/[\\/]/).pop() || path || '（未知文件）'}
         </span>
-        <span className={`ml-auto shrink-0 ${stCls}`}>{stIcon}</span>
+        <span className={`ml-auto shrink-0 ${stCls}`}>{stIco}</span>
       </button>
       <Collapse open={open}>
         <pre className="scroll-fine max-h-60 overflow-auto border-t border-border px-3 py-2 text-ui-xs text-foreground-subtle">
@@ -321,7 +329,7 @@ export function ReadGroup({ group }: { group: ReadGroupUnit }) {
   const reads = group.reads;
   const errCount = reads.filter((r) => r.state === 'err').length;
   const running = reads.some((r) => r.state === 'running');
-  const stIcon = running ? '◌' : errCount ? '✕' : '✓';
+  const stIco = <StatusIco running={running} err={errCount > 0} />;
   const stCls = running ? 'text-brand' : errCount ? 'text-destructive' : 'text-success';
   return (
     <div className="my-1 rounded-lg border border-border bg-surface">
@@ -335,7 +343,7 @@ export function ReadGroup({ group }: { group: ReadGroupUnit }) {
         <span className="min-w-0 truncate text-foreground-subtlest">
           读取了 {reads.length} 个文件{errCount ? ` · ${errCount} 个失败` : ''}
         </span>
-        <span className={`ml-auto shrink-0 text-ui-xs ${stCls}`}>{stIcon}</span>
+        <span className={`ml-auto shrink-0 ${stCls}`}>{stIco}</span>
       </button>
       <Collapse open={open}>{reads.map((r) => <ReadItem key={r.id} row={r} />)}</Collapse>
     </div>

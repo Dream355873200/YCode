@@ -202,7 +202,7 @@ export function SettingsPage() {
     try {
       const list = await window.amc.engine.listModels();
       const n = Array.isArray(list) ? list.length : 0;
-      setTestResult(n ? `✓ 连接正常，可用模型 ${n} 个` : '端点可达，但未返回模型列表');
+      setTestResult(n ? `连接正常，可用模型 ${n} 个` : '端点可达，但未返回模型列表');
     } catch (e) {
       setTestResult(`✗ 连接失败：${e instanceof Error ? e.message : String(e)}`);
     } finally {
@@ -324,7 +324,7 @@ export function SettingsPage() {
                       {testResult && (
                         <span className={cn(
                           'text-ui-xs',
-                          testResult.startsWith('✓') ? 'text-success' : 'text-destructive',
+                          testResult.startsWith('连接正常') ? 'text-success' : 'text-destructive',
                         )}>
                           {testResult}
                         </span>

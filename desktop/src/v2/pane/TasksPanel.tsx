@@ -1,5 +1,6 @@
 // TasksPanel — 右栏任务面板：引擎 /tasks（TaskCreate 卡片），完成进度 + 状态图标。
 import { useCallback, useEffect, useState } from 'react';
+import { Check as CheckIco, Circle as CircleIco, Loader2 as Loader2Ico } from 'lucide-react';
 import { useApp } from '../app/appState';
 import { engine } from '../protocol';
 import { cn } from '../components/lib/utils';
@@ -53,12 +54,14 @@ export function TasksPanel() {
         {tasks.map((t) => (
           <div key={t.id || t.subject} className="flex items-start gap-2 rounded-lg px-1.5 py-1">
             <span className={cn(
-              'mt-0.5 shrink-0 text-ui-xs',
+              'mt-0.5 shrink-0',
               t.status === 'completed' ? 'text-success'
-                : t.status === 'in_progress' ? 'animate-pulse text-brand'
+                : t.status === 'in_progress' ? 'text-brand'
                   : 'text-foreground-subtlest',
             )}>
-              {t.status === 'completed' ? '✓' : t.status === 'in_progress' ? '◐' : '○'}
+              {t.status === 'completed' ? <CheckIco className="size-3" />
+                : t.status === 'in_progress' ? <Loader2Ico className="size-3 animate-spin" />
+                  : <CircleIco className="size-2.5" />}
             </span>
             <span className={cn(
               'min-w-0 flex-1 text-ui-xs leading-relaxed',

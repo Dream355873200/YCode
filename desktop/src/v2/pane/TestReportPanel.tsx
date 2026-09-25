@@ -2,6 +2,7 @@
 // 扫 .yume/test-reports/（test_report 工具落盘的 Markdown + frontmatter
 // 结构化元数据），列表 → 详情（Markdown 正文 + 内嵌截图证据 + 放大）。
 import { useEffect, useState } from 'react';
+import { CheckCircle2 as OkIco, CircleDashed as PartIco, XCircle as BadIco } from 'lucide-react';
 import { useApp } from '../app/appState';
 import { renderMD } from '../../lib/markdown';
 
@@ -43,8 +44,12 @@ function VerdictBadge({ verdict }: { verdict: string }) {
     : verdict === 'fail'
       ? 'bg-[var(--color-diff-removed)] text-destructive'
       : 'bg-surface text-warning';
-  const text = verdict === 'pass' ? '✅ PASS' : verdict === 'fail' ? '❌ FAIL' : '◐ 部分';
-  return <span className={`shrink-0 rounded-md px-1.5 py-0.5 text-ui-2xs font-medium ${cls}`}>{text}</span>;
+  return (
+    <span className={`flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-ui-2xs font-medium ${cls}`}>
+      {verdict === 'pass' ? <OkIco className="size-3" /> : verdict === 'fail' ? <BadIco className="size-3" /> : <PartIco className="size-3" />}
+      {verdict === 'pass' ? 'PASS' : verdict === 'fail' ? 'FAIL' : '部分'}
+    </span>
+  );
 }
 
 export default function TestReportPanel() {
@@ -160,7 +165,7 @@ export default function TestReportPanel() {
             <div className="mt-0.5 flex items-center gap-2.5 text-ui-2xs text-foreground-subtlest">
               {m.date && <span>{m.date}</span>}
               {m.device && <span className="truncate">{m.device}</span>}
-              {m.total && <span>✅{m.pass || 0} ❌{m.fail || 0} / {m.total}</span>}
+              {m.total && <span className="text-success">{m.pass || 0} 过</span>}
             </div>
           </button>
         );

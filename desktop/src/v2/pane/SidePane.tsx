@@ -111,7 +111,7 @@ export function SidePane({ open }: { open: boolean }) {
     { id: 'tasks', kind: 'tasks', label: '任务', icon: ListChecksIcon },
     { id: 'plan', kind: 'plan', label: '计划', icon: ClipboardListIcon },
     { id: 'team', kind: 'team', label: '团队', icon: UsersIcon },
-    { id: 'pipeline', kind: 'pipeline', label: 'Pipeline', icon: WorkflowIcon },
+    { id: 'pipeline', kind: 'pipeline', label: '流水线', icon: WorkflowIcon },
     ...(mode?.resolved.sidePanels || [])
       .filter((p) => p.id !== 'browser' && MODE_PANELS[p.id])
       .map((p) => ({ id: `mode:${p.id}`, kind: 'mode' as const, label: p.label, icon: BoxesIcon })),

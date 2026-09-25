@@ -2,7 +2,7 @@
 // scrcpy 投屏（可直接操作 + Android Studio 式设备控制条）。
 // IPC 全走主进程既有通道（devices.*），此层纯视图。
 import { useEffect, useState } from 'react';
-import { SmartphoneIcon } from 'lucide-react';
+import { SmartphoneIcon , Square as SquareIco, Play as PlayIco } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import MirrorCanvas from './mirror/MirrorCanvas';
 
@@ -81,7 +81,7 @@ export default function DevicePanel() {
           <Button type="button" variant="ghost" size="sm"
             className={mirroring ? 'text-foreground-subtle hover:bg-hover' : 'text-brand hover:bg-hover'}
             onClick={() => void toggleMirror()} disabled={!sel}>
-            {mirroring ? '⏹ 停止投屏' : '▶ 投屏'}
+            {mirroring ? <><SquareIco className="size-3" /> 停止投屏</> : <><PlayIco className="size-3" /> 投屏</>}
           </Button>
         )}
         {err && <span className="max-w-full truncate text-ui-2xs text-destructive" title={err}>{err.slice(0, 80)}</span>}

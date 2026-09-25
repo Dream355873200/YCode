@@ -4,6 +4,7 @@
 // 回车选中（单选直接提交）、空格切换勾选，Esc 忽略。多问批次由引擎逐张
 // 下发，每张独立成面板。
 import { useEffect, useRef, useState } from 'react';
+import { Check as CheckIco } from 'lucide-react';
 import type { Row } from './projection/rows';
 import { useConversation } from './store';
 import { Button } from '../components/ui/button';
@@ -91,7 +92,7 @@ export function QuestionPanel({ row, sid }: { row: Extract<Row, { kind: 'confirm
                 {i + 1}
               </span>
               <span className={`min-w-0 flex-1 ${selected ? 'text-foreground' : 'text-foreground-subtle'}`}>{c}</span>
-              {selected && <span className="shrink-0 text-ui-xs text-brand">✓</span>}
+              {selected && <CheckIco className="size-3 shrink-0 text-brand" />}
             </button>
           );
         })}
