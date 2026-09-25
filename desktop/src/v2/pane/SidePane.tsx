@@ -65,15 +65,24 @@ export function SidePane({ open }: { open: boolean }) {
   }, [insts, paneTabs, closePaneTab]);
 
   // ---------- 拖拽调宽 ----------
+  // 拖动期间直接改 DOM 宽度（零重渲染，消除卡顿主因），松手才提交 state。
   const [width, setWidth] = useState(DEFAULT_W);
-  const dragRef = useRef<{ startX: number; startW: number } | null>(null);
+  const dragRef = useRef<{ startX: number; startW: number; dragged?: number } | null>(null);
+  const asideRef = useRef<HTMLElement | null>(null);
   useEffect(() => {
     const move = (e: MouseEvent) => {
       const d = dragRef.current;
-      if (!d) return;
-      setWidth(Math.min(MAX_W, Math.max(MIN_W, d.startW - (e.clientX - d.startX))));
+      if (!d || !asideRef.current) return;
+      const w = Math.min(MAX_W, Math.max(MIN_W, d.startW - (e.clientX - d.startX)));
+      asideRef.current.style.width = `${w}px`;
+      d.dragged = w;
     };
-    const up = () => { dragRef.current = null; document.body.style.cursor = ''; };
+    const up = () => {
+      const d = dragRef.current;
+      if (d?.dragged) setWidth(d.dragged);
+      dragRef.current = null;
+      document.body.style.cursor = '';
+    };
     window.addEventListener('mousemove', move);
     window.addEventListener('mouseup', up);
     return () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); };
@@ -156,6 +165,7 @@ export function SidePane({ open }: { open: boolean }) {
 
   return (
     <aside
+      ref={asideRef}
       className={cn('relative flex shrink-0 overflow-hidden transition-[width] duration-200 ease-out', open ? '' : 'w-0')}
       style={open ? { width } : undefined}
     >

@@ -123,13 +123,17 @@ def("list_windows", "列出某个应用的全部顶层窗口（hwnd / 标题 / �
   type: "object", properties: { app_ref: AppRef }, required: [],
 }, async (a) => ps("list_apps.ps1", { mode: "windows", app: a.app_ref || {} }));
 
-def("open_app", "打开一个应用（Start 菜单名、可执行文件名或完整路径）。成功返回新窗口信息；打开后用 get_app_state 观察它。", {
+def("open_app", "打开一个应用（Start 菜单名、可执行文件名或完整路径），也可直接传 URL（用默认浏览器打开，等价于「帮我打开某网址」）。成功返回窗口信息；打开后用 get_app_state 观察它。", {
   type: "object",
-  properties: { name: { type: "string", description: "应用名（如 记事本 / notepad / 计算器）或 exe / 路径" } },
+  properties: { name: { type: "string", description: "应用名（如 记事本 / notepad / 计算器）、exe / 完整路径，或 URL（https://…）" } },
   required: ["name"],
 }, async (a) => {
   const r = await ps("open_app.ps1", { name: a.name }, 45_000);
-  return { __text: `已启动: ${r.name} (pid ${r.pid}${r.hwnd ? `, hwnd ${r.hwnd}` : ""})——用 get_app_state 观察它` };
+  const win = r.hwnd
+    ? `hwnd ${r.hwnd}${r.title ? ` 「${r.title}」` : ""}`
+    : "未探测到窗口（URL 可能只在既有浏览器里开了新标签，用 list_apps 找窗口）";
+  const how = r.via_browser ? "，按默认浏览器进程定位" : r.via_foreground ? "，经前台窗口切换定位" : "";
+  return { __text: `已打开: ${r.name} (pid ${r.pid || "-"}, ${win})${how}——用 get_app_state 观察它` };
 });
 
 def("get_app_state", "读取目标应用的 UI 语义元素树（辅助功能树）：每个元素带 [index]、类型、名称、值、是否离屏。动作前必看；按索引操作元素。include_screenshot 时附带当前画面截图。", {

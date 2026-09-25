@@ -261,3 +261,25 @@ body {
   color: #f9a8d4;
 }
 .dark .hljs-meta { color: #9ca3af; }
+
+/* ---------- Edit diff 行（+N −N 展开后的红绿背景，对齐 ZCode） ---------- */
+.cl {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  padding: 0 4px;
+  border-radius: 4px;
+}
+.cl-add { background: color-mix(in srgb, var(--color-success) 14%, transparent); }
+.cl-del { background: color-mix(in srgb, var(--color-destructive) 12%, transparent); }
+.cl-add .cl-sign { color: var(--color-success); }
+.cl-del .cl-sign { color: var(--color-destructive); }
+.cl-no {
+  min-width: 2.4em;
+  text-align: right;
+  color: var(--color-foreground-subtlest);
+  user-select: none;
+  flex-shrink: 0;
+}
+.cl-sign { user-select: none; flex-shrink: 0; }
+.cl code { white-space: pre-wrap; word-break: break-all; }

@@ -137,22 +137,18 @@ function createInstance(url) {
 
 // 视口适配：把页面按 inst.vw 的桌面宽度布局，等比缩进面板宽度。
 // 右栏窄（~340px），1:1 渲染桌面站点只能看到一条；适配后整页可见。
-async function applyViewport(inst) {
-  if (!inst.view || !inst.fit || !state.panelRect || state.panelRect.width < 50) return;
-  const k = Math.max(0.15, Math.min(1, state.panelRect.width / inst.vw));
-  try {
-    await cdp(inst, 'Emulation.setDeviceMetricsOverride', {
-      width: Math.round(inst.vw),
-      height: Math.max(1, Math.round(state.panelRect.height / k)),
-      deviceScaleFactor: k,
-      mobile: false,
-    });
-  } catch { /* 视口覆盖失败不致命 */ }
+// 实现用 webContents.setZoomFactor（Electron 官方 API）——缩放系数
+// k = 面板宽/虚拟宽度，页面布局视口即变为 面板宽/k ≈ 虚拟宽度，
+// 桌面版式完整渲染后等比缩小。勿用 CDP Emulation.setDeviceMetricsOverride：
+// 它在 WebContentsView 上会原生崩溃整个进程。
+function applyViewport(inst) {
+  if (!inst.view || !state.panelRect || state.panelRect.width < 50) return;
+  const k = Math.max(0.25, Math.min(1, state.panelRect.width / inst.vw));
+  try { inst.view.webContents.setZoomFactor(k); } catch { /* */ }
 }
 
-async function clearViewport(inst) {
-  if (!inst.view) return;
-  try { await cdp(inst, 'Emulation.clearDeviceMetricsOverride'); } catch { /* */ }
+function clearViewport(inst) {
+  try { inst.view?.webContents.setZoomFactor(1); } catch { /* */ }
 }
 
 function wireEvents(inst) {
@@ -173,6 +169,8 @@ function wireEvents(inst) {
   wc.on('page-title-updated', (_e, title) => { inst.title = title; emitChanged(); });
   wc.on('did-start-loading', () => emitChanged());
   wc.on('did-stop-loading', () => emitChanged());
+  // 导航后 Chromium 可能按宿主源重置缩放，适配模式重新套用
+  wc.on('did-finish-load', () => { if (inst.fit) applyViewport(inst); });
   wc.setWindowOpenHandler(({ url }) => {
     // 新窗口 → 并入本实例历史（单页浏览器语义）
     navigate(inst, url).catch(() => {});
@@ -479,7 +477,7 @@ function getInst(id) {
 function setViewport(id, fit, vw) {
   const inst = getInst(id);
   if (fit !== undefined) inst.fit = !!fit;
-  if (vw) inst.vw = Math.min(2400, Math.max(640, Math.round(vw)));
+  if (vw) inst.vw = Math.min(1600, Math.max(640, Math.round(vw)));
   emitChanged();
   if (inst.fit) {
     void applyViewport(inst);

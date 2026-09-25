@@ -36,6 +36,31 @@ Windows 实现：UI Automation 语义树 + GDI 截图 + SendInput。
 只有从当前截图上看到的坐标才能用；元素和窗口的边界数值不得当坐标抄。
 指针动作"成功"但界面没变化，通常点在了真实指针位置——改用元素索引。
 
+## 易变界面与最小化窗口
+
+- **浏览器地址栏这类元素树是毫秒级重排的**：按索引 `set_value` 可能返回 STALE_STATE。
+  组件会先按 (类型,名称) 在最新树里重定位一次再重试；若仍失败，改用
+  **`left_click` 点住该元素 → `type` 输入 → `key` 回车**这条路径（鼠标点击拿焦点最稳）。
+- **最小化窗口**：`get_app_state` 会先自动恢复窗口再观察（输出带"窗口原为最小化，已自动恢复"），
+  `screenshot` 同理（`restored`）。元素树只有一个 Pane 通常是窗口状态问题，不是应用没控件。
+- **截图纯色**：输出带「⚠ 画面为纯色」说明窗口没真正渲染，别把它当布局依据。
+
+## 网页内容不要靠截图
+
+Chromium 系（浏览器 / Electron）的页面内容是 GPU 合成的，窗口截图只能拿到标题栏，
+页面区会是纯色。**需要网页内容一律走 browser-use**，本工具用于原生应用界面。
+
+## 打开网址
+
+`open_app` 可以直接传 URL（用默认浏览器打开），等价于"帮我打开某网址"：
+
+```
+open_app({name: "https://search.bilibili.com/all?keyword=xxx"})
+```
+
+返回里带浏览器窗口的 `hwnd`（按默认浏览器进程定位），可直接接着 `get_app_state` 观察。
+**不要**用「点地址栏 + 输入」的方式开网址——地址栏是自绘控件，聚焦与输入都不稳定。
+
 ## 等待
 
 UIA 观察是同步的，应用响应慢时观察会自然带上结果；不要在两次动作之间加人为延时，
@@ -46,7 +71,7 @@ UIA 观察是同步的，应用响应慢时观察会自然带上结果；不要�
 ```
 list_apps()                              # 可见应用窗口（pid/名称/标题/前台）
 list_windows({app_ref})                  # 某应用全部窗口（弹窗排查）
-open_app({name})                         # 启动应用（Start 菜单名 / exe / 路径）
+open_app({name})                         # 启动应用（Start 菜单名 / exe / 路径 / URL）
 get_app_state({app_ref?, include_screenshot?, max_elements?})
 screenshot({app_ref?})                   # 屏幕或窗口截图（内联图片）
 left_click({target, mouse_button?, click_count?, modifiers?})

@@ -123,7 +123,7 @@ def("browser_evaluate", "在页面里执行 JS 表达式并返回值（awaitProm
   properties: { expression: { type: "string" }, browser: BROWSER }, required: ["expression"],
 }, (a) => call("/browser/evaluate", a));
 
-def("browser_fit", "视口适配开关：开启后页面按虚拟宽度（默认 1280px 桌面版式）渲染并等比缩放进面板——右栏窄时整个页面都可见。width 可调虚拟宽度（640-2400）。", {
+def("browser_fit", "视口适配开关：开启后页面按虚拟宽度（默认 1280px 桌面版式）渲染并等比缩放进面板——右栏窄时整个页面都可见。width 可调虚拟宽度（640-1600）。", {
   type: "object",
   properties: { fit: { type: "boolean" }, width: { type: "integer" }, browser: BROWSER },
 }, (a) => call("/browser/viewport", { fit: a.fit, vw: a.width, browser: a.browser }));
