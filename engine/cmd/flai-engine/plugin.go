@@ -67,6 +67,7 @@ type Plugin struct {
 
 	Origin    string      `json:"origin"`    // bundled | user（解析产物，非清单字段）
 	Dir       string      `json:"dir"`       // 插件目录绝对路径（解析产物，非清单字段）
+	Disabled  bool        `json:"disabled"`  // 用户停用（解析产物，非清单字段；见 disabledSetFile）
 	AgentDefs []*AgentDef `json:"agentDefs"` // agents 目录解析出的子代理（解析产物）
 }
 
@@ -99,11 +100,52 @@ func (p *Plugin) resolve(rel string) string {
 	return filepath.Join(p.Dir, filepath.FromSlash(rel))
 }
 
+// disabledSetFile 用户停用集：<userRoot>/plugins-disabled.json（id 数组）。
+// 与清单解耦：停用是用户运行期决策，不改插件文件。
+func disabledSetFile() string { return filepath.Join(userRoot(), "plugins-disabled.json") }
+
+// loadDisabledSet 读停用集（文件缺失/损坏 = 空集，不阻塞加载）。
+func loadDisabledSet() map[string]bool {
+	b, err := os.ReadFile(disabledSetFile())
+	if err != nil {
+		return map[string]bool{}
+	}
+	var ids []string
+	if json.Unmarshal(b, &ids) != nil {
+		return map[string]bool{}
+	}
+	set := map[string]bool{}
+	for _, id := range ids {
+		set[id] = true
+	}
+	return set
+}
+
+// saveDisabledSet 写停用集（排序稳定；空集写空数组）。
+func saveDisabledSet(set map[string]bool) error {
+	ids := make([]string, 0, len(set))
+	for id := range set {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	b, err := json.MarshalIndent(ids, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(disabledSetFile()), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(disabledSetFile(), b, 0o644)
+}
+
 // LoadPlugins 扫描全部插件根（内置 → 用户，同 id 用户覆盖内置；无
 // plugin.json 的目录不是插件包）。单个清单不合规只记错误跳过（按 id 排序）。
+// 用户停用集内的插件照常加载但标记 Disabled——对模式隐形（见 resolveMode），
+// 不参与装配（UsedPlugins），清单文件本身不动。
 func LoadPlugins() ([]*Plugin, []LoadError) {
 	byID := map[string]*Plugin{}
 	var errs []LoadError
+	disabled := loadDisabledSet()
 	for _, root := range assetRoots("plugins", "FLAI_PLUGINS_DIR") {
 		entries, err := os.ReadDir(root.Dir)
 		if err != nil {
@@ -127,6 +169,7 @@ func LoadPlugins() ([]*Plugin, []LoadError) {
 				continue
 			}
 			p.Origin = root.Origin
+			p.Disabled = disabled[p.ID]
 			byID[p.ID] = p
 		}
 	}
@@ -235,6 +278,57 @@ func pluginsRoutes() map[string]func(http.ResponseWriter, *http.Request) {
 			}
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]any{"plugins": items, "errors": c.errorsOf("plugin", "agent", "mcp")})
+		},
+		// POST /plugins/{id}/enabled 插件启停（设置页开关）：写用户停用集
+		// → 停用即撤销该插件全部已装配资产（子代理下线 / MCP 断开 / 工具
+		// 隐藏）→ reload 对账收敛。不打断在跑的会话（下一轮生效）。
+		"POST /plugins/{id}/enabled": func(w http.ResponseWriter, r *http.Request) {
+			if engineApp == nil {
+				http.Error(w, "引擎未就绪", http.StatusServiceUnavailable)
+				return
+			}
+			id := r.PathValue("id")
+			var req struct {
+				Enabled bool `json:"enabled"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				http.Error(w, "请求体解析失败: "+err.Error(), http.StatusBadRequest)
+				return
+			}
+			found := false
+			for _, p := range catalog().Plugins {
+				if p.ID == id {
+					found = true
+					break
+				}
+			}
+			if !found {
+				http.Error(w, "插件不存在: "+id, http.StatusNotFound)
+				return
+			}
+			set := loadDisabledSet()
+			if req.Enabled {
+				delete(set, id)
+			} else {
+				set[id] = true
+				pluginLifecycle.disposePlugin(id) // 立即下线其资产（撤销器兜住 MCP 连接）
+			}
+			if err := saveDisabledSet(set); err != nil {
+				http.Error(w, "写停用集失败: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
+			c, err := reloadCatalog(engineApp)
+			if err != nil {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusUnprocessableEntity)
+				_ = json.NewEncoder(w).Encode(map[string]any{"ok": false, "error": err.Error()})
+				return
+			}
+			modes := make([]string, 0, len(c.Modes))
+			for _, m := range c.Modes {
+				modes = append(modes, m.ID)
+			}
+			writeJSON(w, map[string]any{"ok": true, "id": id, "enabled": req.Enabled, "modes": modes, "errors": c.Errors})
 		},
 	}
 }

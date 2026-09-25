@@ -2,9 +2,10 @@
 // 自定义插件（用户资产目录）可新建 / 编辑清单与规范 / 新建子代理 / 删除；
 // 内置插件「复制为自定义」后再改。
 import { useState } from 'react';
-import { CircleAlertIcon, PlusIcon, PuzzleIcon } from 'lucide-react';
+import { CircleAlertIcon, PlusIcon, PowerIcon, PuzzleIcon } from 'lucide-react';
 import { AgentEditor } from './AgentsTab';
 import { allMcp, errorsFor, mcpNamesExcept, pluginById, useCatalog, type PluginItem } from './catalog';
+import { engine } from '../../protocol';
 import { AgentCard, McpCard, PanelCard, RuleCard, SkillCard, ToolsetCard } from './cards';
 import { AssetActions, EditorFrame, FormField, LoadErrors, OriginChip, ToggleChips, useFileText, useSaver } from './editing';
 import { buildPluginManifest, pluginFormFrom, type PluginForm } from './manifest';
@@ -18,6 +19,38 @@ import { Input } from '../../components/ui/input';
 import { Textarea } from '../../components/ui/textarea';
 
 const MCP_EXAMPLE = '[{ "name": "fs", "command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "."] }]';
+
+/** 插件启停开关：POST /plugins/{id}/enabled（引擎撤销/重装资产后 reload）。 */
+function PluginToggle({ id, disabled }: { id: string; disabled?: boolean }) {
+  const [busy, setBusy] = useState(false);
+  const { refresh } = useCatalog();
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={!disabled}
+      disabled={busy}
+      title={disabled ? '插件已停用，点击启用' : '停用插件（子代理下线、MCP 断开，立即生效）'}
+      onClick={async () => {
+        setBusy(true);
+        try {
+          await engine.post(`/plugins/${id}/enabled`, { enabled: !!disabled });
+          refresh();
+        } finally {
+          setBusy(false);
+        }
+      }}
+      className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-1.5 py-0.5 text-ui-2xs transition-colors disabled:opacity-50 ${
+        disabled
+          ? 'border-border text-foreground-subtle hover:bg-hover hover:text-foreground'
+          : 'border-success/50 bg-success/10 text-success hover:bg-success/20'
+      }`}
+    >
+      <PowerIcon className="size-3" />
+      {busy ? '切换中…' : disabled ? '已停用' : '启用中'}
+    </button>
+  );
+}
 
 function PluginFields({ initial, isNew, onDone, onCancel }: {
   initial: PluginForm; isNew: boolean; onDone(id: string): void; onCancel(): void;
@@ -97,6 +130,7 @@ function PluginDetail({ id }: { id: string }) {
     <DetailFrame icon={<PuzzleIcon className="size-5" />} title={plugin.name} desc={plugin.description}
       actions={
         <>
+          <PluginToggle id={plugin.id} disabled={plugin.disabled} />
           <OriginChip origin={plugin.origin} />
           <AssetActions origin={plugin.origin} busy={saving}
             onCopy={() => void run([{ copy: { src: plugin.dir, dest: `plugins/${plugin.id}` } }])}
@@ -190,6 +224,8 @@ export function PluginsTab() {
                 onClick={() => go('plugins', p.id)}
                 right={
                   <>
+                    <PluginToggle id={p.id} disabled={p.disabled} />
+                    {p.disabled && <Chip tone="muted">停用</Chip>}
                     {p.origin === 'user' && <OriginChip origin="user" />}
                     {p.usedBy.length === 0 && <Chip>未引用</Chip>}
                     {(p.toolsets?.length ?? 0) > 0 && <Chip>工具集 ×{p.toolsets!.length}</Chip>}

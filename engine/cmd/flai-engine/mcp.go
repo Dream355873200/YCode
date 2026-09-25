@@ -131,11 +131,15 @@ func syncPluginMCP(app *goagent.App, c *Catalog) {
 	mcpHub.mu.Unlock()
 
 	for _, e := range stale {
-		for _, t := range e.status.Tools {
-			pluginTools.hide(t)
-		}
-		if e.client != nil {
-			_ = e.client.Disconnect()
+		// 已连上的走生命周期撤销器（隐藏工具 + 断开）；从未连上（连接中
+		// 被替换）没有撤销器，手动清理。
+		if !pluginLifecycle.dispose(e.status.Plugin, "mcp:"+e.status.Name) {
+			for _, t := range e.status.Tools {
+				pluginTools.hide(t)
+			}
+			if e.client != nil {
+				_ = e.client.Disconnect()
+			}
 		}
 	}
 	for _, j := range jobs {
@@ -200,6 +204,14 @@ func connectPluginMCP(app *goagent.App, p *Plugin, srv MCPServer, e *mcpEntry) {
 	e.client = client
 	e.status.Status, e.status.Server = "connected", info
 	e.status.Tools = append(e.status.Tools, names...)
+	// 注册即登记：本服务器下线（停用插件 / 声明变更 / 移除）时撤销器
+	// 隐藏工具并断开连接（stdio 服务器进程随之终止）。
+	pluginLifecycle.register(p.ID, "mcp:"+srv.Name, func() {
+		for _, n := range names {
+			pluginTools.hide(n)
+		}
+		_ = client.Disconnect()
+	})
 	mcpHub.mu.Unlock()
 	log.Printf("[mcp] %s（插件 %s）已连接: %d 个工具", srv.Name, p.ID, len(names))
 }

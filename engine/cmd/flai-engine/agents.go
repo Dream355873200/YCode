@@ -131,17 +131,18 @@ func parseAgentDef(path string) (*AgentDef, error) {
 	return d, nil
 }
 
-// installedAgents 已注册进 app 的子代理工具名（跨 reload 对账用）。
-var installedAgents = map[string]bool{}
+// installedAgents 已注册进 app 的子代理工具（跨 reload 对账用）。
+// tool 名 → 归属插件 id（撤销时按归属清理）。
+var installedAgents = map[string]string{}
 
 // syncAgents 按目录对账插件子代理：被模式引用的插件的子代理注册（或覆盖）
-// 为 Agent_<name> 工具；上一版装过、这一版不在（插件移除 / 未被引用 /
-// 校验失败）的下线隐藏。校验失败的子代理记入返回的错误，不影响其他项。
-// 须在全部工具（base + 工具集）注册之后调用——引用的工具要已存在。
-// 调用方串行（启动 / reloadMu）。
+// 为 Agent_<name> 工具；上一版装过、这一版不在（插件停用/移除 / 未被引用 /
+// 校验失败）的经生命周期表撤销（下线隐藏）。校验失败的子代理记入返回的
+// 错误，不影响其他项。须在全部工具（base + 工具集）注册之后调用——引用的
+// 工具要已存在。调用方串行（启动 / reloadMu）。
 func syncAgents(app *goagent.App, c *Catalog) []LoadError {
 	var errs []LoadError
-	want := map[string]bool{}
+	want := map[string]string{}
 	for _, p := range c.UsedPlugins() {
 		for _, d := range p.AgentDefs {
 			def, err := buildAgentTool(app, p, d)
@@ -151,12 +152,14 @@ func syncAgents(app *goagent.App, c *Catalog) []LoadError {
 			}
 			pluginTools.claim(d.ToolName(), p.ID) // 先登记归属，再注册
 			app.ReplaceTool(d.ToolName(), def)
-			want[d.ToolName()] = true
+			tool := d.ToolName() // 注册即登记：下线时隐藏（Go 1.22 起循环变量逐轮独立）
+			pluginLifecycle.register(p.ID, tool, func() { pluginTools.hide(tool) })
+			want[tool] = p.ID
 		}
 	}
-	for name := range installedAgents {
-		if !want[name] {
-			pluginTools.hide(name)
+	for name, pid := range installedAgents {
+		if _, ok := want[name]; !ok {
+			pluginLifecycle.dispose(pid, name)
 		}
 	}
 	installedAgents = want

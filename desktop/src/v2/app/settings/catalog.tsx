@@ -33,6 +33,7 @@ export interface PluginItem {
   origin: AssetOrigin;
   agentDefs: AgentDecl[];
   usedBy: string[];
+  disabled?: boolean;
 }
 
 export interface SkillItem {

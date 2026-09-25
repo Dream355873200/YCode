@@ -199,11 +199,15 @@ func (c *Catalog) errorsOf(kinds ...string) []LoadError {
 // Mode 按 id 取模式（不存在返回 nil）。
 func (c *Catalog) Mode(id string) *Mode { return c.modeByID[id] }
 
-// UsedPlugins 被至少一个模式引用的插件（按 id 排序）。只有它们的子代理
-// 与 MCP 服务器会被装配。
+// UsedPlugins 被至少一个模式引用且未被停用的插件（按 id 排序）。只有它们
+// 的子代理与 MCP 服务器会被装配；停用插件的已装配资产由对账撤销
+//（want-set 缩小 → 生命周期表清理）。
 func (c *Catalog) UsedPlugins() []*Plugin {
 	var out []*Plugin
 	for _, p := range c.Plugins {
+		if p.Disabled {
+			continue
+		}
 		if len(c.PluginUsedBy(p.ID)) > 0 {
 			out = append(out, p)
 		}

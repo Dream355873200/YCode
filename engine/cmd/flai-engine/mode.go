@@ -231,6 +231,11 @@ func resolveMode(m *Mode, pluginByID map[string]*Plugin) (*ModeView, error) {
 		if p == nil {
 			return nil, fmt.Errorf("模式 %s: 未知插件 %q（可用: %v）", m.ID, pid, pluginIDs(pluginByID))
 		}
+		if p.Disabled {
+			// 停用插件对模式隐形：能力不聚合、清单不报错——模式引用保持
+			// 原样，重新启用后恢复（无需改任何清单）。
+			continue
+		}
 		for _, ts := range p.Toolsets {
 			if seenToolset[ts] {
 				continue

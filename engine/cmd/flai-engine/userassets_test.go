@@ -120,3 +120,80 @@ func TestReloadHidesRemovedAgents(t *testing.T) {
 		t.Fatal("恢复引用后 Agent_explore 应重新可见")
 	}
 }
+
+// TestPluginDisabled 插件停用：对模式隐形（能力不聚合、清单不报错），
+// 已装配的子代理经生命周期表下线，重新启用后恢复。
+func TestPluginDisabled(t *testing.T) {
+	sessMap = &sessionMap{path: filepath.Join(t.TempDir(), "session-map.json")}
+	app := goagent.New(goagent.WithBuiltinTools())
+	full, err := LoadCatalog("code")
+	if err != nil {
+		t.Fatal(err)
+	}
+	setCatalog(full)
+	if errs := syncAgents(app, full); len(errs) > 0 {
+		t.Fatal(errs)
+	}
+	if !sessionToolVisible("s", "Agent_explore") {
+		t.Fatal("初始应可见 Agent_explore")
+	}
+
+	// 停用 explore 插件（其子代理应下线）
+	t.Setenv("FLAI_USER_DIR", t.TempDir())
+	if err := saveDisabledSet(map[string]bool{"explore": true}); err != nil {
+		t.Fatal(err)
+	}
+	disabled, err := reloadCatalog(app)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(disabled.Errors) > 0 {
+		t.Fatalf("停用不应产生加载错误: %v", disabled.Errors)
+	}
+	if p := findPlugin(disabled, "explore"); p == nil || !p.Disabled {
+		t.Fatal("explore 应标记 Disabled")
+	}
+	if len(disabled.UsedPlugins()) != len(disabled.Plugins)-countDisabled(disabled) {
+		t.Fatal("停用插件不应参与装配")
+	}
+	if sessionToolVisible("s", "Agent_explore") {
+		t.Fatal("停用后 Agent_explore 应下线")
+	}
+	if m := disabled.Mode("code"); m == nil || contains(m.Resolved.Agents, "explore") {
+		t.Fatal("停用插件的能力不应聚进模式视图")
+	}
+
+	// 重新启用：子代理恢复
+	if err := saveDisabledSet(map[string]bool{}); err != nil {
+		t.Fatal(err)
+	}
+	enabled, err := reloadCatalog(app)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(enabled.Errors) > 0 {
+		t.Fatalf("启用不应产生加载错误: %v", enabled.Errors)
+	}
+	if !sessionToolVisible("s", "Agent_explore") {
+		t.Fatal("重新启用后 Agent_explore 应恢复")
+	}
+}
+
+func findPlugin(c *Catalog, id string) *Plugin {
+	for _, p := range c.Plugins {
+		if p.ID == id {
+			return p
+		}
+	}
+	return nil
+}
+
+func countDisabled(c *Catalog) int {
+	n := 0
+	for _, p := range c.Plugins {
+		if p.Disabled {
+			n++
+		}
+	}
+	return n
+}
