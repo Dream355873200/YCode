@@ -59,6 +59,53 @@
 （含 MCP 工具），护栏（≤12 节点、无环、失败即终止）防失控。适合
 "把这三个模块的测试都补齐" 这类模型需要现场拆解的任务。
 
+### 1.5 场景走查与 Pipeline/Team 判据
+
+**判据：队列里流动的是数据还是意图。**
+
+- **Pipeline**：输入可枚举的数据项 + 每项的处理流程可预先描述。队列承载
+  **数据**（页面/文件/用例/分块），节点是数据变换器，fan-out/fan-in 就是
+  map/reduce。判据三问：数据项能序列化吗？worker 能否独立消费不看其他
+  消息？输出能否回灌下游？三个 yes = pipeline。
+- **Team**：目标导向、过程需要探索与决策、任务边界在执行中才浮现。队列
+  承载**意图**（"去把这个搞定"），成员共享上下文、协商、互相补位。
+  例：「去 B 站找极客湾最新视频并播放」——搜索/发现/点击都需要判断，是
+  agentic 任务，硬套 pipeline 只会得到"有顺序的 agent 队列"。
+
+**混合形态**：team 的 lead 对执行中新拆出的同构子任务建 pipeline（map 内嵌）
+——lead 负责发现与决策，pipeline 负责批量变换；反之 pipeline 节点里跑
+mini-team 是滥用。
+
+**场景走查（fan-out/fan-in 全并行）**：任务「整理极客湾最近 5 期视频的卖点，
+产出对比 docx」——「5 个 URL → 5 份卖点 JSON → 对比矩阵 → docx」是标准
+pipeline（map + reduce）：
+
+```json
+{ "nodes": [
+  { "name": "fetcher", "instruction": "读取分配到的视频页，提取标题/发布时间/播放数/核心卖点，输出结构化 JSON",
+    "tools": ["mcp__browser__browser_navigate", "mcp__browser__browser_snapshot"],
+    "concurrency": 5, "injects": ["merger"], "close_queues": ["merger"],
+    "message": "待采集清单（5 期视频）已入队" },
+  { "name": "merger", "depends_on": ["fetcher"], "instruction": "5 份结构化产出全部收到后，整理成对比矩阵",
+    "tools": ["Read", "Write"], "injects": ["writer"] },
+  { "name": "writer", "depends_on": ["merger"], "instruction": "按注入的 docx 技能规程把对比矩阵写成报告",
+    "tools": ["Read", "Write", "Bash"], "skills": ["docx"], "injects": ["reviewer"] },
+  { "name": "reviewer", "depends_on": ["writer"], "review": true,
+    "instruction": "对照用户要求逐项核对，不合格打回并说明缺什么" }
+]}
+```
+
+设计要点：
+
+- **抓取与分析在同一个 worker 里完成**（每视频一个任务、五路并行）——
+  不要把采集和分析拆成两个串行节点让分析器串行干 5 份活
+- **merger 是 fan-in 汇聚点**：DependsOn 全满足 + 队列引用计数关闭后启动
+- **reviewer 打回**：补采任务重新进 fetcher 队列（未关闭即天然支持）
+- writer 节点的 docx 技能由宿主注入（见缺口 ⑦）
+
+而「发现哪个是最新视频并播放」中需要探索判断的部分（搜索、识别）属于
+agentic 任务——归主 agent 或 team，数据变换部分才进 pipeline。
+
 ### P1 · 需要壳/引擎补线（工作量小，体验收益大）
 
 **⑤ 右栏「流水线」面板 + 运行中 DAG 状态图**：
