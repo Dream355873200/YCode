@@ -9,7 +9,10 @@
 //
 // 数据全部来自引擎 /teams* 轮询（成员运行中的细粒度事件不进群聊，
 // 设计如此——点成员才看时间线）。
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { historyToRows } from '../conversation/projection/historyToRows';
+import type { Row } from '../conversation/projection/rows';
+import { RowView, foldReads, ReadGroup, type ReadGroupUnit } from '../conversation/RowView';
 import {
   ArrowLeftIcon, BotIcon, CheckIcon, CrownIcon, MessageCircleQuestionIcon, PencilIcon, PlusIcon, SaveIcon, SendIcon, SquareIcon, UserIcon, XIcon,
 } from 'lucide-react';
@@ -385,9 +388,9 @@ function MemberView({ view, dir, onBack }: {
         </div>
       </div>
       {/* 会话时间线（持久历史 + 运行中事件尾） */}
-      <div className="min-h-0 flex-1 overflow-y-auto px-3 py-2">
-        <div className="grid gap-2">
-          {msgs.map((msg, i) => <MemberRow key={i} msg={msg} />)}
+      <div className="min-h-0 flex-1 overflow-y-auto px-1 py-2">
+        <div className="grid gap-0.5">
+          <MemberTimeline msgs={msgs} sid={member.sessionId} />
           {live.events.slice(-3).map((e, i) => (
             live.status === 'running' ? (
               <div key={`live-${i}`} className="flex items-center gap-1.5 text-ui-2xs text-foreground-subtlest">
@@ -416,28 +419,18 @@ function MemberView({ view, dir, onBack }: {
   );
 }
 
-function MemberRow({ msg }: { msg: RawMsg }) {
-  if (msg.role === 'user') {
-    const text = msg.content.filter((c) => c.type === 'text').map((c) => c.text).join('');
-    return <div className="ml-auto max-w-[85%] rounded-xl bg-brand/15 px-2.5 py-1.5 text-ui-xs leading-relaxed text-foreground">{text}</div>;
-  }
-  if (msg.role !== 'assistant') return null;
+/** 成员会话时间线：与主对话同一套投影与行渲染（historyToRows + RowView），
+    思考卡 / 工具卡 / Markdown 正文与主对话一致。 */
+function MemberTimeline({ msgs, sid }: { msgs: RawMsg[]; sid: string }) {
+  const folded = useMemo(() => foldReads(historyToRows(msgs as never)), [msgs]);
   return (
-    <div className="grid gap-1">
-      {msg.content.map((c, i) => {
-        if (c.type === 'text' && c.text) {
-          return <div key={i} className="whitespace-pre-wrap break-words text-ui-xs leading-relaxed text-foreground">{c.text}</div>;
-        }
-        if (c.type === 'tool_use') {
-          return (
-            <div key={i} className="flex items-center gap-1 rounded-md border border-border/60 bg-card px-1.5 py-0.5 text-ui-2xs text-foreground-subtle">
-              <span className="rounded bg-neutral-500/15 px-1 font-mono">{c.name}</span>
-            </div>
-          );
-        }
-        return null;
-      })}
-    </div>
+    <>
+      {folded.map((r) =>
+        (r as { kind: string }).kind === 'readgroup'
+          ? <ReadGroup key={r.id} group={r as ReadGroupUnit} />
+          : <RowView key={(r as Row).id} row={r as Row} sid={sid} />,
+      )}
+    </>
   );
 }
 

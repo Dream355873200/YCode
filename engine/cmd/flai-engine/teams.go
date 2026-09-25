@@ -611,7 +611,7 @@ func installTeam(app *goagent.App) {
 				return "", fmt.Errorf("群成员 %q 不存在（%s）", in.At, memberNames(t))
 			}
 			if m.isLeader {
-				notifyLeader(t, fmt.Sprintf("[群聊 @leader] %s: %s", sender, in.Text))
+				notifyLeaderQuiet(t, fmt.Sprintf("[群聊 @leader] %s: %s", sender, in.Text))
 				appendChat(t, TeamChatMsg{From: sender, To: "leader", Type: "chat", Text: in.Text})
 				return "已发给队长", nil
 			}
@@ -987,7 +987,7 @@ func teamsRoutes() map[string]func(http.ResponseWriter, *http.Request) {
 			}
 			if req.At == "" || req.At == "leader" {
 				appendChat(t, TeamChatMsg{From: "user", To: "leader", Type: "chat", Text: req.Text})
-				notifyLeader(t, "[群聊] 用户: "+req.Text)
+				notifyLeaderQuiet(t, "[群聊] 用户: "+req.Text)
 				writeJSON(w, map[string]any{"ok": true, "routed": "leader"})
 				return
 			}
