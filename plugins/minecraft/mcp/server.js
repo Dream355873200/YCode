@@ -14,6 +14,7 @@
 // 调用工具时才报「先在插件目录 npm install」。
 "use strict";
 const path = require("path");
+const os = require("os");
 const fs = require("fs");
 
 const PLUGIN_ROOT = path.join(__dirname, "..");
@@ -407,6 +408,42 @@ def("mc_eat", "吃背包里的食物恢复饥饿值。", { type: "object", prope
     return { __text: `吃了 ${food.name}，饥饿 ${b.food}/20` };
   });
 
+def("mc_screenshot", "渲染 bot 视角的第一人称画面并内联返回（无头 WebGL 渲染，需 npm install prismarine-viewer）。确认「眼前是什么样」时用；结构化信息优先用 mc_state/mc_blocks_around。", {
+  type: "object",
+  properties: {
+    width: { type: "integer", description: "宽（默认 640）" },
+    height: { type: "integer", description: "高（默认 360）" },
+  },
+  required: [],
+}, async (a) => {
+  const b = await ensureBot();
+  let viewer;
+  try {
+    viewer = require("prismarine-viewer");
+  } catch {
+    throw new Error("需要渲染依赖：在插件目录 plugins/minecraft 下执行 npm install prismarine-viewer（含原生 GL 模块，Windows 首次安装可能要编译工具链）");
+  }
+  const w = Math.min(1280, Math.max(160, a.width || 640));
+  const h = Math.min(720, Math.max(120, a.height || 360));
+  const out = path.join(os.tmpdir(), `mc-view-${Date.now()}.png`);
+  await new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("渲染超时（15s）")), 15000);
+    try {
+      viewer.headless(b, { viewDistance: 4, width: w, height: h, output: out, frames: 1, onReady: () => {} });
+      // headless 在 frames 帧后写文件并回调 done？兼容两种事件风格：轮询文件
+      const poll = setInterval(() => {
+        if (fs.existsSync(out) && fs.statSync(out).size > 1000) {
+          clearInterval(poll); clearTimeout(timer); resolve();
+        }
+      }, 300);
+      setTimeout(() => { clearInterval(poll); }, 14000);
+    } catch (e) { clearTimeout(timer); reject(e); }
+  });
+  const b64 = fs.readFileSync(out).toString("base64");
+  try { fs.unlinkSync(out); } catch {}
+  return { __image: { b64, w, h, path: out } };
+});
+
 def("mc_chat", "在服务器聊天栏发消息。", {
   type: "object",
   properties: { text: { type: "string" } },
@@ -441,6 +478,12 @@ async function handle(msg) {
       if (!tool) return { id, result: textResult(`未知工具: ${params.name}`, true) };
       try {
         const r = await tool.handler(params.arguments || {});
+        if (r && r.__image) {
+          const img = r.__image;
+          if (!img.b64 || img.b64.length < 100) return { id, result: textResult("画面数据为空——渲染失败，改用 mc_state/mc_blocks_around 获取结构化信息", true) };
+          return { id, result: textResult(`[IMAGE png ${img.b64}]
+bot 视角 ${img.w}x${img.h}（画面已附上）`) };
+        }
         if (r && r.__text !== undefined) return { id, result: textResult(r.__text) };
         return { id, result: textResult(typeof r === "string" ? r : JSON.stringify(r, null, 2)) };
       } catch (e) {

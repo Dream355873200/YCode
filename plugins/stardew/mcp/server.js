@@ -1,10 +1,9 @@
 #!/usr/bin/env node
-// stardew MCP server（stdio，零依赖）——消费 SMAPI mod 的本地 HTTP 桥
-// （127.0.0.1:9875，游戏内运行 YCodeStardew mod 时开放）。
-// 工具名注册为 mcp__stardew__<name>。桥不在时报可读的搭建指引。
+// stardew MCP server（stdio，零依赖）——消费 SMAPI mod 的本地 HTTP 桥。
+// 并肩联机：同机可跑多个游戏实例（每个农夫一个 bot），mod 从 9875 起自动
+// 挑空闲端口；本服务器按端口段探测在线实例，工具的 who 参数指定控制哪个
+// 农夫（名字或端口），缺省 = 第一个在线的。工具名 mcp__stardew__<name>。
 "use strict";
-
-const BRIDGE = "http://127.0.0.1:9875/";
 
 // allow_warp = false 时禁用传送（纯粹体验：移动靠走路/公交），默认允许。
 let allowWarp = true;
@@ -13,21 +12,49 @@ try {
   if (cfg && cfg.allow_warp === false) allowWarp = false;
 } catch { /* 无配置文件：默认允许 */ }
 
-async function bridge(action, extra = {}) {
-  const body = JSON.stringify({ action, ...extra });
-  let resp;
-  try {
-    resp = await fetch(BRIDGE, { method: "POST", headers: { "Content-Type": "application/json" }, body });
-  } catch {
-    throw new Error("SMAPI 桥不可达（127.0.0.1:9875）——确认：① 游戏装了 SMAPI；② 已编译并安装 YCodeStardew mod（plugins/stardew/mod/build.ps1）；③ 游戏已通过 SMAPI 启动器运行（日志里有 YCode bridge 行）");
+// ---------- 实例发现（9875-9885，结果缓存 5s） ----------
+const PORT_RANGE = [9875, 9885];
+let cache = { at: 0, list: [] }; // [{url, port, farmer, location}]
+
+async function discover(force) {
+  if (!force && Date.now() - cache.at < 5000) return cache.list;
+  const probe = async (port) => {
+    try {
+      const c = new AbortController();
+      const t = setTimeout(() => c.abort(), 800);
+      const r = await fetch(`http://127.0.0.1:${port}/?action=state`, { signal: c.signal });
+      clearTimeout(t);
+      const j = await r.json();
+      if (j && j.location) return { url: `http://127.0.0.1:${port}/`, port, farmer: j.farmer || `p${port}`, location: j.location };
+    } catch { /* 不在线 */ }
+    return null;
+  };
+  const probes = [];
+  for (let p = PORT_RANGE[0]; p <= PORT_RANGE[1]; p++) probes.push(probe(p));
+  const list = (await Promise.all(probes)).filter(Boolean);
+  cache = { at: Date.now(), list };
+  return list;
+}
+
+async function bridge(action, extra = {}, who = "") {
+  const list = await discover();
+  if (!list.length) {
+    throw new Error("SMAPI 桥不可达（9875-9885 无实例）——确认：① 游戏装了 SMAPI；② 已编译安装 YCodeStardew mod（plugins/stardew/mod/build.ps1）；③ 游戏经 SMAPI 启动器运行");
   }
-  const json = await resp.json();
+  let inst = list[0];
+  if (who) {
+    const w = String(who).toLowerCase();
+    inst = list.find((x) => x.farmer.toLowerCase().includes(w) || String(x.port) === w) || inst;
+  }
+  const body = JSON.stringify({ action, ...extra });
+  const r = await fetch(inst.url, { method: "POST", headers: { "Content-Type": "application/json" }, body });
+  const json = await r.json();
   if (json.error) throw new Error(json.error);
   return json;
 }
 
 const fmtState = (s) => [
-  `${s.date} · ${Math.floor(s.time / 100).toString().padStart(2, "0")}:${String(s.time % 100).padStart(2, "0")}`,
+  `农夫 ${s.farmer || "?"} · ${s.date} · ${Math.floor(s.time / 100).toString().padStart(2, "0")}:${String(s.time % 100).padStart(2, "0")}`,
   `位置 ${s.location} (${s.tile.x}, ${s.tile.y})`,
   `金钱 ${s.money}g · 体力 ${s.stamina}`,
   `背包: ${s.inventory.map((i) => `${i.name} x${i.stack}`).join(", ") || "（空）"}`,
@@ -37,19 +64,30 @@ const tools = [];
 const def = (name, description, inputSchema, handler) =>
   tools.push({ name, description, inputSchema, handler });
 
-def("sdv_state", "读取当前状态：日期/时间、位置与坐标、金钱、体力、背包清单。开工前必看。", { type: "object", properties: {} },
-  async () => ({ __text: fmtState(await bridge("state")) }));
+const Who = { who: { type: "string", description: "控制哪个农夫（名字或端口；多实例并肩时用，缺省 = 第一个在线的）" } };
+
+def("sdv_farmers", "列出当前在线的全部农夫实例（并肩联机时你和 bot 各一个），who 参数可填这里看到的名字或端口。", { type: "object", properties: {} },
+  async () => {
+    const list = await discover();
+    if (!list.length) return { __text: "没有在线实例（游戏没开或 mod 未装）" };
+    return { __text: list.map((x) => `${x.farmer}（端口 ${x.port}）@ ${x.location}`).join("\n") };
+  });
+
+def("sdv_state", "读取当前状态：农夫名、日期/时间、位置与坐标、金钱、体力、背包清单。开工前必看。", {
+  type: "object", properties: Who,
+}, async (a) => ({ __text: fmtState(await bridge("state", {}, a.who)) }));
 
 def("sdv_warp", "传送去指定地点坐标（当日快捷移动；跳过走路）。地点名如 Farm / Town / Beach / Forest / Mine / SeedShop。", {
   type: "object",
   properties: {
     location: { type: "string", description: "地图名（英文内部名，如 Farm / Town / Beach / Forest / SeedShop / Mine）" },
     x: { type: "integer" }, y: { type: "integer" },
+    who: Who.who,
   },
   required: ["location", "x", "y"],
 }, async (a) => {
   if (!allowWarp) return { __text: "传送已被关闭（config.json allow_warp: false）——同地图用 sdv_press WASD 走，跨地图坐公交/步行（让用户带路或授权开启传送）", isError: true };
-  const r = await bridge("warp", { location: a.location, x: a.x, y: a.y });
+  const r = await bridge("warp", { location: a.location, x: a.x, y: a.y }, a.who);
   return { __text: `已传送到 ${r.warp}——用 sdv_state 确认周围环境` };
 });
 
@@ -58,10 +96,11 @@ def("sdv_press", "模拟一次按键（SButton 名）：MouseRight = 使用/互�
   properties: {
     button: { type: "string", description: "SButton 名（MouseRight / MouseLeft / W / A / S / D / Space / Esc / E …）" },
     times: { type: "integer", description: "按几次（默认 1）" },
+    who: Who.who,
   },
   required: ["button"],
 }, async (a) => {
-  const r = await bridge("press", { button: a.button, times: a.times || 1 });
+  const r = await bridge("press", { button: a.button, times: a.times || 1 }, a.who);
   return { __text: `已按 ${r.pressed}——用 sdv_state 观察结果` };
 });
 

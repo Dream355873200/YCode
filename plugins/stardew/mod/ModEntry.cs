@@ -22,11 +22,31 @@ namespace YCodeStardew
         {
             Helper_ = helper;
             helper.Events.GameLoop.UpdateTicked += OnTicked;
+            // 并肩联机：同机可能跑多个游戏实例（每个农夫一个 bot），端口自动
+            // 从 9875 起找空闲——配置文件写死端口则固定用之。
+            var cfg = helper.ReadConfig<ModConfig>();
+            var port = cfg.Port > 0 ? cfg.Port : FindFreePort();
             var listener = new System.Net.HttpListener();
-            listener.Prefixes.Add("http://127.0.0.1:9875/");
+            listener.Prefixes.Add($"http://127.0.0.1:{port}/");
             listener.Start();
             Task.Run(() => ListenLoop(listener));
-            Monitor.Log("YCode bridge: http://127.0.0.1:9875（state / warp / press）", LogLevel.Info);
+            Monitor.Log($"YCode bridge: http://127.0.0.1:{port}（state / warp / press；农夫 {helper.ReadConfig<ModConfig>().Port} 端口模式）", LogLevel.Info);
+        }
+
+        private static int FindFreePort()
+        {
+            for (var p = 9875; p <= 9885; p++)
+            {
+                try
+                {
+                    var probe = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, p);
+                    probe.Start();
+                    probe.Stop();
+                    return p;
+                }
+                catch { /* 被占：下一个 */ }
+            }
+            return 9875;
         }
 
         private void OnTicked(object sender, EventArgs e)
