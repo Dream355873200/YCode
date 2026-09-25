@@ -90,6 +90,10 @@ export function initPipelineCapture(): void {
   });
 }
 
+// 模块加载即开始捕获（SidePane 静态 import 本模块）：pipeline 在任意会话
+// 跑起来时面板可能从未打开过——懒初始化会漏掉全部帧，右栏一片空白。
+initPipelineCapture();
+
 export function usePipeline(): PipelineState {
   initPipelineCapture();
   return usePipelineStore();
