@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { ThinkTagSplitter } from './thinkTags';
+import { ThinkTagSplitter, stripThinkMarks } from './thinkTags';
 
 describe('ThinkTagSplitter', () => {
   it('无标签：原样透传', () => {
@@ -53,5 +53,33 @@ describe('ThinkTagSplitter', () => {
   it('纯空白思考不产出片段', () => {
     const s = new ThinkTagSplitter();
     expect(s.feed('<think>   </think>')).toEqual([]);
+  });
+});
+
+describe('analysis 家族与混用容错', () => {
+  it('<analysis> 包裹的思考被切到 think，正文保留', () => {
+    const sp = new ThinkTagSplitter();
+    const pieces = sp.feed('<analysis>推理过程</analysis>最终答案');
+    expect(pieces).toEqual([{ think: '推理过程' }, { text: '最终答案' }]);
+  });
+
+  it('<think> 开、</analysis> 收的混用能闭合（实测踩坑：否则正文整段吞进思考卡）', () => {
+    const sp = new ThinkTagSplitter();
+    const pieces = sp.feed('<think>先分析一下</analysis>这是正文');
+    expect(pieces).toEqual([{ think: '先分析一下' }, { text: '这是正文' }]);
+  });
+
+  it('跨包的 </analysis> 尾巴被扣住不定性为正文', () => {
+    const sp = new ThinkTagSplitter();
+    const pieces = [
+      ...sp.feed('<analysis>思考中…</analy'),
+      ...sp.feed('sis>正文'),
+    ];
+    const all = pieces.flatMap((p) => (p.think ? ['think'] : ['text']));
+    expect(all).toEqual(['think', 'text']);
+  });
+
+  it('stripThinkMarks 剥离 analysis 标记', () => {
+    expect(stripThinkMarks('a</analysis>\n<b analysis>')).toBe('a\n<b analysis>');
   });
 });

@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { engine } from '../protocol';
 import { useApp } from '../app/appState';
-import { TraceRow, type TraceEntry } from './NodeTracePane';
+import { TraceTimeline, type TraceEntry } from './NodeTracePane';
 
 export function subAgentTraceTabId(sessionID: string, toolUseID: string): string {
   return `subtrace:${sessionID}:${toolUseID}`;
@@ -54,9 +54,7 @@ export function SubAgentTracePane({ sessionID, toolUseID }: { sessionID: string;
             暂无轨迹<br />引擎需已启用子代理轨迹落盘并重启后运行过子代理
           </div>
         ) : (
-          <div className="grid gap-2">
-            {trace.map((e, i) => <TraceRow key={i} e={e} />)}
-          </div>
+          <TraceTimeline trace={trace} />
         )}
         <div ref={bottomRef} />
       </div>

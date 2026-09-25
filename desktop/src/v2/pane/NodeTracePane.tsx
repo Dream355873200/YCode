@@ -77,12 +77,37 @@ export function NodeTracePane({ runId, node }: { runId: string; node: string }) 
             暂无轨迹<br />节点开始运行后，思考 / 工具调用 / 产出会实时出现在这里
           </div>
         ) : (
-          <div className="grid gap-2">
-            {trace.map((e, i) => <TraceRow key={i} e={e} />)}
-          </div>
+          <TraceTimeline trace={trace} />
         )}
         <div ref={bottomRef} />
       </div>
+    </div>
+  );
+}
+
+/** 相邻同类条目合并（思考/文本是逐词 delta，一行一词——聚合成块再渲染）。 */
+interface TraceGroup { type: string; text: string; tool?: string; input?: string; result?: string; ts?: number }
+
+export function groupTrace(entries: TraceEntry[]): TraceGroup[] {
+  const out: TraceGroup[] = [];
+  for (const e of entries) {
+    const last = out[out.length - 1];
+    if ((e.type === 'thinking' || e.type === 'text') && last && last.type === e.type) {
+      last.text += e.text || '';
+      continue;
+    }
+    out.push({ type: e.type, text: e.text || '', tool: e.tool, input: e.input, result: e.result, ts: e.ts });
+  }
+  return out;
+}
+
+/** 只读时间线（轨迹条目 → 分组渲染），pipeline 节点与子代理面板共用。 */
+export function TraceTimeline({ trace }: { trace: TraceEntry[] }) {
+  return (
+    <div className="grid gap-2">
+      {groupTrace(trace).map((g, i) => (
+        <TraceRow key={i} e={{ type: g.type as TraceEntry['type'], text: g.text, tool: g.tool, input: g.input, result: g.result, ts: g.ts }} />
+      ))}
     </div>
   );
 }
