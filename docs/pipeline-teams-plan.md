@@ -298,6 +298,24 @@ steering/user run）+ 成员会话的角色卡覆写（WithSessionPrompt 覆写�
 弹卡，配自动编辑 = 直接写。团队配置**每成员各有自己的 mode**（leader 通常
 accept_edits，普通成员按风险），另有团队级默认。
 
+
+### 审批分层：成员 auto → leader 兜底 → 用户终审
+
+不做逐成员逐操作的细粒度审批（太吵且打断协作）。分层：
+
+1. **成员 = auto 模式**：普通操作直接执行，不弹卡（写文件/跑测试/查网页）
+2. **成员遇危险操作**（Gate 判定需审批）→ **升级给 leader**：群聊出现请求
+   消息 + leader 会话收到 steering（「成员 X 请求批准：…」）。leader 用自己的
+   高权限直接执行，或判断需要用户决策
+3. **升级给用户**：仅真正需要用户决策的（对外发布/大规模删除/花钱）——
+   走现有审批卡，标注来源成员；leader 离线时超时自动升级给用户（不阻塞死）
+
+**配置简化**：成员不需要逐个配 mode——统一 auto；只有 leader 配 mode
+（默认 accept_edits）。**实现要点**：成员 Gate 的 ask 路径路由到 leader
+（approver 适配器：成员 ask → leader 会话 steering + leader 决策工具
+`approve_request(id, decision)` → resolve 回成员）；成员 Gate 建立时按
+team.json 的成员配置设定 mode（leader=accept_edits、成员=auto）。
+
 **GoAgent 小升级**：现在的 SetPermissionMode 改的是「最近的 Gate」——
 多成员并行需要 **per-member 会话独立 mode**（成员 Gate 建立时按 team.json
 的成员配置设定 mode）。
