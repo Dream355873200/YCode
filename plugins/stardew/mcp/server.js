@@ -6,6 +6,13 @@
 
 const BRIDGE = "http://127.0.0.1:9875/";
 
+// allow_warp = false 时禁用传送（纯粹体验：移动靠走路/公交），默认允许。
+let allowWarp = true;
+try {
+  const cfg = JSON.parse(require("fs").readFileSync(require("path").join(__dirname, "config.json"), "utf8"));
+  if (cfg && cfg.allow_warp === false) allowWarp = false;
+} catch { /* 无配置文件：默认允许 */ }
+
 async function bridge(action, extra = {}) {
   const body = JSON.stringify({ action, ...extra });
   let resp;
@@ -41,6 +48,7 @@ def("sdv_warp", "传送去指定地点坐标（当日快捷移动；跳过走路
   },
   required: ["location", "x", "y"],
 }, async (a) => {
+  if (!allowWarp) return { __text: "传送已被关闭（config.json allow_warp: false）——同地图用 sdv_press WASD 走，跨地图坐公交/步行（让用户带路或授权开启传送）", isError: true };
   const r = await bridge("warp", { location: a.location, x: a.x, y: a.y });
   return { __text: `已传送到 ${r.warp}——用 sdv_state 确认周围环境` };
 });
@@ -55,6 +63,43 @@ def("sdv_press", "模拟一次按键（SButton 名）：MouseRight = 使用/互�
 }, async (a) => {
   const r = await bridge("press", { button: a.button, times: a.times || 1 });
   return { __text: `已按 ${r.pressed}——用 sdv_state 观察结果` };
+});
+
+def("sdv_wiki", "查 Stardew Valley Wiki（stardewvalleywiki.com）：作物/售价/送礼偏好/事件/机制。query 搜主题（如 'spring crops'、'Abigail gifts'）；页名已知传 page。", {
+  type: "object",
+  properties: {
+    query: { type: "string", description: "搜索关键词" },
+    page: { type: "string", description: "直接取某个页面（title）" },
+    limit: { type: "integer", description: "正文截断长度（默认 4000 字符）" },
+  },
+  required: [],
+}, async (a) => {
+  if (typeof fetch !== "function") return { __text: "当前 Node 版本没有全局 fetch（需 Node 18+）" };
+  const api = "https://stardewvalleywiki.com/mediawiki/api.php";
+  const limit = Math.min(12000, Math.max(500, a.limit || 4000));
+  try {
+    let title = a.page;
+    if (!title) {
+      const q = encodeURIComponent(String(a.query || ""));
+      if (!q) return { __text: "传 query（搜索词）或 page（页面名）" };
+      const sr = await (await fetch(`${api}?action=query&list=search&srsearch=${q}&format=json&srlimit=5`)).json();
+      const hits = ((sr.query || {}).search || []).map((h) => h.title);
+      if (!hits.length) return { __text: `Wiki 搜索「${a.query}」无结果——换英文关键词` };
+      title = hits[0];
+    }
+    // index.php?action=raw 会被 Cloudflare 挑战（403），走 api.php 的 parse 端点
+    const pr = await (await fetch(`https://stardewvalleywiki.com/mediawiki/api.php?action=parse&page=${encodeURIComponent(title)}&prop=wikitext&format=json&redirects=1`)).json();
+    if (pr.error) return { __text: `页面「${title}」不存在（可先用 query 搜索）` };
+    const raw = pr.parse.wikitext["*"] || "";
+    const clean = raw
+      .replace(/\{\{[^{}]*\}\}/g, "")
+      .replace(/<ref[^>]*\/?>|<ref[\s\S]*?<\/ref>/g, "")
+      .replace(/\[\[([^|\]]*\|)?([^\]]*)\]\]/g, "$2")
+      .replace(/\n{3,}/g, "\n\n");
+    return { __text: `「${title}」（wikitext 节选 ${Math.min(limit, clean.length)}/${clean.length} 字符）\n\n${clean.slice(0, limit)}${clean.length > limit ? "\n…（截断）" : ""}` };
+  } catch (e) {
+    return { __text: `Wiki 查询失败: ${e.message}（检查网络）` };
+  }
 });
 
 // ---------- stdio JSON-RPC 分发（与 minecraft 同协议骨架） ----------
