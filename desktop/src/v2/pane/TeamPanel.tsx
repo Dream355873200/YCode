@@ -122,6 +122,7 @@ function GroupChat({ view, dir, onBack, onOpenMember }: {
   const [at, setAt] = useState('');
   const [total, setTotal] = useState(0);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const composerRef = useRef<HTMLTextAreaElement>(null);
   const detailRef = useRef(team);
   detailRef.current = team;
 
@@ -192,7 +193,10 @@ function GroupChat({ view, dir, onBack, onOpenMember }: {
       {/* 消息流 */}
       <div className="min-h-0 flex-1 overflow-y-auto px-3 py-2">
         <div className="grid gap-2">
-          {msgs.map((m, i) => <ChatBubble key={i} m={m} members={members} onReply={(who) => setAt(who === 'leader' ? '' : who)} />)}
+          {msgs.map((m, i) => <ChatBubble key={i} m={m} members={members} onReply={(who) => {
+            setAt(who === 'leader' ? '' : who);
+            composerRef.current?.focus();
+          }} />)}
         </div>
         <div ref={bottomRef} />
       </div>
@@ -206,9 +210,9 @@ function GroupChat({ view, dir, onBack, onOpenMember }: {
           ))}
         </div>
         <div className="flex items-end gap-1.5">
-          <textarea value={draft} onChange={(e) => setDraft(e.target.value)}
+          <textarea ref={composerRef} value={draft} onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send(); } }}
-            rows={2} placeholder={at ? `@${at} …` : '向队长下达目标 / 插话…'}
+            rows={2} placeholder={at ? `回复 @${at} …` : '向队长下达目标 / 插话…'}
             className="min-h-0 flex-1 resize-none rounded-lg border border-border bg-input px-2 py-1.5 text-ui-xs text-foreground outline-none placeholder:text-foreground-subtlest focus:border-brand/60" />
           <button type="button" aria-label="发送" disabled={!draft.trim()}
             className="flex size-8 items-center justify-center rounded-lg bg-brand text-white disabled:opacity-40"
@@ -260,7 +264,7 @@ function ChatBubble({ m, members, onReply }: { m: ChatMsg; members: TeamMemberIn
         <div className="v2-md mt-1 text-ui-xs leading-relaxed text-foreground" dangerouslySetInnerHTML={{ __html: renderMD(m.text) }} />
         {toUser && (
           <button type="button"
-            className="mt-2 rounded-md border border-brand/50 px-2 py-0.5 text-ui-2xs text-brand hover:bg-brand/10"
+            className="mt-2 rounded-md bg-brand/15 px-2 py-0.5 text-ui-2xs font-medium text-brand hover:bg-brand/25"
             onClick={() => onReply(m.from)}>
             回复 {m.from}
           </button>
