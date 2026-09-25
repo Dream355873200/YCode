@@ -1,0 +1,7 @@
+{
+  "id": "orchestration",
+  "name": "多 Agent 编排",
+  "description": "create_pipeline（动态 DAG 数据流水线）+ run_team（一次性多角色协作团队）+ team_dispatch（向用户创建的常驻团队分派任务），规则文件给出选择判据",
+  "toolsets": ["orchestration", "team"],
+  "rules": "rules.md"
+}

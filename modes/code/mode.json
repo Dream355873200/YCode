@@ -5,6 +5,7 @@
   "plugins": [
     "dev-discipline",
     "explore",
+    "orchestration",
     "docx",
     "xlsx",
     "pptx",

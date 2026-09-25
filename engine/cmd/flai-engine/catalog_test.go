@@ -33,8 +33,12 @@ func TestCatalogAssets(t *testing.T) {
 	if code == nil || flutter == nil {
 		t.Fatal("缺少 code / flutter 模式")
 	}
-	if len(code.Resolved.Toolsets) != 0 {
-		t.Errorf("code 模式不应启用领域工具集: %v", code.Resolved.Toolsets)
+	// code 是通用模式：禁止出现领域专属工具集（flutter/device/test-report /
+	// vision）；通用能力工具集（orchestration/team 等）不受限。
+	for _, ts := range []string{"flutter", "device", "test-report", "vision"} {
+		if code.HasToolset(ts) {
+			t.Errorf("code 模式不应启用领域工具集 %s（现有: %v）", ts, code.Resolved.Toolsets)
+		}
 	}
 	for _, ts := range []string{"flutter", "device", "test-report"} {
 		if !flutter.HasToolset(ts) {
