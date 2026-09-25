@@ -18,7 +18,7 @@ import { useApp } from '../app/appState';
 import { cn } from '../components/lib/utils';
 
 interface TeamMemberInfo {
-  name: string; role: string; toolsets: string[];
+  name: string; role: string; mode?: string; toolsets: string[];
   isLeader: boolean; sessionId: string; status: string; activity: string;
 }
 interface TeamDetail {
@@ -388,121 +388,275 @@ function MemberRow({ msg }: { msg: RawMsg }) {
 
 // ---------- 创建团队 ----------
 
+/** 成员表单状态：能力来源 = 显式工具集白名单，或继承某个模式（引擎叠加生效）。 */
+interface MemberDraft {
+  name: string;
+  role: string;
+  byMode: boolean;
+  mode: string;
+  toolsets: string[];
+}
+
+/** 预设模板：把空白表单变成一次点选。 */
+const TEMPLATES: Array<{ id: string; label: string; name: string; goal: string; leaderRole: string; members: MemberDraft[] }> = [
+  {
+    id: 'qa', label: '测试团队',
+    name: 'qa-team', goal: '负责本项目的功能测试与验收',
+    leaderRole: '拆解测试需求，把可测点分派给测试员，汇总验收结论。',
+    members: [
+      { name: 'tester', role: '测试工程师：执行功能测试，输出用例与结果清单。', byMode: false, mode: '', toolsets: ['test-report', 'device'] },
+    ],
+  },
+  {
+    id: 'research', label: '调研小组',
+    name: 'research', goal: '围绕给定课题完成调研并产出结论报告',
+    leaderRole: '拆解调研问题，分派检索与分析任务，汇总成报告。',
+    members: [
+      { name: 'scout', role: '调研员：多路检索与资料收集，输出要点清单。', byMode: false, mode: '', toolsets: [] },
+    ],
+  },
+  {
+    id: 'doc', label: '文档小组',
+    name: 'docs', goal: '把项目素材整理成结构化文档',
+    leaderRole: '规划文档结构，分派撰写与审校，交付成稿。',
+    members: [
+      { name: 'writer', role: '写手：按大纲撰写文档章节，产出 Markdown。', byMode: false, mode: '', toolsets: [] },
+    ],
+  },
+];
+
+const PERM_MODES: Array<{ id: string; label: string; hint: string }> = [
+  { id: 'accept_edits', label: '自动编辑', hint: '写文件自动通过，危险操作仍需审批' },
+  { id: 'default', label: '手动审批', hint: '每个写操作都弹卡确认' },
+  { id: 'bypass', label: '全自动', hint: '全部放行（慎用）' },
+];
+
+function blankMember(): MemberDraft {
+  return { name: '', role: '', byMode: false, mode: '', toolsets: [] };
+}
+
 function CreateTeamForm({ dir, onDone, onCancel }: { dir: string; onDone: () => void; onCancel: () => void }) {
   const [name, setName] = useState('');
   const [goal, setGoal] = useState('');
   const [leaderRole, setLeaderRole] = useState('');
   const [leaderMode, setLeaderMode] = useState('accept_edits');
-  const [members, setMembers] = useState<Array<{ name: string; role: string; toolsets: string[] }>>([
-    { name: '', role: '', toolsets: [] },
-  ]);
+  const [members, setMembers] = useState<MemberDraft[]>([blankMember()]);
   const [toolsets, setToolsets] = useState<Array<{ id: string; notes: string }>>([]);
+  const [modes, setModes] = useState<Array<{ id: string; name: string }>>([]);
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     void (async () => {
-      const r = await api<{ toolsets: Record<string, { tools: string[]; notes: string[] }> }>(engine.get('/modes'));
-      if (r?.toolsets) {
+      const r = await api<{ toolsets: Record<string, { tools: string[]; notes: string[] }>; modes: Array<{ id: string; name: string }> }>(engine.get('/modes'));
+      if (!r) return;
+      if (r.toolsets) {
         setToolsets(Object.entries(r.toolsets)
           .filter(([id]) => id !== 'team')
           .map(([id, v]) => ({ id, notes: (v.notes || []).join('；') })));
       }
+      if (r.modes) setModes(r.modes.map((m) => ({ id: m.id, name: m.name })));
     })();
   }, []);
 
+  const applyTemplate = (t: typeof TEMPLATES[number]): void => {
+    setName(t.name);
+    setGoal(t.goal);
+    setLeaderRole(t.leaderRole);
+    setMembers(t.members.map((m) => ({ ...m, toolsets: [...m.toolsets] })));
+  };
+
+  const patchMember = (i: number, patch: Partial<MemberDraft>): void => {
+    setMembers((ms) => ms.map((m, j) => (j === i ? { ...m, ...patch } : m)));
+  };
+
   const submit = async (): Promise<void> => {
     setErr('');
+    const clean = members.filter((m) => m.name.trim() && m.role.trim());
+    if (clean.length === 0) {
+      setErr('至少需要一名填写了标识与角色卡的成员');
+      return;
+    }
     setBusy(true);
     try {
       const d = await api<TeamDetail>(engine.post('/teams', {
-        dir, name, goal, leaderMode,
+        dir, name: name.trim(), goal, leaderMode,
         leader: { role: leaderRole, toolsets: [] },
-        members: members.filter((m) => m.name.trim() && m.role.trim()).map((m) => ({ ...m, name: m.name.trim() })),
+        members: clean.map((m) => ({
+          name: m.name.trim(), role: m.role,
+          mode: m.byMode ? m.mode : '',
+          toolsets: m.toolsets,
+        })),
       }));
       if (d) onDone();
-      else setErr('创建失败（名称冲突或校验未过）');
+      else setErr('创建失败：团队名冲突、成员标识不合法或工具集不存在');
     } finally {
       setBusy(false);
     }
   };
 
-  const toggleTs = (mi: number, id: string): void => {
-    setMembers((ms) => ms.map((m, i) => i === mi
-      ? { ...m, toolsets: m.toolsets.includes(id) ? m.toolsets.filter((t) => t !== id) : [...m.toolsets, id] }
-      : m));
-  };
-
   return (
-    <div className="flex h-full flex-col overflow-y-auto p-3">
-      <div className="mb-2 flex items-center gap-1.5">
-        <button type="button" aria-label="取消" className="rounded p-0.5 text-foreground-subtle hover:bg-hover hover:text-foreground" onClick={onCancel}>
+    <div className="flex h-full flex-col overflow-hidden">
+      <div className="flex shrink-0 items-center gap-1.5 border-b border-border/50 px-3 py-2">
+        <button type="button" aria-label="返回" className="rounded p-0.5 text-foreground-subtle hover:bg-hover hover:text-foreground" onClick={onCancel}>
           <ArrowLeftIcon className="size-3.5" />
         </button>
         <span className="text-ui-xs font-medium text-foreground">新建团队</span>
+        <span className="ml-auto text-ui-2xs text-foreground-subtlest">队长拆解分派 · 成员持久协作 · 群聊可插话</span>
       </div>
-      <div className="grid gap-2.5">
-        <Field label="团队名（小写英文）">
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="qa-team"
-            className={inputCls} />
-        </Field>
-        <Field label="团队目标">
-          <textarea value={goal} onChange={(e) => setGoal(e.target.value)} rows={2} placeholder="负责本项目的测试与验收…"
-            className={cn(inputCls, 'resize-none')} />
-        </Field>
-        <Field label="队长角色卡">
-          <textarea value={leaderRole} onChange={(e) => setLeaderRole(e.target.value)} rows={2} placeholder="拆解需求、分派任务、验收产出…"
-            className={cn(inputCls, 'resize-none')} />
-        </Field>
-        <Field label="队长权限模式">
-          <div className="flex gap-1">
-            {['accept_edits', 'default', 'bypass'].map((m) => (
-              <RouteChip key={m} label={m} active={leaderMode === m} onClick={() => setLeaderMode(m)} />
+      <div className="scroll-fine min-h-0 flex-1 overflow-y-auto p-3">
+        {/* 从模板开始 */}
+        <div className="mb-3">
+          <div className="mb-1.5 text-ui-2xs font-medium text-foreground-subtle">从模板开始（选后可改）</div>
+          <div className="flex flex-wrap gap-1.5">
+            {TEMPLATES.map((t) => (
+              <button key={t.id} type="button"
+                className="rounded-full border border-border bg-card px-2.5 py-1 text-ui-2xs text-foreground-subtle transition-colors hover:border-brand/50 hover:bg-hover hover:text-foreground"
+                onClick={() => applyTemplate(t)}>
+                {t.label}
+              </button>
             ))}
           </div>
-        </Field>
-        <div>
-          <div className="mb-1 flex items-center justify-between">
-            <span className="text-ui-2xs font-medium text-foreground-subtle">成员（角色卡 = 身份与能力面，权限统一 auto）</span>
-            <button type="button" className="flex items-center gap-0.5 text-ui-2xs text-brand hover:underline"
-              onClick={() => setMembers((ms) => [...ms, { name: '', role: '', toolsets: [] }])}>
+        </div>
+
+        {/* 团队信息 */}
+        <div className="mb-3 rounded-xl border border-border bg-card p-2.5">
+          <div className="mb-2 text-ui-2xs font-medium text-foreground-subtle">团队信息</div>
+          <div className="flex gap-2">
+            <label className="w-28 shrink-0">
+              <span className="mb-1 block text-ui-2xs text-foreground-subtlest">标识（小写英文）</span>
+              <input value={name} onChange={(e) => setName(e.target.value)} placeholder="qa-team" className={inputCls} />
+            </label>
+            <label className="min-w-0 flex-1">
+              <span className="mb-1 block text-ui-2xs text-foreground-subtlest">团队目标</span>
+              <input value={goal} onChange={(e) => setGoal(e.target.value)} placeholder="这个团队负责什么" className={inputCls} />
+            </label>
+          </div>
+        </div>
+
+        {/* 队长 */}
+        <div className="mb-3 rounded-xl border border-border bg-card p-2.5">
+          <div className="mb-2 flex items-center gap-1.5">
+            <CrownIcon className="size-3 text-amber-500" />
+            <span className="text-ui-2xs font-medium text-foreground-subtle">队长（拆解目标 · 分派 · 汇总）</span>
+          </div>
+          <textarea value={leaderRole} onChange={(e) => setLeaderRole(e.target.value)} rows={2}
+            placeholder="角色卡：队长怎么工作、怎么验收产出"
+            className={cn(inputCls, 'resize-none')} />
+          <div className="mt-2 flex flex-wrap items-center gap-1">
+            {PERM_MODES.map((m) => (
+              <button key={m.id} type="button" title={m.hint}
+                className={cn('rounded-full border px-2 py-0.5 text-ui-2xs transition-colors',
+                  leaderMode === m.id ? 'border-brand/60 bg-brand/10 text-foreground' : 'border-border text-foreground-subtle hover:bg-hover')}
+                onClick={() => setLeaderMode(m.id)}>
+                {m.label}
+              </button>
+            ))}
+            <span className="text-ui-2xs text-foreground-subtlest">
+              ← 队长的审批策略（{PERM_MODES.find((m) => m.id === leaderMode)?.hint}）
+            </span>
+          </div>
+        </div>
+
+        {/* 成员 */}
+        <div className="mb-3">
+          <div className="mb-1.5 flex items-center justify-between">
+            <span className="text-ui-2xs font-medium text-foreground-subtle">成员（权限统一自动编辑，危险操作升级给用户）</span>
+            <button type="button"
+              className="flex items-center gap-0.5 rounded-md border border-border px-1.5 py-0.5 text-ui-2xs text-foreground-subtle hover:bg-hover hover:text-foreground"
+              onClick={() => setMembers((ms) => [...ms, blankMember()])}>
               <PlusIcon className="size-3" /> 加成员
             </button>
           </div>
           <div className="grid gap-2">
             {members.map((m, i) => (
-              <div key={i} className="rounded-xl border border-border bg-card p-2">
-                <div className="flex gap-1.5">
-                  <input value={m.name} onChange={(e) => setMembers((ms) => ms.map((x, j) => j === i ? { ...x, name: e.target.value } : x))}
-                    placeholder="tester" className={cn(inputCls, 'w-24 shrink-0')} />
-                  <input value={m.role} onChange={(e) => setMembers((ms) => ms.map((x, j) => j === i ? { ...x, role: e.target.value } : x))}
-                    placeholder="角色卡：职责与产出规范" className={inputCls} />
-                  <button type="button" aria-label="移除成员"
-                    className="shrink-0 rounded p-1 text-foreground-subtlest hover:bg-hover hover:text-destructive"
-                    onClick={() => setMembers((ms) => ms.filter((_, j) => j !== i))}>
-                    <XIcon className="size-3" />
-                  </button>
-                </div>
-                <div className="mt-1.5 flex flex-wrap gap-1">
-                  {toolsets.map((t) => (
-                    <button key={t.id} type="button" title={t.notes}
-                      className={cn('rounded-full border px-1.5 py-0.5 text-ui-2xs transition-colors',
-                        m.toolsets.includes(t.id) ? 'border-brand/60 bg-brand/10 text-foreground' : 'border-border text-foreground-subtle hover:bg-hover')}
-                      onClick={() => toggleTs(i, t.id)}>
-                      {t.id}
+              <div key={i} className="rounded-xl border border-border bg-card p-2.5">
+                <div className="mb-2 flex items-center gap-1.5">
+                  <span className="flex size-5 items-center justify-center rounded-full border border-border bg-surface">
+                    <BotIcon className="size-3 text-brand" />
+                  </span>
+                  <span className="text-ui-2xs font-medium text-foreground-subtle">成员 {i + 1}</span>
+                  {members.length > 1 && (
+                    <button type="button" aria-label="移除成员"
+                      className="ml-auto rounded p-1 text-foreground-subtlest hover:bg-hover hover:text-destructive"
+                      onClick={() => setMembers((ms) => ms.filter((_, j) => j !== i))}>
+                      <XIcon className="size-3" />
                     </button>
-                  ))}
+                  )}
+                </div>
+                <div className="grid gap-2">
+                  <div className="flex gap-2">
+                    <label className="w-24 shrink-0">
+                      <span className="mb-1 block text-ui-2xs text-foreground-subtlest">标识</span>
+                      <input value={m.name} onChange={(e) => patchMember(i, { name: e.target.value })}
+                        placeholder="tester" className={inputCls} />
+                    </label>
+                    <label className="min-w-0 flex-1">
+                      <span className="mb-1 block text-ui-2xs text-foreground-subtlest">角色卡（身份与职责）</span>
+                      <input value={m.role} onChange={(e) => patchMember(i, { role: e.target.value })}
+                        placeholder="例：测试工程师，执行用例并输出结果清单" className={inputCls} />
+                    </label>
+                  </div>
+                  <div>
+                    <span className="mb-1 block text-ui-2xs text-foreground-subtlest">能力来源</span>
+                    <div className="flex flex-wrap items-center gap-1">
+                      <button type="button"
+                        className={cn('rounded-full border px-2 py-0.5 text-ui-2xs transition-colors',
+                          !m.byMode ? 'border-brand/60 bg-brand/10 text-foreground' : 'border-border text-foreground-subtle hover:bg-hover')}
+                        onClick={() => patchMember(i, { byMode: false })}>
+                        按工具集
+                      </button>
+                      <button type="button"
+                        className={cn('rounded-full border px-2 py-0.5 text-ui-2xs transition-colors',
+                          m.byMode ? 'border-brand/60 bg-brand/10 text-foreground' : 'border-border text-foreground-subtle hover:bg-hover')}
+                        onClick={() => patchMember(i, { byMode: true })}>
+                        继承模式
+                      </button>
+                      {m.byMode ? (
+                        <select value={m.mode} onChange={(e) => patchMember(i, { mode: e.target.value })}
+                          className="rounded-md border border-border bg-input px-1 py-0.5 text-ui-2xs text-foreground outline-none">
+                          <option value="">选择模式…</option>
+                          {modes.map((md) => <option key={md.id} value={md.id}>{md.name}</option>)}
+                        </select>
+                      ) : (
+                        <span className="text-ui-2xs text-foreground-subtlest">在下方勾选工具集（不选 = 纯对话 + 基础工具）</span>
+                      )}
+                    </div>
+                  </div>
+                  {!m.byMode && toolsets.length > 0 && (
+                    <div className="flex flex-wrap gap-1">
+                      {toolsets.map((t) => (
+                        <button key={t.id} type="button" title={t.notes || undefined}
+                          className={cn('rounded-full border px-1.5 py-0.5 text-ui-2xs transition-colors',
+                            m.toolsets.includes(t.id) ? 'border-brand/60 bg-brand/10 text-foreground' : 'border-border text-foreground-subtle hover:bg-hover')}
+                          onClick={() => patchMember(i, {
+                            toolsets: m.toolsets.includes(t.id) ? m.toolsets.filter((x) => x !== t.id) : [...m.toolsets, t.id],
+                          })}>
+                          {t.id}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             ))}
           </div>
         </div>
-        {err && <div className="text-ui-2xs text-destructive">{err}</div>}
+
+        {err && (
+          <div className="mb-3 rounded-lg border border-destructive/40 bg-destructive/10 px-2.5 py-1.5 text-ui-2xs text-destructive">{err}</div>
+        )}
+      </div>
+      {/* 底部 CTA */}
+      <div className="shrink-0 border-t border-border/50 p-3">
         <button type="button" disabled={busy || !name.trim() || !leaderRole.trim()}
-          className="rounded-lg bg-brand px-3 py-2 text-ui-xs font-medium text-white disabled:opacity-40"
+          className="w-full rounded-lg bg-brand px-3 py-2 text-ui-xs font-medium text-white transition-opacity disabled:opacity-40"
           onClick={() => void submit()}>
           {busy ? '创建中…' : '创建团队'}
         </button>
+        <div className="mt-1.5 text-center text-ui-2xs text-foreground-subtlest">
+          创建后队长在群聊里等你下达第一个目标
+        </div>
       </div>
     </div>
   );

@@ -706,7 +706,7 @@ func teamDetailJSON(t *Team) map[string]any {
 			toolsets = append(append([]string{}, toolsets...), "team")
 		}
 		members = append(members, map[string]any{
-			"name": m.name, "role": m.role, "toolsets": toolsets, "isLeader": m.isLeader,
+			"name": m.name, "role": m.role, "mode": m.mode, "toolsets": toolsets, "isLeader": m.isLeader,
 			"sessionId": sid, "status": status, "activity": teamsReg.activityOf(sid),
 		})
 	}
