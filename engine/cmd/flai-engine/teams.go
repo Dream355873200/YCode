@@ -74,7 +74,7 @@ type Team struct {
 type member struct {
 	name     string
 	role     string
-	mode     string   // 能力基底模式（空 = 仅按 toolsets）
+	mode     string // 能力基底模式（空 = 仅按 toolsets）
 	toolsets []string
 	isLeader bool
 }
@@ -140,6 +140,13 @@ const liveBufMax = 300
 func (r *teamRegistry) register(t *Team) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	// 先清本团队旧绑定再重建：编辑团队可能移除/改名成员，残留绑定会让
+	// 已删除的成员会话继续持有角色卡与工具白名单。
+	for sid, b := range r.bySess {
+		if b.team.Name == t.Name && b.team.Dir == t.Dir {
+			delete(r.bySess, sid)
+		}
+	}
 	for _, m := range t.iterMembers() {
 		r.bySess[teamSessionID(t.Name, m.name)] = teamBinding{team: t, member: m, sessionID: teamSessionID(t.Name, m.name)}
 	}
@@ -801,6 +808,80 @@ func teamsRoutes() map[string]func(http.ResponseWriter, *http.Request) {
 				http.Error(w, err.Error(), http.StatusNotFound)
 				return
 			}
+			writeJSON(w, teamDetailJSON(t))
+		},
+		// PUT /teams/{name} 编辑团队（角色卡/目标/成员增删改）：team.json
+		// 落盘 + 绑定重建。成员的持久会话按名复用——改角色卡下一轮生效，
+		// 会话历史（跨任务记忆）不丢；被移除成员的会话删除。
+		"POST /teams/{name}/update": func(w http.ResponseWriter, r *http.Request) {
+			dir, name := r.URL.Query().Get("dir"), r.PathValue("name")
+			t, err := loadTeam(dir, name)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusNotFound)
+				return
+			}
+			var req struct {
+				Goal       string       `json:"goal"`
+				Leader     TeamLeader   `json:"leader"`
+				LeaderMode string       `json:"leaderMode"`
+				Members    []TeamMember `json:"members"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				http.Error(w, "请求体解析失败: "+err.Error(), http.StatusBadRequest)
+				return
+			}
+			if strings.TrimSpace(req.Leader.Role) == "" || len(req.Members) == 0 {
+				http.Error(w, "需要 leader 角色卡与至少一名成员", http.StatusBadRequest)
+				return
+			}
+			if req.LeaderMode != "" {
+				req.Leader.Mode = req.LeaderMode
+			}
+			seen := map[string]bool{}
+			for _, m := range req.Members {
+				if !teamNameRe.MatchString(m.Name) || seen[m.Name] || m.Name == "leader" {
+					http.Error(w, "成员名不合法或重复: "+m.Name, http.StatusBadRequest)
+					return
+				}
+				if strings.TrimSpace(m.Role) == "" {
+					http.Error(w, "成员 "+m.Name+" 缺少角色卡", http.StatusBadRequest)
+					return
+				}
+				seen[m.Name] = true
+				for _, ts := range m.Toolsets {
+					if _, ok := toolsetRegistry[ts]; !ok {
+						http.Error(w, "成员 "+m.Name+" 引用了未知工具集: "+ts, http.StatusBadRequest)
+						return
+					}
+					if ts == "team" {
+						http.Error(w, "成员不能持有 team 工具集（递归防护）", http.StatusBadRequest)
+						return
+					}
+				}
+				if m.Mode != "" && catalog().Mode(m.Mode) == nil {
+					http.Error(w, "成员 "+m.Name+" 的能力基底模式不存在: "+m.Mode, http.StatusBadRequest)
+					return
+				}
+			}
+			for _, ts := range req.Leader.Toolsets {
+				if _, ok := toolsetRegistry[ts]; !ok {
+					http.Error(w, "leader 引用了未知工具集: "+ts, http.StatusBadRequest)
+					return
+				}
+			}
+			// 移除成员：删其持久会话（历史随团队语义一并清除）
+			for _, old := range t.Members {
+				if !seen[old.Name] {
+					_ = engineApp.Sessions().Delete(r.Context(), teamSessionID(name, old.Name))
+				}
+			}
+			t.Goal, t.Leader, t.Members = req.Goal, req.Leader, req.Members
+			b, _ := json.MarshalIndent(t, "", "  ")
+			if err := os.WriteFile(filepath.Join(teamDirOf(dir, name), "team.json"), b, 0o644); err != nil {
+				http.Error(w, "写 team.json 失败: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
+			teamsReg.register(t) // 绑定重建：新成员注册、移除成员失效；角色卡下一轮生效
 			writeJSON(w, teamDetailJSON(t))
 		},
 		"DELETE /teams/{name}": func(w http.ResponseWriter, r *http.Request) {

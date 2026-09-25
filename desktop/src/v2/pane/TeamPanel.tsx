@@ -11,7 +11,7 @@
 // 设计如此——点成员才看时间线）。
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  ArrowLeftIcon, BotIcon, CheckIcon, CrownIcon, PlusIcon, SendIcon, UserIcon, XIcon,
+  ArrowLeftIcon, BotIcon, CheckIcon, CrownIcon, PencilIcon, PlusIcon, SaveIcon, SendIcon, UserIcon, XIcon,
 } from 'lucide-react';
 import { engine } from '../protocol';
 import { useApp } from '../app/appState';
@@ -294,6 +294,8 @@ function MemberView({ view, dir, onBack }: {
   const [msgs, setMsgs] = useState<RawMsg[]>([]);
   const [live, setLive] = useState<{ status: string; activity: string; events: Array<{ ts: string; type: string; text: string }> }>({ status: 'idle', activity: '', events: [] });
   const [draft, setDraft] = useState('');
+  const [editing, setEditing] = useState(false);
+  const [teamNow, setTeamNow] = useState(team);
 
   const load = useCallback(async (): Promise<void> => {
     const l = await api<{ status: string; activity: string; events: typeof live.events }>(
@@ -317,6 +319,14 @@ function MemberView({ view, dir, onBack }: {
     void load();
   };
 
+  if (editing) {
+    return (
+      <EditMemberForm
+        team={teamNow} member={member} dir={dir}
+        onSaved={(d) => { setTeamNow(d); setEditing(false); }}
+        onCancel={() => setEditing(false)} />
+    );
+  }
   return (
     <div className="flex h-full flex-col overflow-hidden">
       <div className="shrink-0 border-b border-border/50 px-2 py-1.5">
@@ -326,6 +336,11 @@ function MemberView({ view, dir, onBack }: {
           </button>
           <StatusDot status={live.status} />
           <span className="text-ui-xs font-medium text-foreground">{member.name}</span>
+          <button type="button" aria-label="编辑角色卡" title="编辑角色卡与能力"
+            className="rounded p-0.5 text-foreground-subtlest hover:bg-hover hover:text-foreground"
+            onClick={() => setEditing(true)}>
+            <PencilIcon className="size-3" />
+          </button>
           <span className="ml-auto truncate text-ui-2xs text-foreground-subtlest">{live.activity || member.role}</span>
         </div>
       </div>
@@ -382,6 +397,140 @@ function MemberRow({ msg }: { msg: RawMsg }) {
         }
         return null;
       })}
+    </div>
+  );
+}
+
+// ---------- 编辑角色卡 ----------
+
+/** 编辑成员/队长的角色卡与能力：PUT /teams/{name} 整体提交。
+    成员持久会话按名复用——角色卡下一轮生效，跨任务记忆不丢。 */
+function EditMemberForm({ team, member, dir, onSaved, onCancel }: {
+  team: TeamDetail; member: TeamMemberInfo; dir: string;
+  onSaved(team: TeamDetail): void; onCancel(): void;
+}) {
+  const [role, setRole] = useState(member.role);
+  const [byMode, setByMode] = useState(!!member.mode);
+  const [mode, setMode] = useState(member.mode || '');
+  const [toolsets, setToolsets] = useState<string[]>(member.toolsets.filter((t) => t !== 'team'));
+  const [leaderMode, setLeaderMode] = useState(team.leaderMode || 'accept_edits');
+  const [toolsetCatalog, setToolsetCatalog] = useState<Array<{ id: string; notes: string }>>([]);
+  const [modes, setModes] = useState<Array<{ id: string; name: string }>>([]);
+  const [err, setErr] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    void (async () => {
+      const r = await api<{ toolsets: Record<string, { tools: string[]; notes: string[] }>; modes: Array<{ id: string; name: string }> }>(engine.get('/modes'));
+      if (!r) return;
+      if (r.toolsets) {
+        setToolsetCatalog(Object.entries(r.toolsets)
+          .filter(([id]) => id !== 'team')
+          .map(([id, v]) => ({ id, notes: (v.notes || []).join('；') })));
+      }
+      if (r.modes) setModes(r.modes.map((m) => ({ id: m.id, name: m.name })));
+    })();
+  }, []);
+
+  const save = async (): Promise<void> => {
+    setErr('');
+    setBusy(true);
+    try {
+      const leaderNow = team.members.find((m) => m.isLeader)!;
+      const nextLeader = member.isLeader
+        ? { role, mode: leaderMode, toolsets: [] }
+        : { role: leaderNow.role, mode: team.leaderMode || 'accept_edits', toolsets: leaderNow.toolsets.filter((t) => t !== 'team') };
+      const nextMembers = team.members
+        .filter((m) => !m.isLeader)
+        .map((m) => (m.name === member.name
+          ? { name: m.name, role, mode: byMode ? mode : '', toolsets }
+          : { name: m.name, role: m.role, mode: m.mode || '', toolsets: m.toolsets.filter((t) => t !== 'team') }));
+      const d = await api<TeamDetail>(engine.post(`/teams/${team.name}/update?dir=${encodeURIComponent(dir)}`, {
+        goal: team.goal, leader: nextLeader, leaderMode: nextLeader.mode, members: nextMembers,
+      }));
+      if (d) onSaved(d);
+      else setErr('保存失败（校验未过或引擎不可达）');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="flex h-full flex-col overflow-hidden">
+      <div className="flex shrink-0 items-center gap-1.5 border-b border-border/50 px-3 py-2">
+        <button type="button" aria-label="取消" className="rounded p-0.5 text-foreground-subtle hover:bg-hover hover:text-foreground" onClick={onCancel}>
+          <ArrowLeftIcon className="size-3.5" />
+        </button>
+        <span className="text-ui-xs font-medium text-foreground">编辑 {member.isLeader ? '队长' : `成员 ${member.name}`}</span>
+      </div>
+      <div className="scroll-fine min-h-0 flex-1 overflow-y-auto p-3">
+        <div className="rounded-xl border border-border bg-card p-2.5">
+          <div className="mb-1.5 text-ui-2xs font-medium text-foreground-subtle">角色卡（身份与职责；下一轮生效，历史记忆不丢）</div>
+          <textarea value={role} onChange={(e) => setRole(e.target.value)} rows={4}
+            className={cn(inputCls, 'resize-none')} />
+        </div>
+        {member.isLeader ? (
+          <div className="mt-3 rounded-xl border border-border bg-card p-2.5">
+            <div className="mb-1.5 text-ui-2xs font-medium text-foreground-subtle">审批策略</div>
+            <div className="flex flex-wrap gap-1">
+              {PERM_MODES.map((m) => (
+                <button key={m.id} type="button" title={m.hint}
+                  className={cn('rounded-full border px-2 py-0.5 text-ui-2xs transition-colors',
+                    leaderMode === m.id ? 'border-brand/60 bg-brand/10 text-foreground' : 'border-border text-foreground-subtle hover:bg-hover')}
+                  onClick={() => setLeaderMode(m.id)}>
+                  {m.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className="mt-3 rounded-xl border border-border bg-card p-2.5">
+              <div className="mb-1.5 text-ui-2xs font-medium text-foreground-subtle">能力来源</div>
+              <div className="flex flex-wrap items-center gap-1">
+                <button type="button"
+                  className={cn('rounded-full border px-2 py-0.5 text-ui-2xs transition-colors', !byMode ? 'border-brand/60 bg-brand/10 text-foreground' : 'border-border text-foreground-subtle hover:bg-hover')}
+                  onClick={() => setByMode(false)}>按工具集</button>
+                <button type="button"
+                  className={cn('rounded-full border px-2 py-0.5 text-ui-2xs transition-colors', byMode ? 'border-brand/60 bg-brand/10 text-foreground' : 'border-border text-foreground-subtle hover:bg-hover')}
+                  onClick={() => setByMode(true)}>继承模式</button>
+                {byMode && (
+                  <select value={mode} onChange={(e) => setMode(e.target.value)}
+                    className="rounded-md border border-border bg-input px-1 py-0.5 text-ui-2xs text-foreground outline-none">
+                    <option value="">选择模式…</option>
+                    {modes.map((md) => <option key={md.id} value={md.id}>{md.name}</option>)}
+                  </select>
+                )}
+              </div>
+            </div>
+            {!byMode && toolsetCatalog.length > 0 && (
+              <div className="mt-3 rounded-xl border border-border bg-card p-2.5">
+                <div className="mb-1.5 text-ui-2xs font-medium text-foreground-subtle">工具集</div>
+                <div className="flex flex-wrap gap-1">
+                  {toolsetCatalog.map((t) => (
+                    <button key={t.id} type="button" title={t.notes || undefined}
+                      className={cn('rounded-full border px-1.5 py-0.5 text-ui-2xs transition-colors',
+                        toolsets.includes(t.id) ? 'border-brand/60 bg-brand/10 text-foreground' : 'border-border text-foreground-subtle hover:bg-hover')}
+                      onClick={() => setToolsets((ts) => ts.includes(t.id) ? ts.filter((x) => x !== t.id) : [...ts, t.id])}>
+                      {t.id}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
+        )}
+        {err && (
+          <div className="mt-3 rounded-lg border border-destructive/40 bg-destructive/10 px-2.5 py-1.5 text-ui-2xs text-destructive">{err}</div>
+        )}
+      </div>
+      <div className="shrink-0 border-t border-border/50 p-3">
+        <button type="button" disabled={busy || !role.trim()}
+          className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-brand px-3 py-2 text-ui-xs font-medium text-white transition-opacity disabled:opacity-40"
+          onClick={() => void save()}>
+          <SaveIcon className="size-3.5" /> {busy ? '保存中…' : '保存'}
+        </button>
+      </div>
     </div>
   );
 }
