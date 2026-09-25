@@ -11,8 +11,9 @@
 // 设计如此——点成员才看时间线）。
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  ArrowLeftIcon, BotIcon, CheckIcon, CrownIcon, PencilIcon, PlusIcon, SaveIcon, SendIcon, UserIcon, XIcon,
+  ArrowLeftIcon, BotIcon, CheckIcon, CrownIcon, MessageCircleQuestionIcon, PencilIcon, PlusIcon, SaveIcon, SendIcon, SquareIcon, UserIcon, XIcon,
 } from 'lucide-react';
+import { renderMD } from '../../lib/markdown';
 import { engine } from '../protocol';
 import { useApp } from '../app/appState';
 import { cn } from '../components/lib/utils';
@@ -164,22 +165,31 @@ function GroupChat({ view, dir, onBack, onOpenMember }: {
         </div>
         <div className="mt-1.5 flex flex-wrap gap-1">
           {members.map((m) => (
-            <button key={m.name} type="button"
-              className={cn('flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-ui-2xs transition-colors',
-                m.status === 'running' ? 'border-brand/50 bg-brand/10 text-foreground' : 'border-border text-foreground-subtle hover:bg-hover hover:text-foreground')}
-              onClick={() => onOpenMember(m)}
-              title={`${m.role}${m.activity ? `\n${m.activity}` : ''}`}>
-              <StatusDot status={m.status} />
-              {m.isLeader && <CrownIcon className="size-2.5 text-amber-500" />}
-              {m.name}
-            </button>
+            <span key={m.name}
+              className={cn('flex items-center rounded-full border text-ui-2xs transition-colors',
+                m.status === 'running' ? 'border-brand/50 bg-brand/10 text-foreground' : 'border-border text-foreground-subtle hover:bg-hover hover:text-foreground')}>
+              <button type="button" className="flex items-center gap-1 py-0.5 pl-1.5 pr-1.5"
+                onClick={() => onOpenMember(m)}
+                title={m.activity ? `${m.role}（正在：${m.activity}）` : m.role}>
+                <StatusDot status={m.status} />
+                {m.isLeader && <CrownIcon className="size-2.5 text-amber-500" />}
+                {m.name}
+              </button>
+              {m.status === 'running' && (
+                <button type="button" aria-label={`停止 ${m.name}`} title={`停止 ${m.name} 当前的运行`}
+                  className="mr-1 rounded-full p-0.5 text-foreground-subtlest hover:bg-destructive/15 hover:text-destructive"
+                  onClick={() => void engine.post('/interrupt', { session_id: m.sessionId, reason: '用户在团队面板停止' })}>
+                  <SquareIcon className="size-2" />
+                </button>
+              )}
+            </span>
           ))}
         </div>
       </div>
       {/* 消息流 */}
       <div className="min-h-0 flex-1 overflow-y-auto px-3 py-2">
         <div className="grid gap-2">
-          {msgs.map((m, i) => <ChatBubble key={i} m={m} members={members} />)}
+          {msgs.map((m, i) => <ChatBubble key={i} m={m} members={members} onReply={(who) => setAt(who === 'leader' ? '' : who)} />)}
         </div>
         <div ref={bottomRef} />
       </div>
@@ -228,10 +238,33 @@ function StatusDot({ status }: { status: string }) {
   );
 }
 
-function ChatBubble({ m, members }: { m: ChatMsg; members: TeamMemberInfo[] }) {
+function ChatBubble({ m, members, onReply }: { m: ChatMsg; members: TeamMemberInfo[]; onReply: (who: string) => void }) {
   const { post } = engine;
   const [settled, setSettled] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const sender = members.find((x) => x.name === m.from);
+
+  // 提问：团队会话的 confirm/AskUser 转成群聊提问（不阻塞），回复经 composer
+  // 路由回提问者——醒目卡片 + 一键「回复」切好 @ 目标
+  if (m.type === 'question') {
+    const toUser = m.to === 'user';
+    return (
+      <div className="rounded-xl border border-brand/40 bg-brand/5 px-3 py-2">
+        <div className="flex items-center gap-1.5 text-ui-2xs font-medium text-brand">
+          <MessageCircleQuestionIcon className="size-3" />
+          {m.from} {toUser ? '向你提问' : '向队长提问'}
+        </div>
+        <div className="v2-md mt-1 text-ui-xs leading-relaxed text-foreground" dangerouslySetInnerHTML={{ __html: renderMD(m.text) }} />
+        {toUser && (
+          <button type="button"
+            className="mt-2 rounded-md border border-brand/50 px-2 py-0.5 text-ui-2xs text-brand hover:bg-brand/10"
+            onClick={() => onReply(m.from)}>
+            回复 {m.from}
+          </button>
+        )}
+      </div>
+    );
+  }
 
   if (m.type === 'permission' && m.request_id) {
     return (
@@ -276,7 +309,14 @@ function ChatBubble({ m, members }: { m: ChatMsg; members: TeamMemberInfo[] }) {
           {m.type === 'result' && ' · 产出'}
           {m.to && m.to !== m.from && <span> → {m.to}</span>}
         </div>
-        <div className="mt-0.5 whitespace-pre-wrap break-words text-ui-xs leading-relaxed text-foreground">{m.text}</div>
+        <div className={cn('v2-md mt-0.5 break-words text-ui-xs leading-relaxed text-foreground',
+          !expanded && m.text.length > 600 && 'max-h-48 overflow-hidden [mask-image:linear-gradient(to_bottom,black_70%,transparent)]')}
+          dangerouslySetInnerHTML={{ __html: renderMD(m.text) }} />
+        {m.text.length > 600 && (
+          <button type="button" className="mt-1 text-ui-2xs text-brand hover:underline" onClick={() => setExpanded(!expanded)}>
+            {expanded ? '收起' : '展开全文'}
+          </button>
+        )}
       </div>
     </div>
   );

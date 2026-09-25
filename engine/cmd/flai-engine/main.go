@@ -35,6 +35,10 @@ var sessMap *sessionMap
 // 转发进群聊走用户终审）。
 var enginePermHandler *goagent.PermissionHandler
 
+// engineInterrupt 中断处理器（/interrupt 端点共用；团队跨会话 run 在
+// teams.go 里自行登记——它们不走 /chat，否则停止按钮对其无效）。
+var engineInterrupt *goagent.InterruptHandler
+
 func init() {
 	_, file, _, _ := runtime.Caller(0)
 	// DEVICE.md 是设备状态的会话上下文文件（仅注入启用 device 工具集的会话）
@@ -129,17 +133,17 @@ func main() {
 		goagent.WithPermissionMode(goagent.PermissionAcceptEdits),                  // 初始模式「自动编辑」：普通工具免问，危险操作问用户（UI 可切 plan/bypass）
 		goagent.WithMaxTurns(80),
 		goagent.WithCostTracking(),
-		goagent.WithHTTPRoutes(userEditRoutes()), // 编辑器写回通知端点（/notify/user-edit，app 创建后经 engineApp 接线）
-		goagent.WithHTTPRoutes(modesRoutes()),    // 模式发现端点（全部模式 + 聚合视图 + 工具集明细）
-		goagent.WithHTTPRoutes(pluginsRoutes()),  // 插件发现端点（设置页插件清单 + MCP 状态）
-		goagent.WithHTTPRoutes(mcpRoutes()),      // MCP 服务器状态端点
-		goagent.WithHTTPRoutes(skillsRoutes()),   // 技能清单端点（按插件/全局归属）
-		goagent.WithHTTPRoutes(promptsRoutes()),  // 提示词组端点（设置页管理提示词组）
-		goagent.WithHTTPRoutes(reloadRoutes()),   // 能力目录热重载 + 目录错误
-		goagent.WithHTTPRoutes(debugRoutes()),    // 诊断端点（卡死时导出 goroutine 调用栈）
-		goagent.WithHTTPRoutes(pipelineRoutes()), // pipeline 运行历史（列表/详情，快照由 GoAgent 落盘）
+		goagent.WithHTTPRoutes(userEditRoutes()),      // 编辑器写回通知端点（/notify/user-edit，app 创建后经 engineApp 接线）
+		goagent.WithHTTPRoutes(modesRoutes()),         // 模式发现端点（全部模式 + 聚合视图 + 工具集明细）
+		goagent.WithHTTPRoutes(pluginsRoutes()),       // 插件发现端点（设置页插件清单 + MCP 状态）
+		goagent.WithHTTPRoutes(mcpRoutes()),           // MCP 服务器状态端点
+		goagent.WithHTTPRoutes(skillsRoutes()),        // 技能清单端点（按插件/全局归属）
+		goagent.WithHTTPRoutes(promptsRoutes()),       // 提示词组端点（设置页管理提示词组）
+		goagent.WithHTTPRoutes(reloadRoutes()),        // 能力目录热重载 + 目录错误
+		goagent.WithHTTPRoutes(debugRoutes()),         // 诊断端点（卡死时导出 goroutine 调用栈）
+		goagent.WithHTTPRoutes(pipelineRoutes()),      // pipeline 运行历史（列表/详情，快照由 GoAgent 落盘）
 		goagent.WithHTTPRoutes(subagentTraceRoutes()), // 子代理轨迹（只读工作过程时间线）
-		goagent.WithHTTPRoutes(teamsRoutes()),    // 团队端点（创建/列表/详情/群聊/插话/实时事件）
+		goagent.WithHTTPRoutes(teamsRoutes()),         // 团队端点（创建/列表/详情/群聊/插话/实时事件）
 	}
 	// 工具集装配：注册表内全部工具集进程内装一次（会话可见性由工具
 	// 过滤器按模式裁剪——reload 后新模式引用任意工具集即生效）。options
@@ -172,6 +176,10 @@ func main() {
 	askHandler := goagent.NewAskUserHandler()
 	app.SetAskUserHandler(askHandler)
 	builtin.SetAskUserCallbackCtx(func(gctx goagent.Context, question string) (string, error) {
+		// 团队会话没有前端连接：提问转成群聊消息、不阻塞（见 teams.go）
+		if ans, ok := teamAskToChat(gctx, question, nil); ok {
+			return ans, nil
+		}
 		// 传 gctx（内嵌 context.Context）：提问阻塞期间 run 被中断时，
 		// /interrupt 的 cancel 会解除等待，避免会话卡死在提问上。
 		return askHandler.AskSessionCtx(gctx, gctx.SessionID, question, nil)
@@ -180,12 +188,16 @@ func main() {
 	// 对话内确认框：confirm 是模式无关的通用能力（单选/多选/纯确认卡，
 	// 结构化载荷经 payload 字段下发；ctx 感知中断）。
 	name, def := tools.NewConfirmTool(func(gctx goagent.Context, q string, payload map[string]any) (string, error) {
+		if ans, ok := teamAskToChat(gctx, q, payload); ok {
+			return ans, nil
+		}
 		return askHandler.AskSessionCtx(gctx, gctx.SessionID, q, payload)
 	})
 	app.Tool(name, def)
 
 	// 中断链路：桌面壳「⏹ 终止」按钮 → POST /interrupt → 取消正在执行的任务
-	app.SetInterruptHandler(goagent.NewInterruptHandler())
+	engineInterrupt = goagent.NewInterruptHandler()
+	app.SetInterruptHandler(engineInterrupt)
 
 	// 任务分区闲置回收：每分钟扫一次，10 分钟没动静的分区逐出内存
 	//（落盘数据保留，下次访问自动从磁盘恢复）。

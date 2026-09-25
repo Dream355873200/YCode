@@ -406,8 +406,13 @@ func runMemberSession(ctx goagent.Context, b teamBinding, input string) (string,
 		teamsReg.setActivity(sid, firstLine64(s))
 	}
 
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	if engineInterrupt != nil {
+		defer engineInterrupt.Register(sid, cancel)()
+	}
 	var finalText string
-	for ev := range engineApp.RunSession(ctx, sid, input) {
+	for ev := range engineApp.RunSession(runCtx, sid, input) {
 		switch ev.Type {
 		case goagent.EventTextDelta:
 			textBuf.WriteString(ev.Text)
@@ -487,8 +492,13 @@ func routeToTeamMember(t *Team, m member, text, from string) error {
 // drainToChat 后台驱动一个会话跑一轮，最终产出写回群聊（群聊路由用；
 // team_dispatch 不走这里——它的产出作为工具结果返回分派方）。
 func drainToChat(t *Team, from, sid, input string) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if engineInterrupt != nil {
+		defer engineInterrupt.Register(sid, cancel)()
+	}
 	var finalText string
-	for ev := range engineApp.RunSession(context.Background(), sid, input) {
+	for ev := range engineApp.RunSession(ctx, sid, input) {
 		if ev.Type == goagent.EventDone {
 			finalText = lastAssistantText(ev.Messages)
 		} else if ev.Type == goagent.EventError {
@@ -1015,6 +1025,55 @@ func teamsRoutes() map[string]func(http.ResponseWriter, *http.Request) {
 			writeJSON(w, map[string]any{"status": status, "activity": activity, "events": live})
 		},
 	}
+}
+
+// teamAskToChat 团队会话的提问/确认不走前端卡片：团队会话没有 SSE 连接，
+// AskSessionCtx 会永久阻塞在无人应答的等待上（leader 卡死、后续群聊消息
+// 全被插话进一个永不结束的 run——「@leader 不回复」的根因）。改为把问题
+// 发进群聊并立即返回，由提问方结束本轮等待回复；回复经群聊路由到其会话
+// 作为下一轮输入。ok=false 表示非团队会话（走原前端流程）。
+func teamAskToChat(ctx goagent.Context, question string, payload map[string]any) (string, bool) {
+	b, ok := teamsReg.binding(ctx.SessionID)
+	if !ok {
+		return "", false
+	}
+	text := question
+	if opts, ok := payload["options"].([]any); ok && len(opts) > 0 {
+		var labels []string
+		for _, o := range opts {
+			switch v := o.(type) {
+			case string:
+				labels = append(labels, v)
+			case map[string]any:
+				if l, ok := v["label"].(string); ok {
+					labels = append(labels, l)
+				}
+			}
+		}
+		if len(labels) > 0 {
+			text += "\n选项：" + strings.Join(labels, " / ")
+		}
+	}
+	to := "user"
+	if !b.member.isLeader {
+		to = "leader"
+		notifyLeaderQuiet(b.team, fmt.Sprintf("[群聊 @leader] %s 提问: %s", b.member.name, text))
+	}
+	appendChat(b.team, TeamChatMsg{From: b.member.name, To: to, Type: "question", Text: text})
+	return "问题已发到团队群聊，等待回复。不要继续等待或重复提问——请结束本轮，回复会作为新消息送达你的会话。", true
+}
+
+// notifyLeaderQuiet 给 leader 递消息但不写群聊（调用方已记录群聊）。
+func notifyLeaderQuiet(t *Team, text string) {
+	lsid := teamSessionID(t.Name, "leader")
+	if hub := engineApp.Steering(); hub != nil {
+		if teamBusy(lsid) {
+			_ = hub.Steer(lsid, text)
+			return
+		}
+		hub.Enqueue(lsid, text)
+	}
+	go drainToChat(t, "leader", lsid, "")
 }
 
 // activityOf 读取成员当前活动（空串 = 无）。
