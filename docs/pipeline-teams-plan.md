@@ -61,9 +61,38 @@
 
 ### P1 · 需要壳/引擎补线（工作量小，体验收益大）
 
-**⑤ 右栏「流水线」面板**：`OnEvent` → SSE 帧 → 新增 `pipeline` 右栏面板：
-节点状态图（运行/完成/等待审核）、每节点思考流、审核待办卡。事件管道
-照抄 usage 帧的现有链路（loop → SSE → store → 组件）。
+**⑤ 右栏「流水线」面板 + 运行中 DAG 状态图**：
+
+核心缺失 piece：**结构化的 DAG 状态快照输出**——前端不该从事件流里拼图，
+引擎直接吐幂等的全量快照，前端整体替换渲染。
+
+```
+GoAgent（PipelineConfig 增加回调）
+  OnState func(PipelineDAGSnapshot)
+  // PipelineDAGSnapshot = {
+  //   run_id, updated_at,
+  //   nodes: [{ name, status: pending|running|done|failed|review|drained,
+  //             workers_active, queued, done_count, error? }],
+  //   edges: [{ from, to, kind: "data"(Injects) | "dep"(DependsOn) }],
+  // }
+  // pipeline 内部本就持有这些状态（pipelineNodeState：队列深度/worker 数/完成数），
+  // 每次状态迁移（节点启动/完成/队列 push/close/进审核）后合成全量快照回调一次。
+
+引擎（flai-engine）
+  OnState → SSE 帧 type: "pipeline_state"（全量替换，幂等；前端无需 diff）
+  + GET /pipelines/<run_id>/state → 同一快照（刷新/重进项目页时拉全量）
+
+前端（右栏 DagPanel）
+  - 布局：按 DependsOn 拓扑分层（最长路径分层），层内水平排布；
+    edge 画 SVG 折线（数据流实线、依赖虚线）
+  - 节点框：状态色（pending 灰 / running 品牌色呼吸 / done 绿 /
+    failed 红 / review 黄）+ 队列深度徽标（queued N）
+  - 交互：点节点 → 侧栏展示该节点思考流 / 产出 / 审核卡（复用 PermissionCard）
+  - 渲染即替换 state（React 状态 = 最新快照），无 diff 逻辑
+```
+
+配套事件：`OnEvent` 的 progress/thinking 继续走细粒度流（选中节点的直播），
+`OnState` 只负责拓扑与状态——两者职责分离，前端渲染不会被事件流冲垮。
 
 **⑥ 审核接入审批 UI**：Review 节点的 supervisor 审核卡复用
 `PermissionCard`/`QuestionPanel`（approve/reject/打回原因），与手动审批模式
@@ -74,7 +103,7 @@
 会话级工具过滤沿用工具集机制：pipeline 节点只能引用本插件可见工具。
 
 **⑧ 运行落盘与恢复**：pipeline 状态写入 `.yume/pipelines/<id>.json`
-（节点/队列/已发任务），应用重启后可观察历史（恢复执行依赖引擎 L2）。
+（即 DAG 快照的历史序列），应用重启后可回放/观察（恢复执行依赖引擎 L2）。
 
 ### P2 · Teams 架构（基于 pipeline 原语演进）
 
