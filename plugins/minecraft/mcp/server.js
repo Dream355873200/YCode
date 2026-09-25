@@ -286,6 +286,41 @@ def("mc_craft", "合成物品：按名字模糊匹配配方。需要工作台的
   return { __text: `已合成 ${entry[0]} x${count}\n背包: ${invSummary(b)}` };
 });
 
+def("mc_wiki", "查 Minecraft Wiki（minecraft.wiki）：配方、物品用途、生物掉落、机制。query 传主题（如 'crafting table'、'diamond'、'zombie drops'）；页名已知时传 page 直取（如 'Tutorials/Beginner's guide'）。返回 wikitext 节选。", {
+  type: "object",
+  properties: {
+    query: { type: "string", description: "搜索关键词" },
+    page: { type: "string", description: "直接取某个页面（title，如 'Crafting/Stone Pickaxe'）" },
+    limit: { type: "integer", description: "正文截断长度（默认 4000 字符）" },
+  },
+  required: [],
+}, async (a) => {
+  if (typeof fetch !== "function") return { __text: "当前 Node 版本没有全局 fetch（需 Node 18+）" };
+  const api = "https://minecraft.wiki/api.php";
+  const limit = Math.min(12000, Math.max(500, a.limit || 4000));
+  try {
+    let title = a.page;
+    if (!title) {
+      const q = encodeURIComponent(String(a.query || ""));
+      if (!q) return { __text: "传 query（搜索词）或 page（页面名）" };
+      const sr = await (await fetch(`${api}?action=query&list=search&srsearch=${q}&format=json&srlimit=5`)).json();
+      const hits = ((sr.query || {}).search || []).map((h) => h.title);
+      if (!hits.length) return { __text: `Wiki 搜索「${a.query}」无结果——换英文关键词（如 'iron ingot'、'enchanting'）` };
+      title = hits[0];
+    }
+    const raw = await (await fetch(`https://minecraft.wiki/w/${encodeURIComponent(title)}?action=raw`)).text();
+    if (/^<!DOCTYPE/i.test(raw.trim())) return { __text: `页面「${title}」不存在（可先用 query 搜索）` };
+    const clean = raw
+      .replace(/\{\{[^{}]*\}\}/g, "")       // 去内联模板
+      .replace(/<ref[^>]*\/>|<ref[\s\S]*?<\/ref>/g, "") // 去引用
+      .replace(/\[\[([^|\]]*\|)?([^\]]*)\]\]/g, "$2")     // 链接留显示文本
+      .replace(/\n{3,}/g, "\n\n");
+    return { __text: `「${title}」（wikitext 节选 ${Math.min(limit, clean.length)}/${clean.length} 字符）\n\n${clean.slice(0, limit)}${clean.length > limit ? "\n…（截断）" : ""}` };
+  } catch (e) {
+    return { __text: `Wiki 查询失败: ${e.message}（检查网络；minecraft.wiki 需可直连）` };
+  }
+});
+
 def("mc_attack", "攻击最近的匹配实体（如 zombie / skeleton / cow），可连击。", {
   type: "object",
   properties: {
@@ -389,7 +424,17 @@ process.stdin.on("data", (c) => {
     if (!line) continue;
     let msg;
     try { msg = JSON.parse(line); } catch { continue; }
-    handle(msg).then((resp) => { if (resp) process.stdout.write(JSON.stringify(resp) + "\n"); });
+    inflight += 1;
+    handle(msg)
+      .then((resp) => { if (resp) process.stdout.write(JSON.stringify(resp) + "\n"); })
+      .catch((e) => process.stdout.write(JSON.stringify({ id: msg.id, error: { code: -32603, message: String(e && e.message || e) } }) + "\n"))
+      .finally(() => { inflight -= 1; });
   }
 });
-process.stdin.on("end", () => process.exit(0));
+// stdin 结束（宿主关闭管道）后等在途请求完成再退出——wiki 查询等网络
+// 调用耗时数秒，立即退出会把响应杀在半路。
+let inflight = 0;
+process.stdin.on("end", () => {
+  const wait = () => { if (inflight > 0) setTimeout(wait, 150); else process.exit(0); };
+  wait();
+});
