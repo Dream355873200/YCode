@@ -114,6 +114,7 @@ func LoadCatalog(defaultMode string) (*Catalog, error) {
 	// 插件级命名空间：MCP 服务器名、子代理名全局唯一（二者都进工具名）；
 	// 冲突时按 id 序后来者的该项被剔除
 	agentOwner := map[string]string{}
+	agentDefs := map[string]*AgentDef{} // tool 名 → 首个注册的定义（同名去重比对用）
 	mcpOwner := map[string]string{}
 	for _, p := range plugins {
 		var servers []MCPServer
@@ -131,6 +132,11 @@ func LoadCatalog(defaultMode string) (*Catalog, error) {
 		for _, d := range p.AgentDefs {
 			tool := d.ToolName()
 			if prev, dup := agentOwner[tool]; dup {
+				// 多个插件各带一份内容相同的共享子代理（如文档插件的
+				// visual-judge）：首个生效、静默去重，不算清单错误。
+				if agentDefs[tool].same(d) {
+					continue
+				}
 				errs = append(errs, LoadError{Kind: "agent", ID: d.Name, File: d.File,
 					Err: fmt.Sprintf("子代理 %q 同时出现在插件 %s 与 %s（后者已忽略）", d.Name, prev, p.ID)})
 				continue
@@ -141,6 +147,7 @@ func LoadCatalog(defaultMode string) (*Catalog, error) {
 				continue
 			}
 			agentOwner[tool] = p.ID
+			agentDefs[tool] = d
 			defs = append(defs, d)
 		}
 		p.AgentDefs = defs

@@ -46,6 +46,21 @@ type AgentDef struct {
 // ToolName 子代理在工具注册表里的名字。
 func (d *AgentDef) ToolName() string { return "Agent_" + d.Name }
 
+// same 判断两个子代理定义内容一致（不含 File 路径）——多个插件各带一份
+// 相同的共享子代理（如文档插件的 visual-judge）时静默去重，不算命名冲突。
+func (d *AgentDef) same(o *AgentDef) bool {
+	if o == nil || d.Name != o.Name || d.Description != o.Description ||
+		d.MaxTurns != o.MaxTurns || d.Prompt != o.Prompt || len(d.Tools) != len(o.Tools) {
+		return false
+	}
+	for i := range d.Tools {
+		if d.Tools[i] != o.Tools[i] {
+			return false
+		}
+	}
+	return true
+}
+
 // idPattern MCP 服务器名 / 子代理名的合法字符集（进工具名，须满足函数名约束）。
 var idPattern = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 
