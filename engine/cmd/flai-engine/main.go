@@ -114,6 +114,7 @@ func main() {
 		goagent.WithSessionToolFilter(teamAwareToolVisible),                        // 会话只看得到本模式启用的工具集（团队会话按成员白名单）
 		goagent.WithSessionRoleCard(teamRoleCard),                                  // 团队成员/队长会话的角色卡（身份层，见 teams.go）
 		goagent.WithSessionPermissionMode(teamPermMode),                            // 团队会话的权限模式（成员 auto / leader 可配）
+		goagent.WithSubAgentTraceDir(subAgentTraceDir),                             // 子代理轨迹落盘（.yume/subagents/<session>/<toolUse>.jsonl，右栏只读时间线）
 		goagent.WithBuiltinTools(),                                                 // Read/Write/Edit/Glob/Grep/Bash/WebSearch 等（base）
 		goagent.WithTaskTools(),                                                    // TaskCreate/TaskUpdate/TaskList → 左栏任务流数据源
 		goagent.WithTaskStore(taskStore),                                           // 按会话隔离 + 落盘 + 闲置回收
@@ -137,6 +138,7 @@ func main() {
 		goagent.WithHTTPRoutes(reloadRoutes()),   // 能力目录热重载 + 目录错误
 		goagent.WithHTTPRoutes(debugRoutes()),    // 诊断端点（卡死时导出 goroutine 调用栈）
 		goagent.WithHTTPRoutes(pipelineRoutes()), // pipeline 运行历史（列表/详情，快照由 GoAgent 落盘）
+		goagent.WithHTTPRoutes(subagentTraceRoutes()), // 子代理轨迹（只读工作过程时间线）
 		goagent.WithHTTPRoutes(teamsRoutes()),    // 团队端点（创建/列表/详情/群聊/插话/实时事件）
 	}
 	// 工具集装配：注册表内全部工具集进程内装一次（会话可见性由工具

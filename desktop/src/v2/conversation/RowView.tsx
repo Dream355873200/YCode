@@ -2,10 +2,11 @@
 // 工具卡片复用 legacy 渲染器注册表（toolRender.jsx，P0 平移资产）；
 // 交互卡（审批/确认/提问）直接挂 store 回传。
 import { memo, useEffect, useRef, useState } from 'react';
-import { Bot, Brain, FileTextIcon } from 'lucide-react';
+import { Bot, Brain, FileTextIcon, PanelRightIcon } from 'lucide-react';
 import type { Row, ToolRow } from './projection/rows';
 import { useConversation } from './store';
 import { useApp } from '../app/appState';
+import { subAgentTraceTabId } from '../pane/SubAgentTracePane';
 import { resolveRenderer, actObj, actVerbPlain, toolStats } from '../../lib/toolRender';
 import { renderMD } from '../../lib/markdown';
 import { Button } from '../components/ui/button';
@@ -155,6 +156,7 @@ function AgentCard({ row }: { row: ToolRow }) {
   const [open, setOpen] = useState(false);
   const [showOld, setShowOld] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
+  const { sid, openPaneTab, setPaneActive } = useApp();
   const input = (typeof row.input === 'string' ? safeJson(row.input) : row.input) as Record<string, unknown> | undefined;
   const task = typeof input?.task === 'string' ? input.task : '';
   const background = input?.run_in_background === true;
@@ -202,6 +204,22 @@ function AgentCard({ row }: { row: ToolRow }) {
         <span className="ml-auto flex shrink-0 items-center gap-2 text-ui-xs">
           {meta && <span className="text-foreground-subtlest">{meta}</span>}
           <span className={stCls}>{stText}</span>
+          {sid && row.toolUseId && (
+            <button
+              type="button"
+              aria-label="查看完整运行过程"
+              title="在右栏查看完整运行过程（思考 / 工具调用 / 产出）"
+              className="rounded p-0.5 text-foreground-subtlest hover:bg-hover hover:text-foreground"
+              onClick={(e) => {
+                e.stopPropagation();
+                const id = subAgentTraceTabId(sid, row.toolUseId!);
+                openPaneTab({ id, kind: 'subagentTrace', label: `子代理 ${name}` });
+                setPaneActive(id);
+              }}
+            >
+              <PanelRightIcon size={13} />
+            </button>
+          )}
         </span>
       </button>
       {/* 折叠态：运行中直播最新一条活动 */}

@@ -87,7 +87,7 @@ export function NodeTracePane({ runId, node }: { runId: string; node: string }) 
   );
 }
 
-function TraceRow({ e }: { e: TraceEntry }) {
+export function TraceRow({ e }: { e: TraceEntry }) {
   if (e.type === 'thinking') {
     return (
       <div className="rounded-lg border border-border/50 bg-card px-2.5 py-1.5">
