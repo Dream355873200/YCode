@@ -226,6 +226,41 @@ team_read(team, member)                   # 读成员产出/历史摘要
 可回放）。权限：角色卡工具白名单按能力拒绝（成员无 pipeline/team 创建
 工具）；trust 等级（readonly/workspace/full）照旧按角色卡走。
 
+
+### Teams v3 定稿：成员 = 主 agent 同款会话（用户洞察定稿）
+
+用户的洞察把架构扶正：**成员就是主 agent 同款的会话**，差异只在配置——
+角色卡（system prompt）、工具白名单、权限模式。团队是**会话编排层**，
+不是新运行时。这样一切复用现有机制：
+
+| 需求 | 现成机制 |
+|---|---|
+| 成员持久化（跨任务记忆） | 会话持久化（sessions jsonl）✓ |
+| 用户实时查看成员对话 | 成员会话事件流 SSE ✓ |
+| **用户向成员插话** | steering 插话通道（guide 车道）✓ |
+| 成员工具约束 | 会话工具过滤（角色卡 → 白名单）✓ |
+| 多成员并行 | 引擎多会话并行 ✓ |
+| leader 分派 | 新增 `team_dispatch`（引擎跨会话驱动）|
+
+```
+.yume/teams/<name>/team.json
+  { leader: {name, role}, members: [{name, role, toolsets, perm_mode}],
+    session_map: {member → engine session id} }
+```
+
+- **成员会话**：普通引擎会话 + 角色卡（成员 role 作为该会话的系统提示
+  覆写）+ 工具白名单（会话工具过滤）+ 权限模式（按团队配置）
+- **leader**：也是会话（角色卡不同），工具面板多一个 `team_dispatch`
+  （引擎实现：向成员会话注入 user 消息并启动其 run，事件流实时透出，
+  完成后产出回传 leader）
+- **用户**：在团队群聊视图看所有成员流；点成员切到该成员时间线查看/插话；
+  向 leader 发总任务，leader 拆解分派
+- **递归防护**：成员会话的工具白名单里没有 run_team/pipeline——按能力拒绝
+- **L1 的 teams.Run**：成员单任务的执行原语，team_dispatch 内部复用
+
+**引擎新增**：`team_dispatch` 跨会话驱动（等价于对该会话发起一次
+steering/user run）+ 成员会话的角色卡覆写（WithSessionPrompt 覆写）。
+**前端新增**：右栏「团队」面板（群聊聚合视图 + 成员切换 + 插话入口）。
 **已实现的 teams.Run（每次分派新建成员 loop）降级为 L1 执行原语**——L2
 持久化围绕它组装（每次分派 = 在成员持久会话上跑一轮）。
 
