@@ -31,6 +31,10 @@ var globalSkillsDir string // 全局 skill 目录（应用根 skills/，对所�
 // sessMap 会话绑定（项目目录 + 模式；main 创建，各会话级解析器读它）。
 var sessMap *sessionMap
 
+// enginePermHandler 审批处理器（teams.go 据此订阅成员会话的权限请求，
+// 转发进群聊走用户终审）。
+var enginePermHandler *goagent.PermissionHandler
+
 func init() {
 	_, file, _, _ := runtime.Caller(0)
 	// DEVICE.md 是设备状态的会话上下文文件（仅注入启用 device 工具集的会话）
@@ -70,8 +74,14 @@ func main() {
 
 	// 任务存储按会话隔离（task 跟随 session）：落盘到各项目的
 	// .yume/tasks/，闲置 10 分钟回收内存分区（数据保留在磁盘）。
+	// 团队成员会话扎根到其团队所在项目（teamSessionDir 优先）。
 	taskStore := task.NewSessionStore(task.SessionStoreConfig{
-		DirFn:   func(sessionID string) string { return filepath.Join(sessMap.resolve(sessionID), ".yume", "tasks") },
+		DirFn: func(sessionID string) string {
+			if dir := teamSessionDir(sessionID); dir != "" {
+				return filepath.Join(dir, ".yume", "tasks")
+			}
+			return filepath.Join(sessMap.resolve(sessionID), ".yume", "tasks")
+		},
 		IdleTTL: 10 * time.Minute,
 	})
 
@@ -99,20 +109,22 @@ func main() {
 			ContextWindow:   *contextWindow, // 不设则 provider 默认 32768 → 压缩阈值 ~10K，历史被疯狂裁剪导致模型原地打转
 			MaxOutputTokens: *maxOutput,     // 不设则 provider 默认 4096 → 推理模型思考占满后正文为空，表现为「探索完就停」
 		},
-		goagent.WithSessionPromptDir(sessionPromptDir),                             // 会话模式的提示词组（空 = 内置通用 Agent 提示词；缺段回退内置）
-		goagent.WithSessionProjectContext(sessionContextFiles),                     // 会话模式的插件规范 + 工具集动态上下文（等同 CLAUDE.md 地位）
-		goagent.WithSessionToolFilter(sessionToolVisible),                          // 会话只看得到本模式启用的工具集（base 恒可见）
+		goagent.WithSessionPromptDir(teamAwarePromptDir),                           // 会话模式的提示词组（团队会话走角色卡，见 teams.go）
+		goagent.WithSessionProjectContext(teamAwareContextFiles),                   // 会话模式的插件规范 + 工具集动态上下文（等同 CLAUDE.md 地位）
+		goagent.WithSessionToolFilter(teamAwareToolVisible),                        // 会话只看得到本模式启用的工具集（团队会话按成员白名单）
+		goagent.WithSessionRoleCard(teamRoleCard),                                  // 团队成员/队长会话的角色卡（身份层，见 teams.go）
+		goagent.WithSessionPermissionMode(teamPermMode),                            // 团队会话的权限模式（成员 auto / leader 可配）
 		goagent.WithBuiltinTools(),                                                 // Read/Write/Edit/Glob/Grep/Bash/WebSearch 等（base）
 		goagent.WithTaskTools(),                                                    // TaskCreate/TaskUpdate/TaskList → 左栏任务流数据源
 		goagent.WithTaskStore(taskStore),                                           // 按会话隔离 + 落盘 + 闲置回收
 		goagent.WithPlanTools(),                                                    // EnterPlanMode/ExitPlanMode → Agent 计划页签（计划存 .yume/plans/）
 		goagent.WithBgTaskTools(),                                                  // TaskOutput/TaskStop → 长命令后台执行
-		goagent.WithSessionWorkDir(sessMap.resolve),                                // 会话→项目目录（Bash/文件工具/领域工具按会话扎根）
+		goagent.WithSessionWorkDir(teamAwareWorkDir),                               // 会话→项目目录（Bash/文件工具/领域工具按会话扎根；团队成员扎根其团队项目）
 		goagent.WithAskTools(),                                                     // AskUser 工具（开放提问）+ confirm 工具的回调底座
 		goagent.WithSteering(),                                                     // 插话通道：对话「插话」按钮 / 编辑器写回通知走 guide 车道（工具批边界注入）
 		goagent.WithPostCompactReminder(builtin.NewReadStateRehydrater()),          // 压缩后重水合最近已读文件（防 Edit 凭摘要残句拼 old_string）
 		goagent.WithPostCompactReminder(assetRehydrater{resolve: sessMap.resolve}), // 压缩后重注 SPEC.md / 最新测试报告（范围契约与测试结论不失忆）
-		goagent.WithApprover(goagent.NewPermissionHandler()),                       // 异步审批：permission_request 帧 → 前端审批卡（/approve 回传）
+		goagent.WithApprover(newEnginePermHandler()),                               // 异步审批：permission_request 帧 → 前端审批卡（/approve 回传）
 		goagent.WithPermissionMode(goagent.PermissionAcceptEdits),                  // 初始模式「自动编辑」：普通工具免问，危险操作问用户（UI 可切 plan/bypass）
 		goagent.WithMaxTurns(80),
 		goagent.WithCostTracking(),
@@ -124,6 +136,7 @@ func main() {
 		goagent.WithHTTPRoutes(promptsRoutes()),  // 提示词组端点（设置页管理提示词组）
 		goagent.WithHTTPRoutes(reloadRoutes()),   // 能力目录热重载 + 目录错误
 		goagent.WithHTTPRoutes(debugRoutes()),    // 诊断端点（卡死时导出 goroutine 调用栈）
+		goagent.WithHTTPRoutes(teamsRoutes()),    // 团队端点（创建/列表/详情/群聊/插话/实时事件）
 	}
 	// 工具集装配：注册表内全部工具集进程内装一次（会话可见性由工具
 	// 过滤器按模式裁剪——reload 后新模式引用任意工具集即生效）。options

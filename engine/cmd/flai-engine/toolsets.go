@@ -80,6 +80,16 @@ var toolsetRegistry = map[string]toolsetInstaller{
 				"成员执行实时透出）；成员/节点工具只能从当前会话可见工具里选",
 		},
 	},
+	"team": {
+		install: installTeam,
+		tools:   []string{"team_dispatch", "team_status", "team_read"},
+		notes: []string{
+			"Teams v3 跨会话驱动（对用户创建的常驻团队）：team_dispatch 向成员" +
+				"持久会话分派子任务（成员进度实时透出，忙则排队）+ team_status/" +
+				"team_read。队长会话自动持有本工具集；成员白名单出现即拒绝创建" +
+				"（递归防护）",
+		},
+	},
 }
 
 // installOrchestration 通用编排工具集：create_pipeline + run_team。
