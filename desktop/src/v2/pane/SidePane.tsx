@@ -7,7 +7,7 @@ import { useEffect, useRef, useState, type ComponentType } from 'react';
 import { createPortal } from 'react-dom';
 import {
   BoxesIcon, ClipboardListIcon, FileTextIcon, GitBranchIcon, GlobeIcon,
-  ListChecksIcon, PlusIcon, XIcon,
+  ListChecksIcon, PlusIcon, UsersIcon, WorkflowIcon, XIcon,
 } from 'lucide-react';
 import { useApp, type PaneTabState } from '../app/appState';
 import { useCurrentMode } from '../app/modeRegistry';
@@ -21,6 +21,8 @@ import DevicePanel from './DevicePanel';
 import FileView, { fileBasename } from './FileViewer';
 import BrowserTab from './BrowserTab';
 import { useBrowserInsts } from './browserStore';
+import { TeamPanel } from './TeamPanel';
+import { PipelinePanel } from './PipelinePanel';
 
 // mode 面板组件注册表：plugin.json 只声明 id/label（纯数据，引擎/壳都不
 // import 组件），id → 组件的绑定只存在于这份表——新增面板 = 写组件
@@ -36,7 +38,7 @@ const MIN_W = 320, MAX_W = 760, DEFAULT_W = 336;
 type Card = { id: string; kind: PaneTabState['kind']; label: string; icon: typeof GitBranchIcon };
 const CARD_ICONS: Partial<Record<PaneTabState['kind'], typeof GitBranchIcon>> = {
   git: GitBranchIcon, tasks: ListChecksIcon, plan: ClipboardListIcon,
-  browser: GlobeIcon, file: FileTextIcon,
+  browser: GlobeIcon, file: FileTextIcon, team: UsersIcon, pipeline: WorkflowIcon,
 };
 
 export function SidePane({ open }: { open: boolean }) {
@@ -106,6 +108,8 @@ export function SidePane({ open }: { open: boolean }) {
     { id: 'git', kind: 'git', label: 'Git', icon: GitBranchIcon },
     { id: 'tasks', kind: 'tasks', label: '任务', icon: ListChecksIcon },
     { id: 'plan', kind: 'plan', label: '计划', icon: ClipboardListIcon },
+    { id: 'team', kind: 'team', label: '团队', icon: UsersIcon },
+    { id: 'pipeline', kind: 'pipeline', label: 'Pipeline', icon: WorkflowIcon },
     ...(mode?.resolved.sidePanels || [])
       .filter((p) => p.id !== 'browser' && MODE_PANELS[p.id])
       .map((p) => ({ id: `mode:${p.id}`, kind: 'mode' as const, label: p.label, icon: BoxesIcon })),
@@ -154,7 +158,12 @@ export function SidePane({ open }: { open: boolean }) {
   const fileOf = activeTab?.kind === 'file' ? activeTab.id.slice(5) : null;
   const instOf = activeTab?.kind === 'browser' ? insts.find((i) => i.id === activeTab.id.slice(8)) : null;
   const ModePanel = activeTab?.kind === 'mode' ? MODE_PANELS[activeTab.id.slice(5)] : null;
-  const BuiltinPanel = activeTab?.kind === 'git' ? GitPanel : activeTab?.kind === 'tasks' ? TasksPanel : activeTab?.kind === 'plan' ? PlanPanel : null;
+  const BuiltinPanel = activeTab?.kind === 'git' ? GitPanel
+    : activeTab?.kind === 'tasks' ? TasksPanel
+    : activeTab?.kind === 'plan' ? PlanPanel
+    : activeTab?.kind === 'team' ? TeamPanel
+    : activeTab?.kind === 'pipeline' ? PipelinePanel
+    : null;
 
   // 非浏览器 tab 激活、或「+」菜单打开时隐藏浏览器视图（主进程 detach）——
   // 原生 WebContentsView 永远盖在 DOM 之上，不卸下会遮住菜单导致无法点击；

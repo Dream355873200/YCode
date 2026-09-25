@@ -715,11 +715,12 @@ func teamsRoutes() map[string]func(http.ResponseWriter, *http.Request) {
 		},
 		"POST /teams": func(w http.ResponseWriter, r *http.Request) {
 			var req struct {
-				Dir     string       `json:"dir"`
-				Name    string       `json:"name"`
-				Goal    string       `json:"goal"`
-				Leader  TeamLeader   `json:"leader"`
-				Members []TeamMember `json:"members"`
+				Dir        string       `json:"dir"`
+				Name       string       `json:"name"`
+				Goal       string       `json:"goal"`
+				Leader     TeamLeader   `json:"leader"`
+				LeaderMode string       `json:"leaderMode"` // 顶层便捷字段（UI 发这个；优先于 leader.mode）
+				Members    []TeamMember `json:"members"`
 			}
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 				http.Error(w, "请求体解析失败: "+err.Error(), http.StatusBadRequest)
@@ -760,6 +761,9 @@ func teamsRoutes() map[string]func(http.ResponseWriter, *http.Request) {
 					http.Error(w, "leader 引用了未知工具集: "+ts, http.StatusBadRequest)
 					return
 				}
+			}
+			if req.LeaderMode != "" {
+				req.Leader.Mode = req.LeaderMode
 			}
 			t := &Team{Name: req.Name, Dir: req.Dir, Goal: req.Goal, Leader: req.Leader, Members: req.Members, CreatedAt: time.Now()}
 			d := teamDirOf(req.Dir, req.Name)

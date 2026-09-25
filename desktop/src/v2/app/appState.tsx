@@ -74,10 +74,10 @@ interface AppCtxValue {
   setPaneActive(id: string): void;
 }
 
-/** 右栏标签页状态：kind 决定渲染器（file/browser/git/tasks/plan/mode）。 */
+/** 右栏标签页状态：kind 决定渲染器（file/browser/git/tasks/plan/mode/team/pipeline）。 */
 export interface PaneTabState {
-  id: string;      // 'file:<path>' | 'browser:<instId>' | 'git' | 'tasks' | 'plan' | 'mode:<panelId>'
-  kind: 'file' | 'browser' | 'git' | 'tasks' | 'plan' | 'mode';
+  id: string;      // 'file:<path>' | 'browser:<instId>' | 'git' | 'tasks' | 'plan' | 'mode:<panelId>' | 'team' | 'pipeline'
+  kind: 'file' | 'browser' | 'git' | 'tasks' | 'plan' | 'mode' | 'team' | 'pipeline';
   label: string;
 }
 
