@@ -71,6 +71,21 @@ var toolsetRegistry = map[string]toolsetInstaller{
 		tools:   []string{"vision_ask"},
 		notes:   []string{"仅 FLAI_VISION=1 时注册（模型须支持图片输入）"},
 	},
+	"orchestration": {
+		install: installOrchestration,
+		tools:   []string{"create_pipeline", "run_team"},
+		notes: []string{
+			"面向通用应用的多 agent 编排：create_pipeline（动态 DAG 数据流水线，" +
+				"节点间队列默认 Markdown 载体）+ run_team（leader+成员 团队群聊，" +
+				"成员执行实时透出）；成员/节点工具只能从当前会话可见工具里选",
+		},
+	},
+}
+
+// installOrchestration 通用编排工具集：create_pipeline + run_team。
+func installOrchestration(app *goagent.App) {
+	app.Tool("create_pipeline", app.CreatePipelineTool().Def)
+	app.Tool("run_team", app.CreateTeamTool().Def)
 }
 
 // installFlutter Flutter 领域工具集：Bash 禁令 + flutter 工具 + bgtask 底座。
