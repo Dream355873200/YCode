@@ -152,11 +152,11 @@ function TurnRail({ turns, containerRef, onJump }: {
 
   if (turns.length === 0) return null;
   const n = turns.length;
-  // tick 间距：固定 10px；放不下时压缩到最小 6px 并转为可滚动列表
+  // tick 间距：固定 10px；放不下时压缩到最小 9px 并转为可滚动列表
   //（对齐 ZCode：不再无限压缩挤成一团，滚动查看即可），溢出时自动把
   // 当前/悬停 tick 滚进可视区。
   const GAP_MAX = 10;
-  const GAP_MIN = 6;
+  const GAP_MIN = 9;
   const usable = Math.max(0, railH - 16);
   const gap = n > 1 ? Math.min(GAP_MAX, Math.max(GAP_MIN, usable / (n - 1))) : GAP_MAX;
   const contentH = n > 1 ? (n - 1) * gap + 6 : 6;
