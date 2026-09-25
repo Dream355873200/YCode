@@ -397,9 +397,14 @@ async function handle(msg) {
       } catch (e) {
         const msg = String(e.message || e);
         // 失败 ≠ 终止：错误文本自带持久化指令，模型读到就不会提前收尾
-        const guidance = /\(STALE_STATE\)|已不存在|Invalid parameters|超时/.test(msg)
-          ? "\n\n（可恢复失败：这不是终止信号。读取原因 → 重新 get_app_state 观察最新状态 → 修正后立即重试或换一条路径；同一动作连续失败两次才考虑换方案，且不要结束回合。）"
-          : "";
+        let guidance = "";
+        if (/OBSCURED_TARGET/.test(msg)) {
+          guidance = "\n\n（坐标点击已被拒绝：该点上最顶层的是别的窗口，点击会落到那个窗口上——不要重试同一次点击。改用 invoke（UIA 模式，后台安全、不碰鼠标），或先用 open_app / 手动把目标窗口带到前台再点。）";
+        } else if (/NOT_INVOKABLE/.test(msg)) {
+          guidance = "\n\n（该元素没有可用的 UIA 模式，只能坐标点击：确认目标窗口在前台且该点未被遮挡，再用 left_click。）";
+        } else if (/\(STALE_STATE\)|已不存在|Invalid parameters|超时/.test(msg)) {
+          guidance = "\n\n（可恢复失败：这不是终止信号。读取原因 → 重新 get_app_state 观察最新状态 → 修正后立即重试或换一条路径；同一动作连续失败两次才考虑换方案，且不要结束回合。）";
+        }
         return { id, result: textResult(msg + guidance, true) };
       }
     }

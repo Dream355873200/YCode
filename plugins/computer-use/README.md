@@ -7,8 +7,8 @@
 ## 提供
 
 - MCP server `computer`（stdio）：`mcp__computer__list_apps / list_windows / open_app /
-  get_app_state / screenshot / left_click / left_click_drag / scroll / type / key / paste / set_value`
-- 技能 `computer-use`：观察-动作-再观察循环、辅助功能优先、坐标纪律
+  get_app_state / screenshot / invoke / left_click / left_click_drag / scroll / type / key / paste / set_value`
+- 技能 `computer-use`：观察-动作-再观察循环、辅助功能优先、后台优先（模式优先/坐标兜底）、坐标纪律
 - 规范：与 browser-use 的分工、破坏性操作确认
 
 ## 平台后端契约
@@ -39,6 +39,23 @@
    多个匹配或名称为空仍判 `STALE_STATE`（宁可不点，也不点错）。
 
 server 侧 `relocate()` 在 STALE 自愈时用同一规则重定位后重试一次。
+
+### 后台操作 vs 前台操作（模式优先，坐标兜底）
+
+| | 工具 | 是否需前台 | 机制 |
+|---|---|---|---|
+| 读 | `get_app_state` / `list_apps` / `screenshot` | 不需要 | UIA 只读接口 |
+| 写（首选） | `invoke`（Invoke / Toggle / Select / Expand） | **不需要** | UIA 模式，直接调用控件，不注入鼠标键盘 |
+| 写（首选） | `set_value`（ValuePattern） | **不需要** | UIA 模式 |
+| 写（兜底） | `left_click` / `type` / `key` | **需要** | SendInput，事件派发给该点最顶层窗口 |
+
+`left_click` / `drag` / `type`（带 target）在下发坐标前会调 `IsPointOnWindow()` 校验
+「该屏幕点上最顶层的窗口是否属于目标窗口」，不一致即抛 `OBSCURED_TARGET` 拒绝执行——
+因为 SendInput 会把事件交给那个顶层窗口，盲点等于操作别的应用。
+
+`type` 带 `target` 时会先点击该元素获取焦点（否则文字会打进当前焦点窗口）。
+
+**游戏类**（DirectInput / RawInput）只认真实前台输入，后台注入无效（连 PostMessage 也不理）。
 
 ### 窗口状态归一（最小化）
 

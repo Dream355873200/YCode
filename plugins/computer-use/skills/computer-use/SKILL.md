@@ -15,11 +15,30 @@ Windows 实现：UI Automation 语义树 + GDI 截图 + SendInput。
 ## 辅助功能优先
 
 1. 先 `get_app_state` 观察语义元素树，按元素的名称/类型/值找到目标。
-2. 找到元素就按**索引**操作：`left_click({target: 12})`、`set_value({target: 5, value})`。
-3. 可设置元素优先 `set_value`；富文本或不可设置目标用 `paste`；普通输入 `type`。
-4. 键盘是后备（`key`），屏幕坐标是最后手段（canvas / 自绘界面）。
+2. 找到元素就按**索引**操作：`invoke({target: 12})`、`set_value({target: 5, value})`。
+3. 可设置元素优先 `set_value`；能激活的控件优先 `invoke`；富文本或不可设置目标用 `paste`；普通输入 `type`。
+4. 真实鼠标点击（`left_click`）与键盘（`key`）是后备，屏幕坐标是最后手段（canvas / 自绘界面）。
 
 观察（get_app_state / screenshot）在后台窗口上也有效，不打扰用户焦点。
+
+## 后台操作：模式优先，坐标兜底
+
+**读**（`get_app_state` / `list_apps` / `screenshot`）走 UIA 只读接口，后台窗口照样能读。
+
+**写**分两条路，务必优先选第一条：
+
+| | 方式 | 需要前台？ | 说明 |
+|---|---|---|---|
+| 首选 | `invoke({target})` —— UIA 模式（Invoke / Toggle / Select / Expand） | **不需要** | 直接调用控件接口，不注入鼠标键盘、不抢焦点、不动鼠标 |
+| 首选 | `set_value({target, value})` —— ValuePattern | **不需要** | 直接设值（只读元素报 NOT_SETTABLE） |
+| 兜底 | `left_click` / `type` / `key` —— SendInput | **需要** | 事件由系统派发给「该坐标点上最顶层的窗口」 |
+
+- 元素树里的 `(press)` `(toggle)` `(select)` `(expand)` 就是 `invoke` 可用的信号；纯后台任务先用 `invoke`。
+- `left_click` / `type` / `key` 的坐标路径带**遮挡校验**：该点最顶层的窗口不是目标时直接拒绝
+  （`OBSCURED_TARGET`），不会盲点。遇到这个错误**不要重试**，改用 `invoke`，或先把窗口带到前台。
+- `type` 带 `target` 时会先点该元素拿焦点（否则文字会打进当前焦点窗口，可能是完全无关的应用）。
+- 游戏类（DirectInput / RawInput）**只认真实前台输入**，后台无解——用户在前台玩游戏时，
+  不要往后台应用注入输入。
 
 ## 循环
 
@@ -72,6 +91,7 @@ UIA 观察是同步的，应用响应慢时观察会自然带上结果；不要�
 list_apps()                              # 可见应用窗口（pid/名称/标题/前台）
 list_windows({app_ref})                  # 某应用全部窗口（弹窗排查）
 open_app({name})                         # 启动应用（Start 菜单名 / exe / 路径 / URL）
+invoke({target})                         # UIA 模式激活（后台安全，优先用）
 get_app_state({app_ref?, include_screenshot?, max_elements?})
 screenshot({app_ref?})                   # 屏幕或窗口截图（内联图片）
 left_click({target, mouse_button?, click_count?, modifiers?})
@@ -90,3 +110,5 @@ set_value({target, value})               # ValuePattern 直接设值
 - 破坏性操作（删除、发送、下单、关机）先向用户确认。
 - 完成的标准是**界面可见地呈现了结果**，不是某个动作返回 ok。
 - 子代理不可用电脑控制；遇到权限拒绝不要换别的自动化技术硬闯。
+- **不要让动作打到无关的应用上**：坐标类动作前确认目标窗口在前台或未被遮挡（组件会拦，
+  但你自己也要判断）；用户在前台做别的事（玩游戏、开会）时，只做后台安全的 `invoke` / `set_value`。

@@ -28,6 +28,16 @@ function TurnBlock({ unit, sid, live }: { unit: Extract<TurnUnit, { type: 'turn'
   // 历史轮次后不抢
   const [manual, setManual] = useState<boolean | null>(null);
   const open = expanded ? true : (manual ?? false);
+  // 用户正在悬停阅读工作段时，回合完成不自动收起——「在看的内容不被折叠」：
+  // 完成瞬间若鼠标在块内，转为用户手动展开（此后由用户自己收起）。
+  const hoverRef = useRef(false);
+  const runningPrev = useRef(running);
+  useEffect(() => {
+    if (runningPrev.current && !running && !aborted && hoverRef.current) {
+      setManual(true);
+    }
+    runningPrev.current = running;
+  }, [running, aborted]);
 
   // 工作计时：起点用 store 的 runStartedAt（跨会话切换持久，切回续算不归零）；
   // 运行中每秒跳动，轮次结束后冻结；历史轮次不显示秒数
@@ -52,7 +62,9 @@ function TurnBlock({ unit, sid, live }: { unit: Extract<TurnUnit, { type: 'turn'
   const showBody = open && (hasWork || running || aborted);
   
   return (
-    <div className="my-1" style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 600px' }}>
+    <div className="my-1" style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 600px' }}
+      onMouseEnter={() => { hoverRef.current = true; }}
+      onMouseLeave={() => { hoverRef.current = false; }}>
       {(hasWork || running) && (
         <div className="mb-0.5">
           <button type="button" onClick={() => { if (!running && !aborted) setManual(!open); }}

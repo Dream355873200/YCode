@@ -46,6 +46,13 @@ public class YCodeNative
         return GetAncestor(hit, GA_ROOT) == GetAncestor(target, GA_ROOT);
     }
 
+    // 两个窗口是否同根（同一顶层窗口，含 UWP 的 ApplicationFrameHost 托管情形）
+    public static bool IsSameRoot(IntPtr a, IntPtr b)
+    {
+        if (a == IntPtr.Zero || b == IntPtr.Zero) return false;
+        return GetAncestor(a, GA_ROOT) == GetAncestor(b, GA_ROOT);
+    }
+
     [StructLayout(LayoutKind.Sequential)]
     public struct RECT { public int Left, Top, Right, Bottom; }
 

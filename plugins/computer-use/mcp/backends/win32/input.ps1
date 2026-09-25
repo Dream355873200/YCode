@@ -167,10 +167,73 @@ function Resolve-Point([object]$in) {
   return @([int]$in.x, [int]$in.y)
 }
 
+# 目标窗口是否当前前台（同根即算，兼容 UWP 的 ApplicationFrameHost 托管）。
+# 键盘事件由系统派发给"有焦点的窗口"，所以输入前必须过这一关——否则文字会
+# 打进完全无关的应用（本次会话就发生过：给计算器输入进了前台的游戏）。
+# 用窗口根句柄比对，而不是元素级 HasKeyboardFocus（后者在 Chromium/UWP 上不可靠）。
+function Test-WindowForeground($hwnd) {
+  if (-not $hwnd) { return $true }
+  try {
+    $fg = [YCodeNative]::GetForegroundWindow()
+    return [YCodeNative]::IsSameRoot([IntPtr]$hwnd, $fg)
+  } catch { return $false }
+}
+
+# 依次尝试可用的 UIA 模式激活元素，返回用到的模式名（无可用模式返回空串）。
+# 模式调用不注入鼠标键盘、不需要前台、不抢焦点——后台操作的首选路径。
+# 局限：canvas/自绘界面与游戏没有模式；右键/中键/双击/拖拽/悬停也没有模式等价物。
+function Try-InvokePattern($el) {
+  $attempts = @(
+    @{ name = 'invoke'; iface = [System.Windows.Automation.InvokePattern]::Pattern },
+    @{ name = 'toggle'; iface = [System.Windows.Automation.TogglePattern]::Pattern },
+    @{ name = 'select'; iface = [System.Windows.Automation.SelectionItemPattern]::Pattern },
+    @{ name = 'expand'; iface = [System.Windows.Automation.ExpandCollapsePattern]::Pattern }
+  )
+  foreach ($a in $attempts) {
+    try {
+      $pat = $el.GetCurrentPattern($a.iface)
+      if ($pat) {
+        switch ($a.name) {
+          'invoke' { $pat.Invoke() }
+          'toggle' { $pat.Toggle() }
+          'select' { $pat.Select() }
+          'expand' { $pat.Expand() }
+        }
+        return $a.name
+      }
+    } catch {}
+  }
+  return ''
+}
+
 try {
   $in = (Read-Payload) | ConvertFrom-Json
   switch ($in.action) {
     'click' {
+      $btn = ''
+      if ($in.button) { $btn = [string]$in.button }
+      $cnt = 1
+      if ($in.click) { $cnt = [int]$in.click }
+      # "普通左键单击"= 无修饰键、单击、左键：这是模式能完整表达的语义，优先走模式。
+      # 右键/中键/双击/带修饰键没有模式等价物，必须真实鼠标。
+      $plain = ($btn -eq '' -or $btn -eq 'left') -and $cnt -le 1 -and (-not $in.modifiers)
+
+      if ($plain -and $in.runtime_id) {
+        $el = Resolve-Element $in
+        $used = Try-InvokePattern $el
+        if ($used) {
+          Out @{ ok = $true; via = "pattern:$used" } | Write-Output
+        } else {
+          # 无可用模式（canvas / 自绘 / 游戏）→ 真实点击，必须过遮挡校验
+          $pt = Get-PointOf $el
+          Assert-PointClickable $pt[0] $pt[1] $in.hwnd
+          [void][YCodeNative]::SetCursorPos($pt[0], $pt[1])
+          Start-Sleep -Milliseconds 40
+          [void][YCodeNative]::Mouse([YCodeNative]::MOUSE_LEFTDOWN, 0); Start-Sleep -Milliseconds 30
+          [void][YCodeNative]::Mouse([YCodeNative]::MOUSE_LEFTUP, 0); Start-Sleep -Milliseconds 60
+          Out @{ ok = $true; x = $pt[0]; y = $pt[1]; via = 'mouse' } | Write-Output
+        }
+      } else {
       $pt = Resolve-Point $in
       Assert-PointClickable $pt[0] $pt[1] $in.hwnd
       [void][YCodeNative]::SetCursorPos($pt[0], $pt[1])
@@ -183,7 +246,8 @@ try {
         [void][YCodeNative]::Mouse($flags[1], 0); Start-Sleep -Milliseconds 60
       }
       if ($in.modifiers) { ($in.modifiers -split '\+') | ForEach-Object { [void][YCodeNative]::Key((Vk $_), $true, $false) } }
-      Out @{ ok = $true; x = $pt[0]; y = $pt[1] } | Write-Output
+      Out @{ ok = $true; x = $pt[0]; y = $pt[1]; via = 'mouse' } | Write-Output
+      }
     }
     'drag' {
       $from = Resolve-Point $in
@@ -205,29 +269,71 @@ try {
       Out @{ ok = $true } | Write-Output
     }
     'scroll' {
-      $pt = Resolve-Point $in
-      [void][YCodeNative]::SetCursorPos($pt[0], $pt[1])
-      Start-Sleep -Milliseconds 40
-      $dir = [string]$in.direction; $pages = [int]($in.amount); if ($pages -le 0) { $pages = 1 }
-      $notches = $pages * 3
-      $flag = [YCodeNative]::MOUSE_WHEEL
-      $sign = -1
-      if ($dir -eq 'left' -or $dir -eq 'right') { $flag = [YCodeNative]::MOUSE_HWHEEL }
-      if ($dir -eq 'up' -or $dir -eq 'left') { $sign = 1 }
-      1..$notches | ForEach-Object { [void][YCodeNative]::Mouse($flag, $sign * 120); Start-Sleep -Milliseconds 15 }
-      Out @{ ok = $true } | Write-Output
-    }
-    'type' {
-      # 带元素目标时必须先点它拿到焦点：否则文字会打进"当前焦点窗口"，
-      # 而那可能完全是另一个应用（本次会话就发生过：给计算器输入打进了前台的游戏）。
-      # 这一步同样受遮挡校验保护——挡着就报错，不盲打。
+      # 带元素目标优先走 ScrollPattern（后台安全、不动鼠标、不抢焦点）；
+      # 多数容器没有该模式 → 回退滚轮（滚轮会把光标挪过去，需目标可见并过遮挡校验）。
+      $done = $false
       if ($in.runtime_id) {
+        try {
+          $el = Resolve-Element $in
+          $sp = $null
+          try { $sp = $el.GetCurrentPattern([System.Windows.Automation.ScrollPattern]::Pattern) } catch {}
+          if ($sp) {
+            $dir = [string]$in.direction
+            $pages = [int]($in.amount); if ($pages -le 0) { $pages = 1 }
+            $inc = [System.Windows.Automation.ScrollAmount]::SmallIncrement
+            $dec = [System.Windows.Automation.ScrollAmount]::SmallDecrement
+            if ($pages -gt 1) {
+              $inc = [System.Windows.Automation.ScrollAmount]::LargeIncrement
+              $dec = [System.Windows.Automation.ScrollAmount]::LargeDecrement
+            }
+            $h = [System.Windows.Automation.ScrollAmount]::NoAmount
+            $v = [System.Windows.Automation.ScrollAmount]::NoAmount
+            if ($dir -eq 'up') { $v = $dec }
+            elseif ($dir -eq 'down') { $v = $inc }
+            elseif ($dir -eq 'left') { $h = $dec }
+            elseif ($dir -eq 'right') { $h = $inc }
+            $sp.Scroll($h, $v)
+            Out @{ ok = $true; via = 'pattern:scroll' } | Write-Output
+            $done = $true
+          }
+        } catch {}
+      }
+      if (-not $done) {
         $pt = Resolve-Point $in
         Assert-PointClickable $pt[0] $pt[1] $in.hwnd
         [void][YCodeNative]::SetCursorPos($pt[0], $pt[1])
         Start-Sleep -Milliseconds 40
-        [void][YCodeNative]::Mouse([YCodeNative]::MOUSE_LEFTDOWN, 0); Start-Sleep -Milliseconds 30
-        [void][YCodeNative]::Mouse([YCodeNative]::MOUSE_LEFTUP, 0); Start-Sleep -Milliseconds 80
+        $dir = [string]$in.direction; $pages = [int]($in.amount); if ($pages -le 0) { $pages = 1 }
+        $notches = $pages * 3
+        $flag = [YCodeNative]::MOUSE_WHEEL
+        $sign = -1
+        if ($dir -eq 'left' -or $dir -eq 'right') { $flag = [YCodeNative]::MOUSE_HWHEEL }
+        if ($dir -eq 'up' -or $dir -eq 'left') { $sign = 1 }
+        1..$notches | ForEach-Object { [void][YCodeNative]::Mouse($flag, $sign * 120); Start-Sleep -Milliseconds 15 }
+        Out @{ ok = $true; via = 'wheel' } | Write-Output
+      }
+    }
+    'type' {
+      # 输入必须真的落到目标窗口——键盘事件由系统派发给"有焦点的窗口"。
+      # 两条聚焦路径：① UIA SetFocus()（不碰鼠标）；② 真实点击该元素（受遮挡校验保护）。
+      # 聚焦后**必须验证目标窗口已在前台**，不通过就拒绝输入；否则文字会打进
+      # 完全无关的应用（本次会话就发生过：给计算器输入打进了前台的游戏）。
+      if ($in.runtime_id) {
+        $el = Resolve-Element $in
+        try { $el.SetFocus(); Start-Sleep -Milliseconds 120 } catch {}
+        $focused = Test-WindowForeground $in.hwnd
+        if (-not $focused) {
+          $pt = Get-PointOf $el
+          Assert-PointClickable $pt[0] $pt[1] $in.hwnd
+          [void][YCodeNative]::SetCursorPos($pt[0], $pt[1])
+          Start-Sleep -Milliseconds 40
+          [void][YCodeNative]::Mouse([YCodeNative]::MOUSE_LEFTDOWN, 0); Start-Sleep -Milliseconds 30
+          [void][YCodeNative]::Mouse([YCodeNative]::MOUSE_LEFTUP, 0); Start-Sleep -Milliseconds 80
+          $focused = Test-WindowForeground $in.hwnd
+        }
+        if (-not $focused) {
+          throw "NO_FOCUS: 无法把目标窗口带到前台（UIA SetFocus 与坐标点击均未成功），文字未输入——这是有意的保护，避免输入打进别的应用。可改用 set_value / invoke（后台安全），或让用户先切到该窗口"
+        }
       }
       # 归一换行；逐字符 Unicode SendInput（支持中文）
       $text = [string]$in.text -replace "`r`n", "`n"
@@ -238,34 +344,9 @@ try {
       Out @{ ok = $true; chars = $text.Length } | Write-Output
     }
     'invoke' {
-      # UIA 模式激活：直接调用控件的模式接口，不注入鼠标键盘、不需要前台、不抢焦点。
-      # 这是"后台操作"的正路；坐标点击（left_click）只在没有可用模式时作为兜底。
+      # UIA 模式激活（显式）：直接调用控件的模式接口，不注入鼠标键盘、不需要前台、不抢焦点。
       $el = Resolve-Element $in
-      $used = ''
-      if (-not $used) {
-        try {
-          $pat = $el.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
-          if ($pat) { $pat.Invoke(); $used = 'invoke' }
-        } catch {}
-      }
-      if (-not $used) {
-        try {
-          $pat = $el.GetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern)
-          if ($pat) { $pat.Toggle(); $used = 'toggle' }
-        } catch {}
-      }
-      if (-not $used) {
-        try {
-          $pat = $el.GetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern)
-          if ($pat) { $pat.Select(); $used = 'select' }
-        } catch {}
-      }
-      if (-not $used) {
-        try {
-          $pat = $el.GetCurrentPattern([System.Windows.Automation.ExpandCollapsePattern]::Pattern)
-          if ($pat) { $pat.Expand(); $used = 'expand' }
-        } catch {}
-      }
+      $used = Try-InvokePattern $el
       if (-not $used) {
         throw "NOT_INVOKABLE: 元素 [$($in.expect.i)] 没有可用的 UIA 模式（invoke/toggle/select/expand）——该控件只能靠坐标点击：用 left_click，但要求目标窗口在前台且该点未被遮挡"
       }
