@@ -20,12 +20,16 @@ export interface HistoryBlock {
 export interface HistoryMessage {
   role: string;
   content: HistoryBlock[] | string;
+  /** 元消息（恢复提示等运行机制注入）：模型上下文保留，展示层跳过。 */
+  is_meta?: boolean;
 }
 
 /** 历史 → rows。tool_result 按 tool_use_id 配对回填到 tool 行。 */
 export function historyToRows(messages: readonly HistoryMessage[]): Row[] {
   const rows: Row[] = [];
   const toolById = new Map<string, Extract<Row, { kind: 'tool' }>>();
+  // 元消息防御：老引擎序列化不带 is_meta 时端点已过滤；新引擎双保险。
+  const visible = messages.filter((m) => !m.is_meta);
 
   // assistant 正文喂 ThinkTagSplitter：<think>/<thinking> 段分流成 reasoning
   // row（与直播路径同语义——思考内容不残留在正式文本里，直播/回放一致）。
@@ -41,7 +45,7 @@ export function historyToRows(messages: readonly HistoryMessage[]): Row[] {
   };
 
 
-  for (const msg of messages || []) {
+  for (const msg of visible || []) {
     const blocks = typeof msg.content === 'string'
       ? [{ type: 'text', text: msg.content } as HistoryBlock]
       : msg.content || [];

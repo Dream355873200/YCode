@@ -350,6 +350,9 @@ export const useConversation = create<ConversationStore>((set, get) => {
       const s = get().sessions[sid] || emptySession();
       // busy 时发送 = 入队（每条消息独立成轮），不走 /chat 的插话通道
       if (s.busy) return get().enqueue(sid, message);
+      // 断流恢复轮询每 3s 用引擎历史整体重放——发新消息前先停掉，否则
+      // 重放会抹掉下面 patch 进去的乐观用户气泡（气泡闪现后消失的根因）
+      stopResume(sid);
       patch(set, sid, (cur) => ({
         ...cur,
         rows: pushUser(cur.rows, message),
