@@ -31,20 +31,22 @@ export default function BrowserTab({ inst }: { inst: BrowserInst }) {
     // 矩形上报去重 + rAF 合帧：窗口缩放时 RO 每帧触发，裸发 IPC 会造成
     // 主进程 setBounds 风暴（渲染卡顿）。
     let lastKey = '';
-    let raf = 0;
+    let timer = 0;
     const ro = host && new ResizeObserver(() => {
       const r = host.getBoundingClientRect();
       const key = `${Math.round(r.left)},${Math.round(r.top)},${Math.round(r.width)},${Math.round(r.height)}`;
       if (key === lastKey) return;
       lastKey = key;
-      cancelAnimationFrame(raf);
-      raf = requestAnimationFrame(() => {
+      // 用 setTimeout 而非 rAF：Windows 拖拽窗口边框是模态循环，
+      // 期间 rAF 不出帧，矩形上报会完全冻结（浏览器视图原地不动）
+      clearTimeout(timer);
+      timer = window.setTimeout(() => {
         amc?.browser?.setRect?.({ x: Math.round(r.left), y: Math.round(r.top), width: Math.max(0, Math.round(r.width)), height: Math.max(0, Math.round(r.height)) });
-      });
+      }, 16);
     });
     if (host && ro) ro.observe(host);
     return () => {
-      cancelAnimationFrame(raf);
+      clearTimeout(timer);
       ro?.disconnect();
       amc?.browser?.setRect?.(null); // 卸载（切走/关闭）：隐藏视图
     };

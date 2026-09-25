@@ -100,13 +100,6 @@ export function SidePane({ open }: { open: boolean }) {
     return () => clearTimeout(t);
   }, [open]);
 
-  // 非浏览器 tab 激活时隐藏浏览器视图（主进程 detach）
-  useEffect(() => {
-    if (!paneActive?.startsWith('browser:')) {
-      (window as unknown as { amc?: { browser?: { setRect?: (r: unknown) => void } } }).amc?.browser?.setRect?.(null);
-    }
-  }, [paneActive]);
-
   // ---------- 可添加的标签类型（「+」菜单与空态卡片共用） ----------
   const cards: Card[] = [
     { id: 'browser', kind: 'browser', label: '浏览器', icon: GlobeIcon },
@@ -162,6 +155,19 @@ export function SidePane({ open }: { open: boolean }) {
   const instOf = activeTab?.kind === 'browser' ? insts.find((i) => i.id === activeTab.id.slice(8)) : null;
   const ModePanel = activeTab?.kind === 'mode' ? MODE_PANELS[activeTab.id.slice(5)] : null;
   const BuiltinPanel = activeTab?.kind === 'git' ? GitPanel : activeTab?.kind === 'tasks' ? TasksPanel : activeTab?.kind === 'plan' ? PlanPanel : null;
+
+  // 非浏览器 tab 激活、或「+」菜单打开时隐藏浏览器视图（主进程 detach）——
+  // 原生 WebContentsView 永远盖在 DOM 之上，不卸下会遮住菜单导致无法点击；
+  // 关闭菜单后重新激活当前浏览器 tab，视图恢复原位。
+  useEffect(() => {
+    const amc = (window as unknown as { amc?: { browser?: { setRect?: (r: unknown) => void; activate?: (id: string) => void } } }).amc;
+    if (!paneActive?.startsWith('browser:') || menuPos) {
+      amc?.browser?.setRect?.(null);
+    } else if (paneActive) {
+      amc?.browser?.activate?.(paneActive.slice(8));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paneActive, menuPos]);
 
   return (
     <aside
