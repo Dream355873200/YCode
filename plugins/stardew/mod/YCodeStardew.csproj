@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- SMAPI 4 模组：Pathoschild.ModBuildConfig 自动定位游戏目录、引用
+       StardewValley/SMAPI 程序集，并在编译后把产物部署进游戏 Mods 文件夹。
+       编译：plugins/stardew/mod/build.ps1（或直接 dotnet build -c Release）。 -->
+  <PropertyGroup>
+    <TargetFramework>net6.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <EnableModDeploy>true</EnableModDeploy>
+    <ModZipPath>$(AppData)\StardewValley\Mods</ModZipPath>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Pathoschild.Stardew.ModBuildConfig" Version="4.3.0" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,10 @@
+{
+  "id": "stardew",
+  "name": "星露谷玩家",
+  "description": "让 Agent 玩 Stardew Valley：读状态（日期/金钱/体力/背包）、传送、模拟按键（SMAPI mod 桥，MCP 工具 mcp__stardew__*）。需先编译安装 mod（plugins/stardew/mod/build.ps1）",
+  "rules": "rules.md",
+  "skills": "skills",
+  "mcpServers": [
+    { "name": "stardew", "command": "node", "args": ["${PLUGIN_DIR}/mcp/server.js"] }
+  ]
+}
