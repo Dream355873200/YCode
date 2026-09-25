@@ -1,0 +1,10 @@
+{
+  "id": "minecraft",
+  "name": "Minecraft 玩家",
+  "description": "让 Agent 进 Minecraft 服务器干活：移动/挖掘/合成/攻击/聊天，意图级工具（mineflayer 驱动，MCP 工具 mcp__minecraft__*）。连接配置见 mcp/config.json 说明或 skills/minecraft",
+  "rules": "rules.md",
+  "skills": "skills",
+  "mcpServers": [
+    { "name": "minecraft", "command": "node", "args": ["${PLUGIN_DIR}/mcp/server.js"] }
+  ]
+}
