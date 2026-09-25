@@ -132,6 +132,11 @@ function onGameChat(username, text) {
   }).catch(() => {});
 }
 
+// ---------- 工具 ----------
+const tools = [];
+const def = (name, description, inputSchema, handler) =>
+  tools.push({ name, description, inputSchema, handler });
+
 def("mc_chat_log", "翻看最近的 Minecraft 游戏聊天（缓存最近 40 条）。bot 上线期间别人说的话都在这里。", {
   type: "object",
   properties: { limit: { type: "integer", description: "最近 N 条（默认 20）" } },
@@ -142,11 +147,6 @@ def("mc_chat_log", "翻看最近的 Minecraft 游戏聊天（缓存最近 40 条
   if (!recent.length) return { __text: "还没有聊天记录（bot 在线期间才会缓存）" };
   return { __text: recent.map((c) => `[${new Date(c.ts).toLocaleTimeString("zh-CN", { hour12: false })}] ${c.from}: ${c.text}`).join("\n") };
 });
-
-// ---------- 工具 ----------
-const tools = [];
-const def = (name, description, inputSchema, handler) =>
-  tools.push({ name, description, inputSchema, handler });
 
 const fmtPos = (p) => p ? `(${Math.floor(p.x)}, ${Math.floor(p.y)}, ${Math.floor(p.z)})` : "(未知)";
 const fmtItem = (i) => `${i.name} x${i.count}`;
@@ -442,6 +442,91 @@ def("mc_screenshot", "渲染 bot 视角的第一人称画面并内联返回（�
   const b64 = fs.readFileSync(out).toString("base64");
   try { fs.unlinkSync(out); } catch {}
   return { __image: { b64, w, h, path: out } };
+});
+
+def("mc_schem_list", "列出 schematics 目录里的蓝图文件（.schem/.litematic）。把下载或导出的蓝图放进该目录即可使用。", { type: "object", properties: {} },
+  async () => {
+    const dir = path.join(PLUGIN_ROOT, "schematics");
+    if (!fs.existsSync(dir)) return { __text: "还没有 schematics 目录——把蓝图文件放进 plugins/minecraft/schematics/ 即可" };
+    const files = fs.readdirSync(dir).filter((f) => /\.(schem|litematic|schematic)$/i.test(f));
+    if (!files.length) return { __text: "schematics 目录里没有蓝图文件" };
+    return { __text: files.map((f) => `${f} (${(fs.statSync(path.join(dir, f)).size / 1024).toFixed(1)} KB)`).join("\n") };
+  });
+
+def("mc_schem_info", "解析蓝图：尺寸、方块总数、材料清单（按数量排序）。建造前用它规划采集。", {
+  type: "object",
+  properties: { file: { type: "string", description: "蓝图文件名（mc_schem_list 里看到的）" } },
+  required: ["file"],
+}, async (a) => {
+  const { Schematic } = require("prismarine-schematic");
+  const cfg = loadConfig();
+  const file = path.join(PLUGIN_ROOT, "schematics", path.basename(a.file));
+  const reg = require("minecraft-data")(cfg.version || "1.20.4");
+  const schem = await Schematic.read(fs.readFileSync(file), cfg.version || "1.20.4");
+  const mats = {};
+  let total = 0;
+  await schem.forEach((block) => {
+    if (!block || !block.name || block.name === "air") return;
+    total += 1;
+    mats[block.name] = (mats[block.name] || 0) + 1;
+  });
+  const list = Object.entries(mats).sort((x, y) => y[1] - x[1]).slice(0, 25)
+    .map(([n, c]) => `${n} x${c}`).join(", ");
+  return { __text: `尺寸 ${schem.size.x}x${schem.size.y}x${schem.size.z} · 实体方块 ${total}
+材料: ${list}` };
+});
+
+def("mc_build_schematic", "按蓝图建造：解析 .schem 后逐块放置。创造模式（推荐）自动飞行+任意放置，快且不受依托面限制；生存模式受触及范围约束，只适合小体量。大蓝图会分区块搬运建造，需要 OP 权限（/tp 移动）。", {
+  type: "object",
+  properties: {
+    file: { type: "string", description: "蓝图文件名" },
+    x: { type: "integer" }, y: { type: "integer" }, z: { type: "integer" },
+    limit: { type: "integer", description: "本次最多放置多少块（默认 500，防超时；剩余下次接着建）" },
+  },
+  required: ["file", "x", "y", "z"],
+}, async (a) => {
+  const { Schematic } = require("prismarine-schematic");
+  const Vec3 = require("vec3").Vec3;
+  const cfg = loadConfig();
+  const version = cfg.version || "1.20.4";
+  const file = path.join(PLUGIN_ROOT, "schematics", path.basename(a.file));
+  const reg = require("minecraft-data")(version);
+  const schem = await Schematic.read(fs.readFileSync(file), version);
+  const creative = b && b.game && b.game.gameMode === "creative";
+  const voxels = [];
+  await schem.forEach((block, pos) => {
+    if (!block || !block.name || block.name === "air" || block.name === "structure_void") return;
+    voxels.push({ pos, name: block.name });
+  });
+  voxels.sort((p, q) => p.pos.y - q.pos.y); // 从低到高
+  const limit = Math.min(5000, Math.max(1, a.limit || 500));
+  const todo = voxels.slice(0, limit);
+  let placed = 0, skipped = 0;
+  for (const v of todo) {
+    const wx = a.x + v.pos.x, wy = a.y + v.pos.y, wz = a.z + v.pos.z;
+    const dist = b.entity.position.distanceTo(new Vec3(wx, wy, wz));
+    if (dist > 60) {
+      // 超出工作范围：OP 权限下用 /tp 搬运到施工区附近（创造飞行配合）
+      b.chat(`/tp ${wx} ${wy + 8} ${wz}`);
+      await new Promise((r) => setTimeout(r, 800));
+    }
+    try {
+      if (creative) {
+        const st = b.registry.blocksByName[v.name];
+        await b.creative.setBlock(new Vec3(wx, wy, wz), st);
+      } else {
+        const ref = b.blockAt(new Vec3(wx, wy - 1, wz)) || b.blockAt(new Vec3(wx - 1, wy, wz));
+        if (!ref || ref.boundingBox === "empty") { skipped += 1; continue; }
+        const item = b.inventory.items().find((i) => i.name === v.name);
+        if (!item) { skipped += 1; continue; }
+        await b.equip(item, "hand");
+        await b.placeBlock(ref, new Vec3(0, 1, 0));
+      }
+      placed += 1;
+    } catch { skipped += 1; }
+  }
+  const remain = voxels.length - limit;
+  return { __text: `蓝图 ${a.file}: 共 ${voxels.length} 块，本次放置 ${placed}${skipped ? `，跳过 ${skipped}（缺依托/材料）` : ""}${remain > 0 ? `\n剩余 ${remain} 块——再次调用本工具（同坐标同 limit）继续建造` : "\n建造完成"}` };
 });
 
 def("mc_chat", "在服务器聊天栏发消息。", {

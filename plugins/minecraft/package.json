@@ -4,6 +4,7 @@
   "description": "YCode minecraft 插件的 MCP 服务器依赖（mineflayer 意图级 bot）",
   "dependencies": {
     "mineflayer": "^4.23.0",
-    "mineflayer-pathfinder": "^2.4.5"
+    "mineflayer-pathfinder": "^2.4.5",
+    "prismarine-viewer": "^1.33.0"
   }
 }
