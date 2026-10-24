@@ -592,6 +592,7 @@ const textResult = (t, isError) => ({ content: [{ type: "text", text: String(t) 
 
 async function handle(msg) {
   const { id, method, params } = msg;
+  if (id === undefined || id === null) return null; // notification
   try {
     if (method === "initialize") {
       return { id, result: { protocolVersion: params && params.protocolVersion, capabilities: { tools: {} }, serverInfo: { name: "ycode-minecraft", version: "1.0.0" } } };
@@ -632,6 +633,9 @@ bot 视角 ${img.w}x${img.h}（画面已附上）`) };
   }
 }
 
+// JSON-RPC 2.0：每条回包都必须带 jsonrpc 版本标签（MCP 官方 SDK 缺了就断开）
+const reply = (resp) => process.stdout.write(JSON.stringify({ jsonrpc: "2.0", ...resp }) + "\n");
+
 let buf = "";
 process.stdin.setEncoding("utf8");
 process.stdin.on("data", (c) => {
@@ -645,8 +649,8 @@ process.stdin.on("data", (c) => {
     try { msg = JSON.parse(line); } catch { continue; }
     inflight += 1;
     handle(msg)
-      .then((resp) => { if (resp) process.stdout.write(JSON.stringify(resp) + "\n"); })
-      .catch((e) => process.stdout.write(JSON.stringify({ id: msg.id, error: { code: -32603, message: String(e && e.message || e) } }) + "\n"))
+      .then((resp) => { if (resp) reply(resp); })
+      .catch((e) => { if (msg.id != null) reply({ id: msg.id, error: { code: -32603, message: String(e && e.message || e) } }); })
       .finally(() => { inflight -= 1; });
   }
 });

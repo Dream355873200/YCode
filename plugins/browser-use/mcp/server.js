@@ -174,6 +174,9 @@ async function handle(msg) {
   }
 }
 
+// JSON-RPC 2.0：每条回包都必须带 jsonrpc 版本标签（MCP 官方 SDK 缺了就断开）
+const reply = (resp) => process.stdout.write(JSON.stringify({ jsonrpc: "2.0", ...resp }) + "\n");
+
 let buf = "";
 process.stdin.setEncoding("utf8");
 process.stdin.on("data", (c) => {
@@ -185,7 +188,7 @@ process.stdin.on("data", (c) => {
     if (!line) continue;
     let msg;
     try { msg = JSON.parse(line); } catch { continue; }
-    handle(msg).then((resp) => { if (resp) process.stdout.write(JSON.stringify(resp) + "\n"); });
+    handle(msg).then((resp) => { if (resp) reply(resp); });
   }
 });
 process.stdin.on("end", () => process.exit(0));

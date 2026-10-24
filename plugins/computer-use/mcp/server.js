@@ -389,7 +389,7 @@ async function handle(msg) {
           if (!img.b64 || img.b64.length < 100) {
             return { id, result: textResult("截图失败：画面数据为空——检查窗口是否最小化", true) };
           }
-          const extra = `${img.restored ? "，窗口原为最小化已恢复" : ""}${img.blank ? "；⚠ 画面为纯色，可能未真正渲染" : ""}`;
+          const extra = `${img.restored ? "，窗口原为最小化已恢复" : ""}${img.blank ? "；注意：画面为纯色，可能未真正渲染" : ""}`;
           return { id, result: textResult(`[IMAGE jpeg ${img.b64}]\n截图 ${img.w}x${img.h}: ${img.path}（画面已附上${extra}）`) };
         }
         if (r && r.__text !== undefined) return { id, result: textResult(r.__text) };
@@ -415,6 +415,9 @@ async function handle(msg) {
   }
 }
 
+// JSON-RPC 2.0：每条回包都必须带 jsonrpc 版本标签（MCP 官方 SDK 缺了就断开）
+const reply = (resp) => process.stdout.write(JSON.stringify({ jsonrpc: "2.0", ...resp }) + "\n");
+
 let buf = "";
 process.stdin.setEncoding("utf8");
 process.stdin.on("data", (c) => {
@@ -426,7 +429,7 @@ process.stdin.on("data", (c) => {
     if (!line) continue;
     let msg;
     try { msg = JSON.parse(line); } catch { continue; }
-    handle(msg).then((resp) => { if (resp) process.stdout.write(JSON.stringify(resp) + "\n"); });
+    handle(msg).then((resp) => { if (resp) reply(resp); });
   }
 });
 process.stdin.on("end", () => process.exit(0));

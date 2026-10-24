@@ -255,6 +255,9 @@ func viewOf(id string, b sessionBinding, s *session.SessionSummary) threadView {
 			v.CreatedAt = s.CreatedAt
 		}
 		v.Turns = s.TurnCount
+		if v.Turns == 0 && s.FirstMessage != "" {
+			v.Turns = 1 // 会话摘要的轮数未必维护：有首条消息即视为已开始
+		}
 		if v.Title == "" {
 			v.Title = provisionalTitle(s.FirstMessage)
 		}
