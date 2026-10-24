@@ -579,7 +579,12 @@ def("view_image",
     const media = ext === ".jpg" || ext === ".jpeg" ? "jpeg" : ext === ".png" ? "png" : ext === ".webp" ? "webp" : ext === ".gif" ? "gif" : null;
     if (!media) throw new Error(`不支持的图片格式：${ext}（jpg/png/webp/gif）`);
     const buf = fs.readFileSync(abs);
-    if (buf.length > 300 * 1024) throw new Error(`图片过大（${(buf.length / 1024).toFixed(0)}KB > 300KB），无法内联`);
+    // 内联上限 4MB：模型 API 单图限制 5MB（Anthropic）/20MB（OpenAI），
+    // base64 膨胀 4/3 后 4MB 原图 ≈ 5.3MB 数据，仍在安全区。素材图/关键帧
+    // 几百 KB 到几 MB 都常见，超限报错并给替代路径而不是静默截断。
+    if (buf.length > 4 * 1024 * 1024) {
+      throw new Error(`图片过大（${(buf.length / 1024 / 1024).toFixed(1)}MB > 4MB），无法内联。先用看图/压缩工具把它转成 <4MB 的 jpg（或对渲染帧改用 inspect_frames 的低 scale 参数）`);
+    }
     return { __image: { b64: buf.toString("base64"), media, abs } };
   });
 
