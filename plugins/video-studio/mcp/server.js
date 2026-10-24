@@ -141,8 +141,8 @@ function scanSource(rel, src) {
 function scanAssets(dir, rel, src) {
   const errs = [];
   const refs = new Set();
-  for (const m of src.matchAll(/asset\(\s*["']([^"']+)["']\s*\)|(?:src|poster)=\{?["'](uploads|assets|clips)\/[^"']+["']/g)) {
-    refs.push(m[1] || m[0].replace(/^.*=["']|["']$/g, ""));
+  for (const m of src.matchAll(/asset\(\s*["']([^"']+)["']\s*\)|(?:src|poster)=\{?["']\/?\.?\/?(?:public\/)?((?:uploads|assets|clips)\/[^"']+)["']/g)) {
+    refs.push(m[1] || m[2]);
   }
   for (const ref of refs) {
     const clean = ref.replace(/^\.?\/+/, "").replace(/^public\//, "").split("?")[0];
@@ -191,21 +191,132 @@ function validateManifest(dir) {
 
 function runCmd(cmd, args, opts = {}) {
   return new Promise((resolve) => {
-    const p = spawn(cmd, args, { cwd: opts.cwd, env: process.env, shell: process.platform === "win32" });
-    let out = "", err = "";
+    // 只有 .cmd/.bat 或显式要求时才走 shell；其余直接 spawn，参数（含空格的浏览器路径）原样传递。
+    const wantsShell = opts.shell ?? (process.platform === "win32" && /\.(cmd|bat)$/i.test(cmd));
+    // shell:true 时 Node 只做空格拼接不转义——带空格的参数（如浏览器路径）必须自己加引号
+    const line = wantsShell ? [cmd, ...args].map((a) => (/[ "	]/.test(a) ? `"${String(a).replace(/"/g, '""')}"` : a)).join(" ") : null;
+    const p = spawn(wantsShell ? line : cmd, wantsShell ? [] : args, { cwd: opts.cwd, env: process.env, shell: wantsShell, windowsHide: true });
+    let out = "", err = "", done = false;
+    const finish = (code) => { if (!done) { done = true; resolve({ code, out, err }); } };
+    const timer = opts.timeoutMs ? setTimeout(() => {
+      try {
+        if (process.platform === "win32") spawn("taskkill", ["/PID", String(p.pid), "/T", "/F"], { stdio: "ignore" });
+        else p.kill("SIGKILL");
+      } catch { /* 已退出 */ }
+      finish(-2);
+    }, opts.timeoutMs) : null;
     p.stdout.on("data", (c) => { out += c; if (out.length > 30000) out = out.slice(-15000); });
     p.stderr.on("data", (c) => { err += c; if (err.length > 30000) err = err.slice(-15000); });
-    p.on("error", (e) => resolve({ code: -1, out, err: String(e.message) }));
-    p.on("close", (code) => resolve({ code, out, err }));
+    p.on("error", (e) => { if (timer) clearTimeout(timer); finish(-1); err += String(e.message); });
+    p.on("close", (code) => { if (timer) clearTimeout(timer); finish(code); });
   });
 }
 
-// Remotion CLI：npx 优先用工程内 node_modules；未安装时报可恢复错误
-async function remotion(dir, args) {
-  if (!fs.existsSync(path.join(dir, "node_modules", "remotion", "package.json"))) {
+// 系统浏览器优先：Remotion 首次渲染会从 googleapis 下载 chrome-headless-shell
+// 到项目 node_modules（国内网络经常卡死/半截），机器上现成的 Chrome/Edge 完全
+// 能干同样的活——检测到就直接用，零下载。
+const BROWSER_CANDIDATES = [
+  process.env.REMOTION_BROWSER_EXECUTABLE,
+  "C:/Program Files/Google/Chrome/Application/chrome.exe",
+  "C:/Program Files (x86)/Google/Chrome/Application/chrome.exe",
+  "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe",
+  "C:/Program Files/Microsoft/Edge/Application/msedge.exe",
+  process.env.LOCALAPPDATA + "/Google/Chrome/Application/chrome.exe",
+  "/usr/bin/google-chrome", "/usr/bin/chromium-browser", "/usr/bin/chromium",
+  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+].filter(Boolean);
+let browserPath; // undefined=未检测
+function browserArgs() {
+  if (browserPath === undefined) {
+    browserPath = null;
+    for (const c of BROWSER_CANDIDATES) {
+      try { fs.accessSync(c); browserPath = c; break; } catch { /* 下一个 */ }
+    }
+  }
+  return browserPath ? ["--browser-executable", browserPath] : [];
+}
+
+// 从 dir 向上找含 remotion 的 node_modules（工程可能在共享运行时的子目录）
+function findRuntimeRoot(dir) {
+  let cur = dir;
+  for (let i = 0; i < 8 && cur; i++) {
+    if (fs.existsSync(path.join(cur, "node_modules", "remotion", "package.json"))) return cur;
+    const up = path.dirname(cur);
+    if (up === cur) break;
+    cur = up;
+  }
+  return null;
+}
+
+// Remotion CLI：直调 .bin（跳过 npx 解析）；未安装时报可恢复错误。
+// timeoutMs 到点杀进程树（shell:true 拉起的 .cmd 链要整树杀）。
+async function remotion(dir, args, timeoutMs = 8 * 60_000) {
+  const root = findRuntimeRoot(dir);
+  if (!root) {
     throw new Error("工程还没装依赖：先在项目目录执行 npm install（Bash），完成后重试");
   }
-  return runCmd("npx", ["remotion", ...args], { cwd: dir });
+  const bin = path.join(root, "node_modules", ".bin", process.platform === "win32" ? "remotion.cmd" : "remotion");
+  // CLI 入口是 @remotion/cli 包根的 remotion-cli.js（package.json bin 指向它）；
+  // dist/index.js 是库入口——跑了就静默退出、什么都不做，绝不能用。
+  const cli = path.join(root, "node_modules", "@remotion", "cli", "remotion-cli.js");
+  // 优先直接 node 跑 CLI 入口：绕开 .cmd 转发，带空格的参数（浏览器路径）不会被 cmd 拆开
+  if (fs.existsSync(cli)) {
+    return runCmd(process.execPath, [cli, ...args], { cwd: dir, timeoutMs, shell: false });
+  }
+  const useBin = fs.existsSync(bin);
+  return runCmd(useBin ? bin : "npx", useBin ? args : ["remotion", ...args], { cwd: dir, timeoutMs, shell: true });
+}
+
+// 渲染命令提示：把解析出的绝对 CLI 路径告诉 agent，免得它自己猜入口踩库入口的坑
+function renderHint(dir) {
+  const root = findRuntimeRoot(dir);
+  if (!root) return "";
+  const cli = path.join(root, "node_modules", "@remotion", "cli", "remotion-cli.js");
+  if (!fs.existsSync(cli)) return "";
+  return `渲染成片命令（CLI 入口必须用 remotion-cli.js；remotion 主包的 dist/index.js 是库入口，跑了会静默退出）：
+node "${cli}" render src/index.ts Film out/final.mp4 --codec h264`;
+}
+
+// bundle 内容寻址缓存：src+public 指纹不变就直接复用（省 15-30s/次）。
+// 临时目录原子改名发布，避免并发/中断留下半成品被误用。
+const crypto = require("crypto");
+function srcFingerprint(dir) {
+  const h = crypto.createHash("sha256");
+  const walk = (d) => {
+    for (const name of fs.readdirSync(d).sort()) {
+      if (name === "node_modules" || name.startsWith(".")) continue;
+      const p = path.join(d, name);
+      const st = fs.statSync(p);
+      if (st.isDirectory()) walk(p);
+      else { h.update(name); h.update(String(st.size)); h.update(String(Math.floor(st.mtimeMs / 1000))); }
+    }
+  };
+  walk(path.join(dir, "src"));
+  try { walk(path.join(dir, "public")); } catch { /* public 可选 */ }
+  return h.digest("hex").slice(0, 12);
+}
+async function ensureBundle(dir) {
+  const key = srcFingerprint(dir);
+  const bundleDir = path.join(dir, "out", `.vsbundle-${key}`);
+  if (fs.existsSync(path.join(bundleDir, "index.html")) && fs.existsSync(path.join(bundleDir, ".vsbundle-key"))) {
+    return bundleDir;
+  }
+  const outRoot = path.join(dir, "out");
+  try {
+    for (const f of fs.readdirSync(outRoot)) {
+      if (f.startsWith(".vsbundle-") || f === ".vsbundle") fs.rmSync(path.join(outRoot, f), { recursive: true, force: true });
+    }
+  } catch { /* out 可能还没有 */ }
+  fs.mkdirSync(outRoot, { recursive: true });
+  const tmp = path.join(outRoot, `.vsbundle-tmp-${Date.now().toString(36)}`);
+  const b = await remotion(dir, ["bundle", "src/index.ts", "--out-dir", tmp]);
+  if (b.code !== 0) {
+    try { fs.rmSync(tmp, { recursive: true, force: true }); } catch { /* 清理失败无妨 */ }
+    throw new Error(`打包失败：${(b.err || b.out).slice(-800)}`);
+  }
+  fs.renameSync(tmp, bundleDir);
+  fs.writeFileSync(path.join(bundleDir, ".vsbundle-key"), key);
+  return bundleDir;
 }
 
 // 渲染作业串行（桌面单用户足够）
@@ -279,7 +390,9 @@ ${manifestSummary(dir)}`;
 
 接下来：读 brief.md → 没装依赖先 npm install → 写分镜与场景。
 
-${manifestSummary(dir)}`;
+${manifestSummary(dir)}
+
+${renderHint(dir)}`;
   });
 
 def("render_thumbs",
@@ -289,10 +402,7 @@ def("render_thumbs",
     const dir = resolveDir(a);
     const m = readManifest(dir);
     return serial(async () => {
-      const bundleDir = path.join(dir, "out", ".vsbundle");
-      fs.rmSync(bundleDir, { recursive: true, force: true });
-      const b = await remotion(dir, ["bundle", "src/index.ts", bundleDir]);
-      if (b.code !== 0) throw new Error(`打包失败：${(b.err || b.out).slice(-800)}`);
+      const bundleDir = await ensureBundle(dir);
       const thumbsDir = path.join(dir, "out", "thumbs");
       fs.mkdirSync(thumbsDir, { recursive: true });
       const valid = new Set(m.scenes.map((s) => s.id));
@@ -337,9 +447,10 @@ def("check_project",
         scan.push(...scanSource(`src/lib/${f}`, fs.readFileSync(path.join(libDir, f), "utf8")));
       }
     }
-    const tscBin = path.join(dir, "node_modules", "typescript", "bin", "tsc");
+      const runtimeRoot = findRuntimeRoot(dir);
+  const tscBin = runtimeRoot ? path.join(runtimeRoot, "node_modules", "typescript", "bin", "tsc") : null;
     let types = "";
-    if (fs.existsSync(tscBin)) {
+    if (tscBin && fs.existsSync(tscBin)) {
       const r = await runCmd(process.execPath, [tscBin, "--noEmit", "-p", dir], { cwd: dir });
       if (r.code !== 0) {
         const lines = r.out.split("\n").filter((l) => /error TS/.test(l));
@@ -355,7 +466,7 @@ def("check_project",
     if (scan.length) parts.push(`【逐帧规则违反】\n${scan.slice(0, 30).join("\n")}`);
     if (types) parts.push(`【类型】${types}`);
     if (parts.length) return `检查未通过（${parts.length} 类问题）：\n\n${parts.join("\n\n")}`;
-    return `检查通过${warn.length ? `\n提醒：\n${warn.join("\n")}` : ""}\n\n${manifestSummary(dir)}`;
+    return `检查通过${warn.length ? `\n提醒：\n${warn.join("\n")}` : ""}\n\n${manifestSummary(dir)}\n\n${renderHint(dir)}`;
   });
 
 // ---------- 抽帧 ----------
@@ -412,17 +523,14 @@ def("inspect_frames",
       frames = autoStillFrames(m, a.scene || "", a.count || 6);
     }
     return serial(async () => {
-      const bundleDir = path.join(dir, "out", ".vsbundle");
-      fs.rmSync(bundleDir, { recursive: true, force: true });
-      const b = await remotion(dir, ["bundle", "src/index.ts", bundleDir]);
-      if (b.code !== 0) throw new Error(`打包失败：${(b.err || b.out).slice(-800)}`);
+      const bundleDir = await ensureBundle(dir);
       const stillsDir = path.join(dir, "out", ".vsstills");
       fs.rmSync(stillsDir, { recursive: true, force: true });
       fs.mkdirSync(stillsDir, { recursive: true });
       for (const f of frames) {
         const out = path.join(stillsDir, `frame_${String(f).padStart(5, "0")}.jpg`);
         const r = await remotion(dir, ["still", bundleDir, "Film", out,
-          "--frame", String(f), "--image-format=jpeg", "--jpeg-quality=70", "--scale=0.4"]);
+          "--frame", String(f), "--image-format=jpeg", "--jpeg-quality=70", "--scale=0.4", ...browserArgs()]);
         if (r.code !== 0 || !fs.existsSync(out)) {
           throw new Error(`第 ${f} 帧渲染失败：${(r.err || r.out).slice(-800)}`);
         }
@@ -436,6 +544,26 @@ def("inspect_frames",
         if (buf.length > 120 * 1024) return `#${i + 1}（帧 ${f}）图过大未内联：${path.join(stillsDir, `frame_${String(f).padStart(5, "0")}.jpg`)}`;
         return `[IMAGE jpeg ${buf.toString("base64")}]\n${labels[i]}`;
       });
+      // 顺带刷新每场景缩略图（同一次 bundle，右栏分镜条跟着更新）
+      try {
+        const thumbsDir = path.join(dir, "out", "thumbs");
+        fs.mkdirSync(thumbsDir, { recursive: true });
+        const valid = new Set(m.scenes.map((sc) => sc.id));
+        try {
+          for (const f of fs.readdirSync(thumbsDir)) {
+            if (f.endsWith(".jpg") && !valid.has(f.replace(/\.jpg$/, ""))) fs.rmSync(path.join(thumbsDir, f), { force: true });
+          }
+        } catch { /* 清理失败无妨 */ }
+        for (const sc of m.scenes) {
+          const at = sc.from + Math.floor(sc.duration * 0.45);
+          const out2 = path.join(thumbsDir, `${sc.id}.jpg`);
+          if (!fs.existsSync(out2) || Date.now() - fs.statSync(out2).mtimeMs > 60_000) {
+            const r2 = await remotion(dir, ["still", bundleDir, "Film", out2,
+              "--frame", String(at), "--image-format=jpeg", "--jpeg-quality=75", "--scale=0.22", ...browserArgs()]);
+            if (r2.code !== 0) break; // 缩略图失败不影响本次自查结果
+          }
+        }
+      } catch { /* 缩略图是附赠品，失败不阻断 */ }
       return { __frames: { parts, labels, frames } };
     });
   });
