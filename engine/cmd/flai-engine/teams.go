@@ -56,7 +56,8 @@ type TeamMember struct {
 // TeamLeader 队长定义。
 type TeamLeader struct {
 	Role     string   `json:"role"`
-	Mode     string   `json:"mode,omitempty"`     // 权限模式（默认 accept_edits）
+	Mode     string   `json:"mode,omitempty"`     // 审批策略（权限模式，默认 accept_edits）
+	Agent    string   `json:"agent,omitempty"`    // 能力基底智能体（可选，同成员的 mode）
 	Toolsets []string `json:"toolsets,omitempty"` // 额外工具集（team 工具集自动授予）
 }
 
@@ -68,19 +69,32 @@ type Team struct {
 	Leader    TeamLeader   `json:"leader"`
 	Members   []TeamMember `json:"members"`
 	CreatedAt time.Time    `json:"created_at"`
+	// SessionPrefix 成员会话 ID 前缀（team-<目录哈希>-<名>，创建时写入）：
+	// 会话 ID 必须按项目隔离——不同项目里的同名团队不能共用会话与角色卡。
+	// 早期团队没有该字段，沿用 team-<名>（历史不丢）。
+	SessionPrefix string `json:"sessionPrefix,omitempty"`
+}
+
+// sessionID 成员（含 leader）的持久会话 ID。
+func (t *Team) sessionID(memberName string) string {
+	p := t.SessionPrefix
+	if p == "" {
+		p = "team-" + t.Name
+	}
+	return p + "-" + memberName
 }
 
 // member 成员（含 leader）统一内部视图。
 type member struct {
 	name     string
 	role     string
-	mode     string // 能力基底模式（空 = 仅按 toolsets）
+	mode     string // 能力基底智能体（空 = 仅按 toolsets）
 	toolsets []string
 	isLeader bool
 }
 
 func (t *Team) iterMembers() []member {
-	out := []member{{name: "leader", role: t.Leader.Role, toolsets: t.Leader.Toolsets, isLeader: true}}
+	out := []member{{name: "leader", role: t.Leader.Role, mode: t.Leader.Agent, toolsets: t.Leader.Toolsets, isLeader: true}}
 	for _, m := range t.Members {
 		out = append(out, member{name: m.Name, role: m.Role, mode: m.Mode, toolsets: m.Toolsets})
 	}
@@ -148,7 +162,8 @@ func (r *teamRegistry) register(t *Team) {
 		}
 	}
 	for _, m := range t.iterMembers() {
-		r.bySess[teamSessionID(t.Name, m.name)] = teamBinding{team: t, member: m, sessionID: teamSessionID(t.Name, m.name)}
+		sid := t.sessionID(m.name)
+		r.bySess[sid] = teamBinding{team: t, member: m, sessionID: sid}
 	}
 }
 
@@ -178,8 +193,6 @@ func (r *teamRegistry) pushLive(sessionID string, ev liveEvt) {
 // ---- 存储与解析 ----
 
 var teamNameRe = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,31}$`)
-
-func teamSessionID(team, memberName string) string { return "team-" + team + "-" + memberName }
 
 func teamRoot(dir string) string        { return filepath.Join(dir, ".yume", "teams") }
 func teamDirOf(dir, name string) string { return filepath.Join(teamRoot(dir), name) }
@@ -350,18 +363,10 @@ func teamPermMode(sessionID string) (goagent.PermissionModeOption, bool) {
 	if !b.member.isLeader {
 		mode = "accept_edits" // 成员统一 auto
 	}
-	switch mode {
-	case "bypass":
-		return goagent.PermissionBypass, true
-	case "plan":
-		return goagent.PermissionPlanOnly, true
-	case "default":
-		return goagent.PermissionDefault, true
-	case "deny_all":
-		return goagent.PermissionDenyAll, true
-	default: // "" / accept_edits / auto
-		return goagent.PermissionAcceptEdits, true
+	if m, ok := permOption(mode); ok {
+		return m, true
 	}
+	return goagent.PermissionAcceptEdits, true
 }
 
 // ---- 跨会话驱动 ----
@@ -453,7 +458,7 @@ func runMemberSession(ctx goagent.Context, b teamBinding, input string) (string,
 // notifyLeader 给 leader 递一条消息：忙 → guide 车道插话；闲 → 排队并
 // 拉起 leader 会话（后台，结果进群聊）。
 func notifyLeader(t *Team, text string) {
-	lsid := teamSessionID(t.Name, "leader")
+	lsid := t.sessionID("leader")
 	appendChat(t, TeamChatMsg{From: "system", To: "leader", Type: "steer", Text: text})
 	if hub := engineApp.Steering(); hub != nil {
 		if teamBusy(lsid) {
@@ -468,7 +473,7 @@ func notifyLeader(t *Team, text string) {
 // routeToTeamMember 群聊消息 @成员：忙 → 插话；闲 → 拉起其会话。
 // from 是群聊署名（"user" 或发言成员名）。
 func routeToTeamMember(t *Team, m member, text, from string) error {
-	b, ok := teamsReg.binding(teamSessionID(t.Name, m.name))
+	b, ok := teamsReg.binding(t.sessionID(m.name))
 	if !ok {
 		return fmt.Errorf("成员 %s 未注册", m.name)
 	}
@@ -533,7 +538,7 @@ func installTeam(app *goagent.App) {
 			if !ok || m.isLeader {
 				return "", fmt.Errorf("成员 %q 不存在（可分派对象：%s）", in.Member, memberNames(t))
 			}
-			b, ok := teamsReg.binding(teamSessionID(t.Name, m.name))
+			b, ok := teamsReg.binding(t.sessionID(m.name))
 			if !ok {
 				return "", fmt.Errorf("成员 %s 未注册", m.name)
 			}
@@ -565,7 +570,7 @@ func installTeam(app *goagent.App) {
 			}
 			var sb strings.Builder
 			for _, m := range t.iterMembers() {
-				sid := teamSessionID(t.Name, m.name)
+				sid := t.sessionID(m.name)
 				status := "idle"
 				if teamBusy(sid) {
 					status = "running"
@@ -637,7 +642,7 @@ func installTeam(app *goagent.App) {
 			if n <= 0 {
 				n = 8
 			}
-			sess, err := engineApp.Sessions().Get(ctx, teamSessionID(t.Name, in.Member))
+			sess, err := engineApp.Sessions().Get(ctx, t.sessionID(in.Member))
 			if err != nil || sess == nil {
 				return "成员 " + in.Member + " 还没有会话历史", nil
 			}
@@ -764,7 +769,7 @@ func writeJSON(w http.ResponseWriter, v any) {
 func teamDetailJSON(t *Team) map[string]any {
 	members := []map[string]any{}
 	for _, m := range t.iterMembers() {
-		sid := teamSessionID(t.Name, m.name)
+		sid := t.sessionID(m.name)
 		status := "idle"
 		if teamBusy(sid) {
 			status = "running"
@@ -774,11 +779,70 @@ func teamDetailJSON(t *Team) map[string]any {
 			toolsets = append(append([]string{}, toolsets...), "team")
 		}
 		members = append(members, map[string]any{
-			"name": m.name, "role": m.role, "mode": m.mode, "toolsets": toolsets, "isLeader": m.isLeader,
+			"name": m.name, "role": m.role, "mode": m.mode, "agent": m.mode, "toolsets": toolsets, "isLeader": m.isLeader,
 			"sessionId": sid, "status": status, "activity": teamsReg.activityOf(sid),
 		})
 	}
-	return map[string]any{"name": t.Name, "dir": t.Dir, "goal": t.Goal, "leaderMode": t.Leader.Mode, "members": members}
+	return map[string]any{
+		"name": t.Name, "dir": t.Dir, "goal": t.Goal,
+		"leaderMode": t.Leader.Mode, "leaderAgent": t.Leader.Agent, "members": members,
+	}
+}
+
+// teamSummaryJSON 团队列表项：成员数、在忙人数、最后活动时间（侧栏排序与状态）。
+func teamSummaryJSON(t *Team) map[string]any {
+	running := 0
+	for _, m := range t.iterMembers() {
+		if teamBusy(t.sessionID(m.name)) {
+			running++
+		}
+	}
+	updated := t.CreatedAt.UnixMilli()
+	if st, err := os.Stat(filepath.Join(teamDirOf(t.Dir, t.Name), "chat.jsonl")); err == nil {
+		updated = st.ModTime().UnixMilli()
+	}
+	return map[string]any{
+		"name": t.Name, "dir": t.Dir, "goal": t.Goal, "members": len(t.Members) + 1,
+		"running": running, "createdAt": t.CreatedAt.UnixMilli(), "updatedAt": updated,
+	}
+}
+
+// validateTeamSpec 团队定义校验（创建与编辑共用）：成员名合法唯一、角色卡
+// 必填、工具集存在且成员不持有 team 工具集（递归防护）、能力智能体存在。
+func validateTeamSpec(leader TeamLeader, members []TeamMember) error {
+	if strings.TrimSpace(leader.Role) == "" || len(members) == 0 {
+		return errors.New("需要 leader 角色卡与至少一名成员")
+	}
+	if leader.Agent != "" && catalog().Mode(leader.Agent) == nil {
+		return errors.New("队长的能力智能体不存在: " + leader.Agent)
+	}
+	for _, ts := range leader.Toolsets {
+		if _, ok := toolsetRegistry[ts]; !ok {
+			return errors.New("leader 引用了未知工具集: " + ts)
+		}
+	}
+	seen := map[string]bool{}
+	for _, m := range members {
+		if !teamNameRe.MatchString(m.Name) || seen[m.Name] || m.Name == "leader" {
+			return errors.New("成员名不合法或重复: " + m.Name)
+		}
+		if strings.TrimSpace(m.Role) == "" {
+			return errors.New("成员 " + m.Name + " 缺少角色卡")
+		}
+		seen[m.Name] = true
+		for _, ts := range m.Toolsets {
+			if _, ok := toolsetRegistry[ts]; !ok {
+				return errors.New("成员 " + m.Name + " 引用了未知工具集: " + ts)
+			}
+			if ts == "team" {
+				return errors.New("成员不能持有 team 工具集（递归防护）")
+			}
+		}
+		if m.Mode != "" && catalog().Mode(m.Mode) == nil {
+			return errors.New("成员 " + m.Name + " 的能力智能体不存在: " + m.Mode)
+		}
+	}
+	return nil
 }
 
 // teamsRoutes 团队端点（创建/列表/详情/群聊/插话/实时事件）。
@@ -792,7 +856,7 @@ func teamsRoutes() map[string]func(http.ResponseWriter, *http.Request) {
 			}
 			out := []map[string]any{}
 			for _, t := range listTeams(dir) {
-				out = append(out, map[string]any{"name": t.Name, "goal": t.Goal, "members": len(t.Members) + 1})
+				out = append(out, teamSummaryJSON(t))
 			}
 			writeJSON(w, map[string]any{"teams": out})
 		},
@@ -813,42 +877,23 @@ func teamsRoutes() map[string]func(http.ResponseWriter, *http.Request) {
 				http.Error(w, "团队名须为小写字母开头的 [a-z0-9_-]", http.StatusBadRequest)
 				return
 			}
-			if strings.TrimSpace(req.Leader.Role) == "" || len(req.Members) == 0 {
-				http.Error(w, "需要 leader 角色卡与至少一名成员", http.StatusBadRequest)
+			if st, err := os.Stat(req.Dir); req.Dir == "" || err != nil || !st.IsDir() {
+				http.Error(w, "项目目录不存在: "+req.Dir, http.StatusBadRequest)
 				return
 			}
-			seen := map[string]bool{}
-			for _, m := range req.Members {
-				if !teamNameRe.MatchString(m.Name) || seen[m.Name] || m.Name == "leader" {
-					http.Error(w, "成员名不合法或重复: "+m.Name, http.StatusBadRequest)
-					return
-				}
-				if strings.TrimSpace(m.Role) == "" {
-					http.Error(w, "成员 "+m.Name+" 缺少角色卡", http.StatusBadRequest)
-					return
-				}
-				seen[m.Name] = true
-				for _, ts := range m.Toolsets {
-					if _, ok := toolsetRegistry[ts]; !ok {
-						http.Error(w, "成员 "+m.Name+" 引用了未知工具集: "+ts, http.StatusBadRequest)
-						return
-					}
-					if ts == "team" {
-						http.Error(w, "成员不能持有 team 工具集（递归防护）", http.StatusBadRequest)
-						return
-					}
-				}
+			if _, err := os.Stat(filepath.Join(teamDirOf(req.Dir, req.Name), "team.json")); err == nil {
+				http.Error(w, "团队已存在: "+req.Name, http.StatusConflict)
+				return
 			}
-			for _, ts := range req.Leader.Toolsets {
-				if _, ok := toolsetRegistry[ts]; !ok {
-					http.Error(w, "leader 引用了未知工具集: "+ts, http.StatusBadRequest)
-					return
-				}
+			if err := validateTeamSpec(req.Leader, req.Members); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
 			}
 			if req.LeaderMode != "" {
 				req.Leader.Mode = req.LeaderMode
 			}
-			t := &Team{Name: req.Name, Dir: req.Dir, Goal: req.Goal, Leader: req.Leader, Members: req.Members, CreatedAt: time.Now()}
+			t := &Team{Name: req.Name, Dir: req.Dir, Goal: req.Goal, Leader: req.Leader, Members: req.Members, CreatedAt: time.Now(),
+				SessionPrefix: "team-" + dirHash(req.Dir) + "-" + req.Name}
 			d := teamDirOf(req.Dir, req.Name)
 			if err := os.MkdirAll(d, 0o755); err != nil {
 				http.Error(w, "创建团队目录失败: "+err.Error(), http.StatusInternalServerError)
@@ -891,49 +936,21 @@ func teamsRoutes() map[string]func(http.ResponseWriter, *http.Request) {
 				http.Error(w, "请求体解析失败: "+err.Error(), http.StatusBadRequest)
 				return
 			}
-			if strings.TrimSpace(req.Leader.Role) == "" || len(req.Members) == 0 {
-				http.Error(w, "需要 leader 角色卡与至少一名成员", http.StatusBadRequest)
+			if err := validateTeamSpec(req.Leader, req.Members); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
 			}
 			if req.LeaderMode != "" {
 				req.Leader.Mode = req.LeaderMode
 			}
-			seen := map[string]bool{}
+			keep := map[string]bool{}
 			for _, m := range req.Members {
-				if !teamNameRe.MatchString(m.Name) || seen[m.Name] || m.Name == "leader" {
-					http.Error(w, "成员名不合法或重复: "+m.Name, http.StatusBadRequest)
-					return
-				}
-				if strings.TrimSpace(m.Role) == "" {
-					http.Error(w, "成员 "+m.Name+" 缺少角色卡", http.StatusBadRequest)
-					return
-				}
-				seen[m.Name] = true
-				for _, ts := range m.Toolsets {
-					if _, ok := toolsetRegistry[ts]; !ok {
-						http.Error(w, "成员 "+m.Name+" 引用了未知工具集: "+ts, http.StatusBadRequest)
-						return
-					}
-					if ts == "team" {
-						http.Error(w, "成员不能持有 team 工具集（递归防护）", http.StatusBadRequest)
-						return
-					}
-				}
-				if m.Mode != "" && catalog().Mode(m.Mode) == nil {
-					http.Error(w, "成员 "+m.Name+" 的能力基底模式不存在: "+m.Mode, http.StatusBadRequest)
-					return
-				}
-			}
-			for _, ts := range req.Leader.Toolsets {
-				if _, ok := toolsetRegistry[ts]; !ok {
-					http.Error(w, "leader 引用了未知工具集: "+ts, http.StatusBadRequest)
-					return
-				}
+				keep[m.Name] = true
 			}
 			// 移除成员：删其持久会话（历史随团队语义一并清除）
 			for _, old := range t.Members {
-				if !seen[old.Name] {
-					_ = engineApp.Sessions().Delete(r.Context(), teamSessionID(name, old.Name))
+				if !keep[old.Name] {
+					_ = engineApp.Sessions().Delete(r.Context(), t.sessionID(old.Name))
 				}
 			}
 			t.Goal, t.Leader, t.Members = req.Goal, req.Leader, req.Members
@@ -953,7 +970,9 @@ func teamsRoutes() map[string]func(http.ResponseWriter, *http.Request) {
 				return
 			}
 			for _, m := range t.iterMembers() {
-				_ = engineApp.Sessions().Delete(r.Context(), teamSessionID(name, m.name))
+				sid := t.sessionID(m.name)
+				stopSession(sid)
+				_ = engineApp.Sessions().Delete(r.Context(), sid)
 			}
 			if err := os.RemoveAll(teamDirOf(dir, name)); err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -1013,7 +1032,7 @@ func teamsRoutes() map[string]func(http.ResponseWriter, *http.Request) {
 				http.Error(w, "成员不存在", http.StatusNotFound)
 				return
 			}
-			sid := teamSessionID(t.Name, name)
+			sid := t.sessionID(name)
 			teamsReg.mu.RLock()
 			live := append([]liveEvt{}, teamsReg.live[sid]...)
 			activity := teamsReg.activity[sid]
@@ -1065,7 +1084,7 @@ func teamAskToChat(ctx goagent.Context, question string, payload map[string]any)
 
 // notifyLeaderQuiet 给 leader 递消息但不写群聊（调用方已记录群聊）。
 func notifyLeaderQuiet(t *Team, text string) {
-	lsid := teamSessionID(t.Name, "leader")
+	lsid := t.sessionID("leader")
 	if hub := engineApp.Steering(); hub != nil {
 		if teamBusy(lsid) {
 			_ = hub.Steer(lsid, text)

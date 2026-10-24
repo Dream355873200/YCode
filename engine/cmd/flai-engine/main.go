@@ -117,7 +117,8 @@ func main() {
 		goagent.WithSessionProjectContext(teamAwareContextFiles),                   // 会话模式的插件规范 + 工具集动态上下文（等同 CLAUDE.md 地位）
 		goagent.WithSessionToolFilter(teamAwareToolVisible),                        // 会话只看得到本模式启用的工具集（团队会话按成员白名单）
 		goagent.WithSessionRoleCard(teamRoleCard),                                  // 团队成员/队长会话的角色卡（身份层，见 teams.go）
-		goagent.WithSessionPermissionMode(teamPermMode),                            // 团队会话的权限模式（成员 auto / leader 可配）
+		goagent.WithSessionPermissionMode(sessionPermMode),                         // 会话级权限：团队按团队配置，对话按其持久化权限（见 threads.go）
+		goagent.WithObservers(threadTitleObserver{}),                               // 对话首轮结束后由模型生成标题（见 threads.go）
 		goagent.WithSubAgentTraceDir(subAgentTraceDir),                             // 子代理轨迹落盘（.yume/subagents/<session>/<toolUse>.jsonl，右栏只读时间线）
 		goagent.WithBuiltinTools(),                                                 // Read/Write/Edit/Glob/Grep/Bash/WebSearch 等（base）
 		goagent.WithTaskTools(),                                                    // TaskCreate/TaskUpdate/TaskList → 左栏任务流数据源
@@ -144,6 +145,7 @@ func main() {
 		goagent.WithHTTPRoutes(pipelineRoutes()),      // pipeline 运行历史（列表/详情，快照由 GoAgent 落盘）
 		goagent.WithHTTPRoutes(subagentTraceRoutes()), // 子代理轨迹（只读工作过程时间线）
 		goagent.WithHTTPRoutes(teamsRoutes()),         // 团队端点（创建/列表/详情/群聊/插话/实时事件）
+		goagent.WithHTTPRoutes(threadsRoutes()),       // 对话注册表（列表/创建/改名/切智能体/权限/归档/删除）+ 模型辅助
 	}
 	// 工具集装配：注册表内全部工具集进程内装一次（会话可见性由工具
 	// 过滤器按模式裁剪——reload 后新模式引用任意工具集即生效）。options
@@ -175,6 +177,7 @@ func main() {
 	// 活跃 SSE 连接——多轮会话后也不会被历史连接的残留消费者抢走帧。
 	askHandler := goagent.NewAskUserHandler()
 	app.SetAskUserHandler(askHandler)
+	engineAsk = askHandler
 	builtin.SetAskUserCallbackCtx(func(gctx goagent.Context, question string) (string, error) {
 		// 团队会话没有前端连接：提问转成群聊消息、不阻塞（见 teams.go）
 		if ans, ok := teamAskToChat(gctx, question, nil); ok {

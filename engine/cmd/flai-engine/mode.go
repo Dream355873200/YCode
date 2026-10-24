@@ -19,14 +19,19 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
+	"strings"
+	"unicode/utf8"
 )
 
-// Mode 一个模式（清单字段 + 解析后的能力视图）。
+// Mode 一个模式（清单字段 + 解析后的能力视图）。界面上叫「智能体」。
 type Mode struct {
 	ID            string         `json:"id"`
 	Name          string         `json:"name"`
 	Description   string         `json:"description,omitempty"`
+	Icon          string         `json:"icon,omitempty"`     // 图标键（桌面壳映射到图标库；未知键回落默认图标）
+	Starters      []Starter      `json:"starters,omitempty"` // 空对话的开场建议
 	Prompts       string         `json:"prompts,omitempty"`  // 提示词组名（空 = 内置通用提示词）
 	Plugins       []string       `json:"plugins"`            // 引用的插件 id（按序聚合）
 	ProjectFields []ProjectField `json:"projectFields"`      // 新建项目表单字段（桌面壳消费）
@@ -37,15 +42,46 @@ type Mode struct {
 	Resolved *ModeView `json:"resolved"` // 插件聚合后的能力视图（解析产物，非清单字段）
 }
 
+// Starter 开场建议：空对话里的一键起手（label 是按钮文字，prompt 填进输入框）。
+type Starter struct {
+	Label  string `json:"label"`
+	Prompt string `json:"prompt"`
+}
+
 // modeManifest mode.json 的严格解码形状。
 type modeManifest struct {
 	ID            string         `json:"id"`
 	Name          string         `json:"name"`
 	Description   string         `json:"description"`
+	Icon          string         `json:"icon"`
+	Starters      []Starter      `json:"starters"`
 	Prompts       string         `json:"prompts"`
 	Plugins       []string       `json:"plugins"`
 	ProjectFields []ProjectField `json:"projectFields"`
 	Scaffold      string         `json:"scaffold"`
+}
+
+var iconKeyRe = regexp.MustCompile(`^[a-z0-9-]{1,32}$`)
+
+const maxStarters = 6
+
+// validateLook 图标键与开场建议校验。
+func validateLook(modeID, icon string, starters []Starter) error {
+	if icon != "" && !iconKeyRe.MatchString(icon) {
+		return fmt.Errorf("模式 %s: icon %q 只能含小写字母、数字与 -", modeID, icon)
+	}
+	if len(starters) > maxStarters {
+		return fmt.Errorf("模式 %s: starters 最多 %d 条", modeID, maxStarters)
+	}
+	for i, s := range starters {
+		if strings.TrimSpace(s.Label) == "" || strings.TrimSpace(s.Prompt) == "" {
+			return fmt.Errorf("模式 %s: starters 第 %d 条缺少 label/prompt", modeID, i+1)
+		}
+		if utf8.RuneCountInString(s.Label) > 16 {
+			return fmt.Errorf("模式 %s: starters 第 %d 条 label 超过 16 个字", modeID, i+1)
+		}
+	}
+	return nil
 }
 
 // ProjectField 新建项目表单的一个字段。字段值原样交给桌面壳的脚手架
@@ -200,8 +236,12 @@ func loadMode(dir, manifest string) (*Mode, error) {
 	if err := validateFields(mm.ID, mm.ProjectFields); err != nil {
 		return nil, err
 	}
+	if err := validateLook(mm.ID, mm.Icon, mm.Starters); err != nil {
+		return nil, err
+	}
 	return &Mode{
 		ID: mm.ID, Name: mm.Name, Description: mm.Description,
+		Icon: mm.Icon, Starters: mm.Starters,
 		Prompts: mm.Prompts, Plugins: mm.Plugins,
 		ProjectFields: mm.ProjectFields, Scaffold: mm.Scaffold, Dir: dir,
 	}, nil

@@ -1,7 +1,22 @@
 {
   "id": "games",
-  "name": "游戏玩家",
-  "description": "游戏操作 Agent：进 Minecraft / 星露谷干活、查询与并肩联机（游戏插件全套 MCP 工具）",
+  "name": "游戏伙伴",
+  "description": "进 Minecraft / 星露谷并肩游玩：采集建造、日程规划、查询游戏资料",
+  "icon": "gamepad",
+  "starters": [
+    {
+      "label": "进入 Minecraft",
+      "prompt": "连接 Minecraft 服务器，报告你的位置、状态和周围环境。"
+    },
+    {
+      "label": "星露谷今日计划",
+      "prompt": "读取星露谷当前状态（日期、天气、体力、背包），帮我规划今天该做什么。"
+    },
+    {
+      "label": "查游戏资料",
+      "prompt": "帮我查一下游戏资料："
+    }
+  ],
   "plugins": [
     "minecraft",
     "stardew"

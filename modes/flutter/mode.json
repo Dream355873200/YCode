@@ -1,7 +1,26 @@
 {
   "id": "flutter",
-  "name": "Flutter 开发",
-  "description": "自然语言 → 可运行的 Flutter 应用（SPEC 驱动、设备实测、视觉验收）",
+  "name": "Flutter 应用",
+  "description": "从一句想法到可运行的 Flutter 应用：SPEC 驱动开发、真机实测、视觉验收",
+  "icon": "smartphone",
+  "starters": [
+    {
+      "label": "从想法建 App",
+      "prompt": "我想做一个 App："
+    },
+    {
+      "label": "加一个功能",
+      "prompt": "给当前 App 加一个新功能："
+    },
+    {
+      "label": "修复问题",
+      "prompt": "当前 App 有一个问题需要修复："
+    },
+    {
+      "label": "真机测试",
+      "prompt": "把 App 部署到手机跑一遍测试，并给我一份测试报告。"
+    }
+  ],
   "prompts": "flutter",
   "plugins": [
     "flutter-dev",
