@@ -8,6 +8,18 @@ const path = require('path');
 const { run } = require('./tools');
 
 const scaffolds = {
+  // 递归复制目录。不用 fs.cpSync：Electron 40 环境下对刚建出的目标目录
+  // 会报 EPERM「函数不正确」（CLI Node 同版本正常），手动复制没有此问题。
+  copyTree: (src, dest) => {
+    fs.mkdirSync(dest, { recursive: true });
+    for (const name of fs.readdirSync(src)) {
+      const s = path.join(src, name);
+      const d = path.join(dest, name);
+      if (fs.statSync(s).isDirectory()) scaffolds.copyTree(s, d);
+      else fs.copyFileSync(s, d);
+    }
+  },
+
   // Flutter 应用：空目录 flutter create → SPEC 草稿 → git init + 首提交
   'flutter-app': async ({ name, dir, idea, kind, color }) => {
     if (!name) return { ok: false, error: '项目名称必填' };
@@ -53,7 +65,11 @@ const scaffolds = {
       return { ok: false, error: `视频工程模板缺失: ${template}` };
     }
     fs.mkdirSync(dir, { recursive: true });
-    fs.cpSync(template, dir, { recursive: true });
+    try {
+      scaffolds.copyTree(template, dir);
+    } catch (e) {
+      return { ok: false, error: `视频工程模板复制失败: ${e.message}` };
+    }
     const [w, h] = { '16:9': [1920, 1080], '9:16': [1080, 1920], '1:1': [1080, 1080], '4:5': [1080, 1350] }[format || '16:9'];
     const mfPath = path.join(dir, 'src', 'scenes', 'manifest.json');
     const mf = JSON.parse(fs.readFileSync(mfPath, 'utf-8'));

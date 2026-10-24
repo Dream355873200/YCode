@@ -19,7 +19,7 @@ let lastDir = null;
 function resolveDir(a) {
   const dir = path.resolve(String(a.dir || lastDir || "").trim());
   if (!fs.existsSync(path.join(dir, "src", "index.ts"))) {
-    throw new Error(`不是视频工程目录：${dir}（缺少 src/index.ts；dir 传视频项目根目录的绝对路径）`);
+    throw new Error(`不是视频工程目录：${dir}（缺少 src/index.ts）——先用 init_project 初始化，或确认 dir 传的是视频项目根目录`);
   }
   lastDir = dir;
   return dir;
@@ -222,6 +222,67 @@ const tools = [];
 const def = (name, description, inputSchema, handler) =>
   tools.push({ name, description, inputSchema, handler });
 const P = (description) => ({ type: "string", description });
+
+def("init_project",
+  "把视频工程结构初始化进一个目录（模板：场景体系/组件库/manifest/package.json + brief/storyboard）。" +
+  "目录里已有 src/index.ts 时什么都不做直接返回；补齐缺失文件、绝不覆盖你或用户已改过的文件。切到视频工程却没有 src/index.ts 时先调它。",
+  {
+    type: "object",
+    properties: { dir: P("项目目录（绝对路径）；不存在会自动创建") },
+    required: ["dir"],
+  },
+  async (a) => {
+    const dir = path.resolve(String(a.dir || "").trim());
+    if (!dir) throw new Error("dir 必填（项目目录绝对路径）");
+    if (fs.existsSync(path.join(dir, "src", "index.ts"))) {
+      return `已是视频工程（${dir}），无需初始化。
+
+${manifestSummary(dir)}`;
+    }
+    // 安全合并：目标已存在的文件一律跳过（不覆盖用户/你的改动）
+    let copied = 0;
+    const merge = (src, dest) => {
+      fs.mkdirSync(dest, { recursive: true });
+      for (const name of fs.readdirSync(src)) {
+        const s = path.join(src, name);
+        const d = path.join(dest, name);
+        if (fs.statSync(s).isDirectory()) merge(s, d);
+        else if (!fs.existsSync(d)) { fs.copyFileSync(s, d); copied += 1; }
+      }
+    };
+    const template = path.join(__dirname, "..", "template");
+    if (!fs.existsSync(path.join(template, "src"))) throw new Error(`模板缺失：${template}`);
+    merge(template, dir);
+    const name = path.basename(dir);
+    if (!fs.existsSync(path.join(dir, "brief.md"))) {
+      fs.writeFileSync(path.join(dir, "brief.md"), `# ${name}
+
+## 需求
+
+（用户会在对话里补充）
+`);
+    }
+    if (!fs.existsSync(path.join(dir, "storyboard.md"))) {
+      fs.writeFileSync(path.join(dir, "storyboard.md"), `# 分镜：${name}
+
+（待写：每段的目的、画面、文案、时长、转场）
+`);
+    }
+    generateRegistry(dir);
+    // 不是 git 仓库就初始化并首提交（失败不打紧，只是没有版本记录）
+    if (!fs.existsSync(path.join(dir, ".git"))) {
+      await runCmd("git", ["init"], { cwd: dir });
+      await runCmd("git", ["add", "."], { cwd: dir });
+      await runCmd("git", ["commit", "-m", `init: ${name}`], { cwd: dir });
+    }
+    return `视频工程已初始化到 ${dir}（补了 ${copied} 个文件；已有文件原样保留）。
+
+接下来：读 brief.md → 没装依赖先 npm install → 写分镜与场景。
+
+${manifestSummary(dir)}`;
+  });
+
+// ---------- MCP stdio 循环
 
 def("check_project",
   "视频工程全量检查：重生成场景注册表、manifest 校验、逐帧确定性规则扫描、TypeScript 类型检查。写完代码必须跑，交付/导出前必须全绿。",

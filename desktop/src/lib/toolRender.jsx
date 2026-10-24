@@ -170,6 +170,7 @@ const MCP_RENDERERS = {
   studio: {
     Icon: ClapperboardIcon,
     tools: {
+      init_project: ['初始化视频工程', (i) => i?.dir],
       check_project: ['检查视频工程'],
       inspect_frames: ['渲染关键帧自检'],
       view_image: ['查看图片', (i) => base(i?.path || '')],
