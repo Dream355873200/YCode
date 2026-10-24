@@ -110,21 +110,20 @@ function PermissionPicker() {
   );
 }
 
-/** 模型与思考强度（引擎全局，运行时切换不重启）。 */
+/** 模型与思考强度。模型按会话记忆（threads 注册表，切换只影响本对话）；
+ * 无会话（草稿）时切换的是全局默认。思考强度为引擎全局。 */
 function ModelPicker({ disabled }: { disabled: boolean }) {
-  const { engineStatus } = useApp();
+  const { engineStatus, thread } = useApp();
+  const refreshThreads = useWorkspace((s) => s.refreshThreads);
   const [open, setOpen] = useState(false);
   const [models, setModels] = useState<string[]>([]);
-  const [model, setModel] = useState(engineStatus.model);
+  // 生效模型：会话覆盖 > 全局默认。thread 变化（切换对话）即跟随。
+  const [model, setModel] = useState(thread?.model || engineStatus.model);
   const [effort, setEffort] = useState('');
   const [switching, setSwitching] = useState(false);
 
-  useEffect(() => { if (engineStatus.model) setModel(engineStatus.model); }, [engineStatus.model]);
+  useEffect(() => { setModel(thread?.model || engineStatus.model || ''); }, [thread?.id, thread?.model, engineStatus.model]);
   useEffect(() => {
-    engine.get('/model').then((r) => {
-      const m = (r.body as { model?: string } | undefined)?.model;
-      if (m) setModel(m);
-    }).catch(() => {});
     engine.get('/thinking').then((r) => {
       const e = (r.body as { effort?: string } | undefined)?.effort;
       if (e !== undefined) setEffort(e);
@@ -141,10 +140,18 @@ function ModelPicker({ disabled }: { disabled: boolean }) {
     if (disabled || switching || id === model) return;
     setSwitching(true);
     try {
-      await engine.post('/model', { model: id });
-      setModel(id);
-      const cfg = await window.amc.config.get() as Record<string, unknown>;
-      await window.amc.config.save({ ...cfg, engine: { ...(cfg.engine as object), model: id } });
+      if (thread?.id) {
+        // 会话级：写进对话注册表，下一次运行起只对本对话生效
+        await engine.post(`/threads/${thread.id}`, { model: id });
+        setModel(id);
+        void refreshThreads();
+      } else {
+        // 草稿（尚未建会话）：改全局默认
+        await engine.post('/model', { model: id });
+        setModel(id);
+        const cfg = await window.amc.config.get() as Record<string, unknown>;
+        await window.amc.config.save({ ...cfg, engine: { ...(cfg.engine as object), model: id } });
+      }
     } catch { /* 引擎不可达：保持原选择 */ } finally {
       setSwitching(false);
     }

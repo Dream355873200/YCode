@@ -147,7 +147,10 @@ func main() {
 		goagent.WithHTTPRoutes(subagentTraceRoutes()), // 子代理轨迹（只读工作过程时间线）
 		goagent.WithHTTPRoutes(teamsRoutes()),         // 团队端点（创建/列表/详情/群聊/插话/实时事件）
 		goagent.WithHTTPRoutes(threadsRoutes()),       // 对话注册表（列表/创建/改名/切智能体/权限/归档/删除）+ 模型辅助
-		goagent.WithHTTPRoutes(goalRoutes()),          // 对话目标（设定/暂停/继续/验收/清除）
+		goagent.WithSessionModel(func(sessionID string) string {
+			return sessMap.binding(sessionID).Model // 会话级模型覆盖；空 = 全局默认
+		}),
+		goagent.WithHTTPRoutes(goalRoutes()), // 对话目标（设定/暂停/继续/验收/清除）
 	}
 	// 工具集装配：注册表内全部工具集进程内装一次（会话可见性由工具
 	// 过滤器按模式裁剪——reload 后新模式引用任意工具集即生效）。options

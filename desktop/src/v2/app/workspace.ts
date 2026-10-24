@@ -41,6 +41,8 @@ export interface Thread {
   /** 等你处理：ask = 提问，approval = 审批。 */
   pending?: '' | 'ask' | 'approval';
   permission?: Permission | '';
+  /** 会话级模型覆盖；空 = 跟随全局默认。切换只影响本对话。 */
+  model?: string;
   archived?: boolean;
   /** 对话目标（引擎逐轮验收，未达成自动续跑）。 */
   goal?: ThreadGoal | null;

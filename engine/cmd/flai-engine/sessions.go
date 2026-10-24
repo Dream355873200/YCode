@@ -29,6 +29,7 @@ type sessionBinding struct {
 	TitleSource string      `json:"titleSource,omitempty"` // auto（首条消息截取）| ai（模型生成）| user（手动改名，永不覆盖）
 	CreatedAt   int64       `json:"createdAt,omitempty"`   // Unix 毫秒
 	Permission  string      `json:"permission,omitempty"`  // plan | default | accept_edits | bypass；空 = 全局默认
+	Model       string      `json:"model,omitempty"`       // 会话级模型覆盖；空 = 全局默认
 	Archived    bool        `json:"archived,omitempty"`
 	Goal        *threadGoal `json:"goal,omitempty"` // 对话目标（见 goals.go）
 }
