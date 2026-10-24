@@ -117,7 +117,11 @@ function Bubble({ m, team, onReply }: { m: TeamChatMsg; team: TeamDetail; onRepl
   }
   if (m.type === 'steer') return <RelayLine m={m} />;
   if (m.type === 'system') {
-    return <div className="line-clamp-2 text-center text-ui-sm text-foreground-subtlest" title={m.text}>{m.text}</div>;
+    return (
+      <div className="flex justify-center" title={m.text}>
+        <span className="max-w-[80%] truncate rounded-full border border-border bg-card px-3 py-0.5 text-center text-ui-sm text-foreground-subtlest">{m.text}</span>
+      </div>
+    );
   }
   const isUser = m.from === 'user';
   const agent = modes.find((x) => x.id === sender?.agent);
@@ -135,7 +139,7 @@ function Bubble({ m, team, onReply }: { m: TeamChatMsg; team: TeamDetail; onRepl
           {m.to && m.to !== m.from && m.to !== 'user' && <span>给 {m.to === 'leader' ? '队长' : m.to}</span>}
           {Number.isFinite(time) && <span>{clock(time)}</span>}
         </div>
-        <div className={cn('rounded-2xl px-3 py-2', isUser ? 'rounded-tr-sm bg-selected' : 'rounded-tl-sm border border-border bg-card')}>
+        <div className={cn('rounded-2xl px-3.5 py-2', isUser ? 'rounded-br-md bg-card' : 'rounded-tl-sm border border-border bg-card')}>
           <div className={cn('break-words text-ui-base text-foreground',
             !expanded && long && 'max-h-56 overflow-hidden [mask-image:linear-gradient(to_bottom,black_70%,transparent)]')}>
             <Markdown text={m.text} />
@@ -224,7 +228,7 @@ export function TeamView({ dir, name }: { dir: string; name: string }) {
     <div className="flex min-h-0 flex-1 flex-col">
       {/* 成员条 */}
       <div className="shrink-0 border-b border-border/50 px-4 py-2">
-        <div className="mx-auto flex max-w-3xl items-center gap-2">
+        <div className="mx-auto flex w-full items-center gap-2 @min-[864px]/conversation:w-[calc(100%_-_6rem)] @min-[864px]/conversation:max-w-4xl @min-[1280px]/conversation:max-w-6xl">
           <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-brand/12 text-brand"><UsersIcon className="size-4" /></span>
           <div className="min-w-0 flex-1">
             <div className="truncate text-ui-base font-medium text-foreground">{team.name}</div>
@@ -243,7 +247,7 @@ export function TeamView({ dir, name }: { dir: string; name: string }) {
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
-        <div className="mx-auto mt-2 flex max-w-3xl gap-1.5 overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="mx-auto mt-2 flex w-full gap-1.5 overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden @min-[864px]/conversation:w-[calc(100%_-_6rem)] @min-[864px]/conversation:max-w-4xl @min-[1280px]/conversation:max-w-6xl">
           {team.members.map((m) => (
             <span key={m.name} className="group/chip relative flex shrink-0 items-center">
               <MemberChip m={m} onOpen={() => openMember(m)} onStop={() => void teamApi.stop(m.sessionId).then(load)} />
@@ -258,7 +262,7 @@ export function TeamView({ dir, name }: { dir: string; name: string }) {
 
       {/* 群聊 */}
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto grid max-w-3xl grid-cols-1 gap-3 px-6 py-4">
+        <div className="mx-auto grid w-full grid-cols-1 gap-2.5 px-6 py-3 @min-[864px]/conversation:w-[calc(100%_-_6rem)] @min-[864px]/conversation:max-w-4xl @min-[1280px]/conversation:max-w-6xl">
           {msgs.length === 0 && (
             <div className="py-10 text-center text-ui-base text-foreground-subtlest">
               给队长一个目标，队长会拆解任务、分派给成员，成员的产出会回到这里
@@ -272,7 +276,7 @@ export function TeamView({ dir, name }: { dir: string; name: string }) {
 
       {/* 输入：@路由 */}
       <div className="shrink-0 px-4 pb-3">
-        <div className="mx-auto max-w-3xl rounded-2xl border border-input-border bg-input p-3 focus-within:border-input-border-focused">
+        <div className="mx-auto w-full rounded-2xl border border-input-border bg-input p-3 transition-colors hover:border-input-border-hover focus-within:border-input-border-focused @min-[864px]/conversation:w-[calc(100%_-_6rem)] @min-[864px]/conversation:max-w-4xl @min-[1280px]/conversation:max-w-6xl">
           <div className="mb-2 flex flex-wrap items-center gap-1">
             <span className="mr-0.5 text-ui-sm text-foreground-subtlest">发给</span>
             {[{ key: '', label: '队长' }, ...others.map((m) => ({ key: m.name, label: `@${m.name}` }))].map((r) => (
@@ -291,8 +295,9 @@ export function TeamView({ dir, name }: { dir: string; name: string }) {
                 e.target.style.height = `${Math.min(e.target.scrollHeight, 160)}px`;
               }}
               onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); void send(); } }}
-              placeholder={at ? `对 @${at} 说…（忙时插话，闲时作为新任务）` : '给队长下达目标或插话…'}
-              className="min-h-0 flex-1 resize-none bg-transparent px-1 py-1 text-ui-base text-foreground outline-none placeholder:text-foreground-subtlest" />
+              placeholder={at ? `对 @${at} 说…（忙时插话，闲时作为新任务）` : '给队长下达目标或插话…（Enter 发送，Shift+Enter 换行）'}
+              className="scroll-fine flex-1 resize-none bg-transparent px-1 pt-1.5 text-ui-base text-foreground outline-none placeholder:text-foreground-subtlest"
+              style={{ minHeight: 54, maxHeight: 160 }} />
             <Button type="button" size="icon-md" disabled={!draft.trim()} aria-label="发送"
               className="rounded-lg bg-brand text-foreground-inverse hover:bg-brand/80" onClick={() => void send()}>
               <SendIcon className="size-4" />
