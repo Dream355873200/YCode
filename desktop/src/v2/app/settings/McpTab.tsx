@@ -67,7 +67,7 @@ export function McpTab() {
         <EmptyHint
           icon={<CableIcon className="size-8" />}
           title="还没有 MCP server"
-          desc="在插件清单（plugin.json）的 mcpServers 里声明 server（name + command 或 url），支持 ${PLUGIN_DIR} 与 ${环境变量} 展开。引擎启动时后台连接，工具只对引用该插件的模式可见。"
+          desc="在插件的 mcpServers 里声明，再把插件交给智能体。"
         />
       ) : (
         catalog.plugins.filter((p) => (p.mcpServers?.length ?? 0) > 0).map((p) => (

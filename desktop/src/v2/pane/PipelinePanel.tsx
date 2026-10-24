@@ -59,7 +59,7 @@ function NodeCard({ n, x, y, onOpen }: { n: DagNode; x: number; y: number; onOpe
           <ChevronDownIcon className="ml-auto size-3 shrink-0 rotate-[-90deg] text-foreground-subtlest opacity-0 transition-opacity group-hover:opacity-100" />
         </div>
         <div className="line-clamp-2 text-ui-2xs leading-snug text-foreground-subtlest">
-          {n.activity || n.injects.join(' → ') || '等待运行 · 点击查看详情'}
+          {n.activity || (n.injects.length ? `接收 ${n.injects.join('、')} 的产出` : '') || '等待运行 · 点击查看详情'}
         </div>
       </div>
     </button>
@@ -180,7 +180,7 @@ export function PipelinePanel() {
                       {fail > 0 ? `${fail} 失败` : '已完成'} · {h.nodes.length} 节点
                     </span>
                   </div>
-                  <div className="mt-1 truncate text-ui-2xs text-foreground-subtlest">{h.nodes.join(' → ')}</div>
+                  <div className="mt-1 truncate text-ui-2xs text-foreground-subtlest">{h.nodes.join(' · ')}</div>
                   <div className="mt-0.5 text-ui-2xs text-foreground-subtlest">{ok}/{h.nodes.length} 完成 · 点击查看 DAG 与节点产出</div>
                 </button>
               );

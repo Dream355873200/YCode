@@ -92,7 +92,7 @@ export function buildModeManifest(form: ModeForm, ctx: {
   const id = form.id.trim();
   const name = form.name.trim();
   if (!ID_RE.test(id)) return fail('id 只能含字母、数字、_、-');
-  if (ctx.isNew && ctx.modeIds.includes(id)) return fail(`模式 ${id} 已存在（内置模式请用「复制为自定义」）`);
+  if (ctx.isNew && ctx.modeIds.includes(id)) return fail(`智能体 ${id} 已存在（内置智能体请用「复制」）`);
   if (!name) return fail('请填写名称');
   if (new Set(form.plugins).size !== form.plugins.length) return fail('插件重复引用');
   const unknown = form.plugins.filter((p) => !ctx.pluginIds.includes(p));

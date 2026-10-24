@@ -1,19 +1,17 @@
-// toolLang.js — 测试工具的人话翻译（左栏测试时间线 / 测试横幅专用）。
-// 对话流的人话动词/对象摘要/展开细节在 toolRender.jsx 注册表（本文件的
-// TOOL_LABELS 被其引用，保证两处说法一致）；本文件只保留测试时间线视角。
+// toolLang.js — 测试工具（AI 操作手机的每一步）的人话翻译，被 toolRender.jsx 注册表引用。
 
-// 测试工具名 → 人话（测试时间线 / 测试横幅）
+// 测试工具名 → 人话
 export const TOOL_LABELS = {
   ui_tree: '读取界面结构', tap: '点击屏幕', swipe: '滑动屏幕', type: '输入文本',
   back: '按返回键', wait_for: '等待页面元素', screenshot: '截取屏幕', screen_diff: '对比截图',
   logcat: '查设备日志', net: '网络联调', vision_ask: '视觉判断', test_report: '生成测试报告',
 };
 
-// testLogArg 从工具入参提取「意图」摘要（测试时间线每步的参数列）。
+// testLogArg 从工具入参提取「意图」摘要（工具卡头部的对象列）。
 export function testLogArg(s) {
   const i = s.input || {};
   if (i.x !== undefined && i.y !== undefined) return `(${i.x},${i.y})`;
-  if (i.x1 !== undefined) return `(${i.x1},${i.y1})→(${i.x2},${i.y2})`;
+  if (i.x1 !== undefined) return `(${i.x1},${i.y1}) 到 (${i.x2},${i.y2})`;
   if (i.text) return `"${String(i.text).slice(0, 16)}"`;
   if (i.text_to) return `"${String(i.text_to).slice(0, 16)}"`;
   if (i.title) return String(i.title).slice(0, 16);

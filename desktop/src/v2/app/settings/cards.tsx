@@ -75,7 +75,7 @@ export function BaseToolsCard() {
   const n = baseTools(catalog).length;
   return (
     <LinkCard icon={<WrenchIcon className={ICON} />} title="基础工具"
-      desc={`${n ? `${n} 个工具 · ` : ''}文件读写 / Bash / 检索 / 任务 / 计划 / 提问，所有模式恒可用`}
+      desc={`${n ? `${n} 个工具 · ` : ''}文件读写 / Bash / 检索 / 任务 / 计划 / 提问，所有智能体都有`}
       badge={<Chip>内置</Chip>}
       onClick={() => go('toolsets', BASE_TOOLSET_ID)} />
   );

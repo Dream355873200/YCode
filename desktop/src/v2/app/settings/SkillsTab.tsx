@@ -120,8 +120,8 @@ export function SkillsTab() {
     ...pluginIds.map((id) => ({
       key: `plugin:${id}`, title: `${id} 插件`, rows: filtered.filter((s) => s.origin === 'plugin' && s.plugin === id),
     })),
-    { key: 'user', title: '我的技能（所有模式可用）', rows: filtered.filter((s) => s.origin === 'user') },
-    { key: 'global', title: '全局技能（所有模式可用）', rows: filtered.filter((s) => s.origin === 'global') },
+    { key: 'user', title: '我的技能（所有智能体可用）', rows: filtered.filter((s) => s.origin === 'user') },
+    { key: 'global', title: '全局技能（所有智能体可用）', rows: filtered.filter((s) => s.origin === 'global') },
   ].filter((g) => g.rows.length > 0);
   return (
     <div className="space-y-5">
@@ -139,7 +139,7 @@ export function SkillsTab() {
         <EmptyHint
           icon={<SparklesIcon className="size-8" />}
           title={q ? '没有匹配的技能' : '还没有技能'}
-          desc="技能来源（优先级从高到低）：<项目>/.yume/commands/、模式引用插件的 skills/、我的技能、<应用根>/skills/。点「新建技能」写一个所有模式可用的技能。"
+          desc={q ? undefined : '点「新建技能」写一个所有智能体都能用的技能。'}
         />
       ) : (
         groups.map((g) => (

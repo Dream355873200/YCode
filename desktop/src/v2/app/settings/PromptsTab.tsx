@@ -73,9 +73,9 @@ function TextSection({ title, meta, text }: { title: string; meta?: React.ReactN
   );
 }
 
-/** 当前项目会话的生效系统提示词（按会话模式与提示词组实际组装）。 */
+/** 当前对话的生效系统提示词（按对话的智能体与提示词组实际组装）。 */
 function EffectivePrompt() {
-  const { sid, project } = useApp();
+  const { sid, project, modes } = useApp();
   const [state, setState] = useState<{ loading: boolean; error: string; mode?: string; prompt?: string } | null>(null);
   if (!sid) return null;
   const load = () => {
@@ -86,11 +86,12 @@ function EffectivePrompt() {
       else setState({ loading: false, error: '', mode: body.mode, prompt: body.prompt });
     }).catch((e: unknown) => setState({ loading: false, error: e instanceof Error ? e.message : String(e) }));
   };
+  const agentName = state?.mode ? modes.find((m) => m.id === state.mode)?.name ?? state.mode : '';
   return (
-    <DetailSection title="生效系统提示词">
+    <DetailSection title="当前对话的系统提示词">
       <div className="flex items-center gap-2 text-ui-xs text-foreground-subtle">
         <span className="min-w-0 flex-1 truncate">
-          {project?.name ?? '当前项目'}{state?.mode ? ` · 模式 ${state.mode}` : ''}
+          {project?.name ?? '当前项目'}{agentName ? ` · ${agentName}` : ''}
         </span>
         <Button type="button" size="sm" variant="outline" disabled={state?.loading} onClick={load}>
           <EyeIcon className="size-3.5" />{state?.prompt ? '刷新' : '查看'}
@@ -123,11 +124,6 @@ function BuiltinPromptDetail() {
           </div>
         )}
       </section>
-      <DetailSection title="覆盖方式">
-        <div className="text-ui-xs text-foreground-subtle">
-          新建一个提示词组，逐段改写要替换的部分，其余段沿用内置；再在模式里选用该组。未选提示词组的模式直接使用内置提示词。
-        </div>
-      </DetailSection>
     </DetailFrame>
   );
 }
@@ -236,7 +232,7 @@ function NewPromptGroup({ onDone, onCancel }: { onDone(name: string): void; onCa
   };
   return (
     <EditorFrame title="新建提示词组" error={error} saving={saving} onCancel={onCancel} onSave={save}>
-      <FormField label="组名" hint="新组是空组（等同内置）；建好后逐段覆盖，再在模式里选用">
+      <FormField label="组名" hint="新组等同内置；建好后逐段改写，再在智能体里选用">
         <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="reviewer" />
       </FormField>
     </EditorFrame>
@@ -249,7 +245,7 @@ function RuleDetail({ pluginId }: { pluginId: string }) {
   if (!p?.rules) return <ErrorBox message={`插件 ${pluginId} 没有声明领域规范`} />;
   return (
     <DetailFrame icon={<ScrollTextIcon className="size-5" />} title={`${p.id} 规范`}
-      desc="领域规范：模式引用插件后，每轮对话把它作为项目上下文注入，约束模型在该领域的做法。修改后下一轮生效；自定义插件在插件编辑里改。">
+      desc="每轮对话作为项目上下文注入，下一轮生效。">
       <FileSection title="内容" path={rulesPath(p)} />
     </DetailFrame>
   );
@@ -280,7 +276,7 @@ export function PromptsTab() {
             <ResourceRow
               icon={<FileTextIcon className="size-4" />}
               name="内置通用 Agent"
-              desc="引擎内置的完整提示词；未引用提示词组的模式直接使用"
+              desc="引擎内置的完整提示词；智能体没选提示词组时使用"
               onClick={() => go('prompts', BUILTIN_PROMPT_ID)}
               right={<Chip>内置</Chip>}
             />
@@ -318,9 +314,6 @@ export function PromptsTab() {
         )}
       </div>
       <EffectivePrompt />
-      <p className="text-ui-xs text-foreground-subtlest">
-        系统提示词按段组装，提示词组只放要改写的段，模式按名引用；领域规范随插件走，模式引用插件即生效。
-      </p>
     </div>
   );
 }

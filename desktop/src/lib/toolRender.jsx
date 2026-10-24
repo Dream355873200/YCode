@@ -81,24 +81,12 @@ function TestDetail({ act }) {
   );
 }
 
-// ---------- 状态摘要 ----------
-
-const flutterSt = (r = '') => {
-  const hasErr = /error\s+-|^\s*\d+\s*error/i.test(r);
-  if (/No issues found!/i.test(r)) return { st: 'No issues', cls: 'ok' };
-  if (hasErr) return { st: 'error', cls: 'err' };
-  const issues = r.match(/(\d+)\s*issues? found/i);
-  if (issues) return { st: `${issues[1]} issues`, cls: 'warn' };
-  return { st: '✓', cls: 'ok' };
-};
-
 // ---------- 注册表 ----------
 
 // 每条目可选字段：
 //   label      人话动词（行动条目 + 状态行共用；缺省原样显示工具名）
-//   Icon       lucide 图标组件（行动条目头部；替代旧 emoji）
+//   Icon       lucide 图标组件（行动条目头部）
 //   obj(i)     入参 → 一行对象摘要
-//   st(r)      结果 → { st, cls }（缺省走通用推断）
 //   expandable 是否默认可展开
 //   Detail     展开细节组件（缺省 <pre> 原始结果）
 import {
@@ -112,25 +100,15 @@ export const TOOL_RENDERERS = {
   Edit: {
     label: '修改了', Icon: PenLineIcon, expandable: true, Detail: DiffDetail,
     obj: (i = {}) => base(i.file_path || i.path),
-    st: (r = '') => {
-      const m = r.match(/已替换\s*(\d+)\s*处匹配\s*\(([^)]+)\)/);
-      return m ? { st: `✓ ${m[1]} 处`, cls: 'ok' } : null;
-    },
   },
   Write: {
     label: '创建了', Icon: FilePlusIcon, expandable: true, Detail: WriteDetail,
     obj: (i = {}) => base(i.file_path || i.path),
-    st: (r = '') => {
-      const m = r.match(/已写入\s+(\S+)/);
-      if (!m) return null;
-      const lines = (r.match(/\((\d+)\s*行/) || [])[1];
-      return { st: '✓' + (lines ? ` +${lines} 行` : ''), cls: 'ok' };
-    },
   },
   Read: { label: '查看了', Icon: BookOpenIcon, expandable: true, obj: (i = {}) => base(i.file_path || i.path) },
   Bash: { label: '执行命令', Icon: SquareTerminalIcon, expandable: true, Detail: CmdDetail, obj: (i = {}) => String(i.command || i.cmd || '').slice(0, 60) },
   Shell: { label: '执行命令', Icon: SquareTerminalIcon, expandable: true, Detail: CmdDetail, obj: (i = {}) => String(i.command || i.cmd || '').slice(0, 60) },
-  flutter: { label: '构建应用', Icon: WrenchIcon, expandable: true, Detail: CmdDetail, obj: (i = {}) => (i.action ? `flutter ${i.action}` : ''), st: flutterSt },
+  flutter: { label: '构建应用', Icon: WrenchIcon, expandable: true, Detail: CmdDetail, obj: (i = {}) => (i.action ? `flutter ${i.action}` : '') },
   Git: { label: '保存版本', Icon: GitBranchIcon, expandable: true, Detail: CmdDetail, obj: (i = {}) => String(i.command || '').slice(0, 60) },
   Glob: { label: '查找文件', Icon: SearchIcon, expandable: true, obj: (i = {}) => i.pattern },
   Grep: { label: '搜索代码', Icon: SearchIcon, expandable: true, obj: (i = {}) => i.query || i.pattern },
@@ -225,22 +203,7 @@ export function actObj(name, input) {
   return '';
 }
 
-// summarizeResult 工具结果 → { st, cls, detail }（注册表 st 优先，通用推断兜底）。
-// isAnalyze：flutter 结果驱动工作台的 analyze 横幅（宿主 onAct 联动用）。
-export function summarizeResult(toolName, result) {
-  if (!result) return { st: '', cls: 'run', detail: '' };
-  const r = resolveRenderer(toolName);
-  const s = r.st && r.st(result);
-  if (s) return { ...s, detail: result, isAnalyze: toolName === 'flutter' };
-  if (result.includes('退出码非零') || result.includes('error') || result.includes('失败')) return { st: '✗', cls: 'err', detail: result };
-  if (result.startsWith('(无匹配') || result.startsWith('(无输出')) return { st: '✓', cls: 'ok', detail: result };
-  const n = result.match(/\((\d+)\s*个文件\)/);
-  if (n) return { st: `${n[1]} 文件`, cls: 'ok', detail: result };
-  return { st: '✓', cls: 'ok', detail: result };
-}
-
-// actVerbPlain 状态行用的人话动词（剥 emoji 与「了」尾）：
-// 「✏️ 修改了」→「修改」，拼进「正在 …」。
+// actVerbPlain 状态行用的人话动词（去掉「了」尾）：「修改了」→「修改」，拼进「正在 …」。
 export function actVerbPlain(name) {
   const label = resolveRenderer(name).label;
   if (!label) return name;

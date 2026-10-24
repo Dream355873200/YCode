@@ -2,7 +2,7 @@
 // 扫 .yume/test-reports/（test_report 工具落盘的 Markdown + frontmatter
 // 结构化元数据），列表 → 详情（Markdown 正文 + 内嵌截图证据 + 放大）。
 import { useEffect, useState } from 'react';
-import { CheckCircle2 as OkIco, CircleDashed as PartIco, XCircle as BadIco } from 'lucide-react';
+import { ArrowLeftIcon, CheckCircle2 as OkIco, CircleDashed as PartIco, XCircle as BadIco } from 'lucide-react';
 import { useApp } from '../app/appState';
 import { renderMD } from '../../lib/markdown';
 
@@ -130,7 +130,9 @@ export default function TestReportPanel() {
       >
         <div className="flex shrink-0 items-center gap-2 border-b border-border/50 px-2.5 py-1.5">
           <button type="button" onClick={() => { setOpenIdx(-1); setZoom(null); }}
-            className="text-ui-xs text-foreground-subtle hover:text-foreground">← 返回报告列表</button>
+            className="flex items-center gap-1 text-ui-xs text-foreground-subtle hover:text-foreground">
+            <ArrowLeftIcon className="size-3.5" />报告列表
+          </button>
           <VerdictBadge verdict={m.verdict || ''} />
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto px-3 py-2 [&_.tr-shot-inline]:max-w-full [&_.tr-shot-inline]:rounded-lg">

@@ -290,14 +290,14 @@ export function applyFrame(rows: readonly Row[], frame: Envelope): Row[] {
       break;
     }
     case 'error': {
-      // error 字段恒为字符串；对象/空值兜底序列化，避免 "⚠ [object Object]"
+      // error 字段恒为字符串；对象/空值兜底序列化，避免 "[object Object]"
       const raw = frame.error as unknown;
       const msg = typeof raw === 'string' && raw ? raw : raw != null ? JSON.stringify(raw) : '引擎错误';
-      out.push({ kind: 'notice', id: nextRowId(), text: `⚠ ${msg}`, tone: 'error' });
+      out.push({ kind: 'notice', id: nextRowId(), text: msg, tone: 'error' });
       break;
     }
     case 'interrupted': {
-      out.push({ kind: 'notice', id: nextRowId(), text: `⏹ ${frame.text || '已停止'}`, tone: 'stopped' });
+      out.push({ kind: 'notice', id: nextRowId(), text: frame.text || '已停止', tone: 'stopped' });
       break;
     }
     default:

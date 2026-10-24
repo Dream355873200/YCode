@@ -114,7 +114,7 @@ export default function FileView({ file }: { file: string }) {
         {!image && !rich && editing && (
           <Button variant="ghost" size="sm" className={cn('h-5 px-1.5 text-ui-2xs', dirty ? 'text-brand hover:text-brand' : 'text-foreground-subtlest')}
             onClick={() => save()} disabled={!dirty}>
-            <SaveIcon className="size-3" /> {dirty ? '保存 •' : '保存'}
+            <SaveIcon className="size-3" />保存{dirty && <span className="size-1.5 rounded-full bg-current" />}
           </Button>
         )}
         <Button variant="ghost" size="icon-sm" aria-label="重读"

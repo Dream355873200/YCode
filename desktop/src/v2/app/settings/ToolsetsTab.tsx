@@ -38,7 +38,7 @@ function BaseToolsDetail() {
   const tools = baseTools(catalog);
   return (
     <DetailFrame icon={<WrenchIcon className="size-5" />} title="基础工具"
-      desc="引擎内置、所有模式恒可用的工具：文件读写、Bash、检索、任务、计划、提问等。不属于任何工具集，模式无法裁剪。">
+      desc="所有智能体都有的引擎内置工具。">
       <DetailSection title={`工具（${tools.length}）`}>
         {tools.length
           ? <ToolList names={tools.map((t) => t.name)} tools={catalog.tools} />
@@ -54,7 +54,7 @@ function ToolsetDetail({ id }: { id: string }) {
   if (!d) return <ErrorBox message={`工具集 ${id} 不存在`} />;
   return (
     <DetailFrame icon={<BlocksIcon className="size-5" />} title={id}
-      desc="原生工具集：引擎代码实现，由插件的 toolsets 按 id 打包、模式经插件引用；未启用它的模式会话看不到这些工具。">
+      desc="由插件打包；只有拿到该插件的智能体能用。">
       <DetailSection title={`注册工具（${d.tools?.length ?? 0}）`}>
         {(d.tools?.length ?? 0) === 0
           ? <span className="text-ui-sm text-foreground-subtlest">无独立工具（运行期机制型工具集）</span>
@@ -62,7 +62,7 @@ function ToolsetDetail({ id }: { id: string }) {
       </DetailSection>
       {(d.notes?.length ?? 0) > 0 && (
         <DetailSection title="运行期机制">
-          {d.notes!.map((n, i) => <div key={i} className="text-ui-xs text-foreground-subtle">· {n}</div>)}
+          {d.notes!.map((n, i) => <div key={i} className="text-ui-xs text-foreground-subtle">{n}</div>)}
         </DetailSection>
       )}
     </DetailFrame>
@@ -86,7 +86,7 @@ export function ToolsetsTab() {
           <ResourceRow
             icon={<WrenchIcon className="size-4" />}
             name="基础工具"
-            desc={`${base.length} 个工具 · 所有模式恒可用`}
+            desc={`${base.length} 个工具 · 所有智能体都有`}
             onClick={() => go('toolsets', BASE_TOOLSET_ID)}
             right={<Chip>内置</Chip>}
           />
@@ -101,9 +101,6 @@ export function ToolsetsTab() {
           ))}
         </ResourceList>
       )}
-      <p className="text-ui-xs text-foreground-subtlest">
-        能力分层：原生工具集（本页，引擎 Go 代码）→ 声明层（提示词 / 规范 / 技能 / 子代理 / MCP / 面板）→ 聚合层（插件）→ 组装层（模式 = 提示词组 + 插件）。上层只能引用下层。
-      </p>
     </div>
   );
 }

@@ -84,7 +84,7 @@ function PluginFields({ initial, isNew, onDone, onCancel }: {
       <FormField label="描述">
         <Input value={form.description} onChange={(e) => set('description', e.target.value)} />
       </FormField>
-      <FormField label="工具集" hint="引擎内置的原生工具集；引用本插件的模式即可用其工具">
+      <FormField label="工具集" hint="引擎内置的原生工具集">
         <ToggleChips value={form.toolsets} onChange={(v) => set('toolsets', v)}
           options={Object.keys(catalog.toolsets).sort().map((t) => ({ id: t, label: t }))} empty="引擎没有可选工具集" />
       </FormField>
@@ -234,7 +234,7 @@ export function PluginsTab() {
         <EmptyHint
           icon={<PuzzleIcon className="size-8" />}
           title="还没有插件"
-          desc="点「新建插件」组合工具集 / 规范 / MCP / 子代理，再在模式里引用。"
+          desc="点「新建插件」把工具集、规范、MCP、子代理打包，再交给智能体。"
         />
       ) : (
         <ResourceList>

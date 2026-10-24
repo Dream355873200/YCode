@@ -144,12 +144,12 @@ export function ToolPill({ name }: { name: string }) {
 }
 
 /** 分区空态（居中提示卡）。 */
-export function EmptyHint({ icon, title, desc }: { icon: React.ReactNode; title: string; desc: string }) {
+export function EmptyHint({ icon, title, desc }: { icon: React.ReactNode; title: string; desc?: string }) {
   return (
     <div className="flex flex-col items-center gap-1.5 rounded-xl border border-dashed border-border px-6 py-10 text-center">
       <span className="text-foreground-subtlest">{icon}</span>
       <div className="text-ui-sm font-medium text-foreground-subtle">{title}</div>
-      <div className="max-w-md text-ui-xs text-foreground-subtlest">{desc}</div>
+      {desc && <div className="max-w-md text-ui-xs text-foreground-subtlest">{desc}</div>}
     </div>
   );
 }

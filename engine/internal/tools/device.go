@@ -487,7 +487,7 @@ func NewTapTool() (string, goagent.ToolDef) {
 				ok, visText := waitForText(cctx, in.Expect, 5*time.Second)
 				cancel()
 				if ok {
-					return fmt.Sprintf("已点击 (%d,%d)，✓ 验证通过：%q 已出现", in.X, in.Y, in.Expect), nil
+					return fmt.Sprintf("已点击 (%d,%d)，验证通过：%q 已出现", in.X, in.Y, in.Expect), nil
 				}
 				return "", fmt.Errorf("点击 (%d,%d) 后 5s 未见 %q。当前屏幕可见文本（前 15 条）：%s\n"+
 					"判断：文本在列表里 → 语义标注缺失/慢；不在 → 未跳转（点击目标可能错了）",

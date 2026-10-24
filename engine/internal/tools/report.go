@@ -51,7 +51,7 @@ func NewTestReportTool() (string, goagent.ToolDef) {
 			if len(items) == 0 {
 				return "", fmt.Errorf("items 不能为空")
 			}
-			verdict := map[string]string{"pass": "✅ 全部通过", "fail": "❌ 存在失败", "partial": "◐ 部分通过"}[in.Verdict]
+			verdict := map[string]string{"pass": "全部通过", "fail": "存在失败", "partial": "部分通过"}[in.Verdict]
 			if verdict == "" {
 				return "", fmt.Errorf("verdict 必须是 pass/fail/partial")
 			}
@@ -126,7 +126,7 @@ func NewTestReportTool() (string, goagent.ToolDef) {
 			}
 			b.WriteString("---\n\n")
 
-			fmt.Fprintf(&b, "# %s\n\n%s · 设备 %s · %d 条目（✅%d ❌%d）\n\n",
+			fmt.Fprintf(&b, "# %s\n\n%s · 设备 %s · %d 条目（通过 %d，失败 %d）\n\n",
 				in.Title, verdict, dev, len(items), npass, nfail)
 
 			// 按证据截图分组渲染：同页面的多个条目共用一张图——图只贴
@@ -162,19 +162,19 @@ func NewTestReportTool() (string, goagent.ToolDef) {
 				b.WriteString("| 状态 | 条目 | 备注 |\n|---|---|---|\n")
 				for _, i := range g.items {
 					it := items[i]
-					icon := map[string]string{"pass": "✅", "fail": "❌", "skip": "⏭"}[it.Status]
-					if icon == "" {
-						icon = "❓"
+					label := map[string]string{"pass": "通过", "fail": "失败", "skip": "跳过"}[it.Status]
+					if label == "" {
+						label = "未知"
 					}
 					note := strings.ReplaceAll(it.Note, "|", "\\|")
-					fmt.Fprintf(&b, "| %s | %s | %s |\n", icon, it.Name, note)
+					fmt.Fprintf(&b, "| %s | %s | %s |\n", label, it.Name, note)
 				}
 				b.WriteString("\n")
 			}
 			if len(skipped) > 0 {
 				b.WriteString("## 跳过的条目\n\n")
 				for _, i := range skipped {
-					fmt.Fprintf(&b, "- ⏭ %s（%s）\n", items[i].Name, items[i].Note)
+					fmt.Fprintf(&b, "- %s（%s）\n", items[i].Name, items[i].Note)
 				}
 				b.WriteString("\n")
 			}
@@ -185,7 +185,7 @@ func NewTestReportTool() (string, goagent.ToolDef) {
 			if err := os.WriteFile(file, []byte(b.String()), 0o644); err != nil {
 				return "", err
 			}
-			return fmt.Sprintf("报告已保存: %s（%d 条目，✅%d ❌%d）— 回复用户时给出结论摘要即可",
+			return fmt.Sprintf("报告已保存: %s（%d 条目，通过 %d，失败 %d）— 回复用户时给出结论摘要即可",
 				file, len(items), npass, nfail), nil
 		},
 	}

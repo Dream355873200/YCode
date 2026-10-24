@@ -360,7 +360,7 @@ export function SettingsPage() {
                       <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-ui-lg font-bold text-primary-foreground">Y</span>
                       <div>
                         <div className="text-ui-base font-semibold text-foreground">YCode</div>
-                        <div className="text-ui-xs text-foreground-subtlest">版本 0.1.0 · 模式化的桌面 AI 开发 Agent</div>
+                        <div className="text-ui-xs text-foreground-subtlest">版本 0.1.0 · 桌面 AI 智能体工作台</div>
                       </div>
                     </div>
                     <div className="mt-1 grid gap-2 rounded-xl border border-border bg-card p-3 text-ui-sm">

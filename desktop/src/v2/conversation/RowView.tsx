@@ -2,7 +2,10 @@
 // 工具卡片走渲染器注册表（lib/toolRender.jsx）；
 // 交互卡（审批/确认/提问）直接挂 store 回传。
 import { memo, useEffect, useRef, useState } from 'react';
-import { Bot, Brain, Check as CheckIco, CornerDownLeft as SendIco, FileTextIcon, GoalIcon, Loader2 as Loader2Ico, PanelRightIcon, Square as StopIco, X as XIco } from 'lucide-react';
+import {
+  Bot, Brain, Check as CheckIco, ChevronRightIcon, CircleAlertIcon, CircleStopIcon, CornerDownLeft as SendIco,
+  CornerDownRightIcon, FileTextIcon, GoalIcon, Loader2 as Loader2Ico, PanelRightIcon, Square as StopIco, X as XIco,
+} from 'lucide-react';
 import type { Row, ToolRow } from './projection/rows';
 import { useConversation } from './store';
 import { useApp } from '../app/appState';
@@ -113,7 +116,7 @@ function ToolCard({ row }: { row: Extract<Row, { kind: 'tool' }> }) {
         className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-ui-sm ${R.expandable ? 'cursor-pointer hover:bg-hover' : 'cursor-default'}`}
       >
         {R.expandable && (
-          <span className={`inline-block w-3 text-foreground-subtlest transition-transform duration-200 ${open ? 'rotate-90' : ''}`}>▸</span>
+          <ChevronRightIcon className={`size-3 shrink-0 text-foreground-subtlest transition-transform duration-200 ${open ? 'rotate-90' : ''}`} />
         )}
         {R.Icon && <R.Icon className="size-3.5 shrink-0 text-foreground-subtle" />}
         <span className="text-foreground-subtle">{label}</span>
@@ -216,7 +219,7 @@ function AgentCard({ row }: { row: ToolRow }) {
         onClick={() => setOpen(!open)}
         className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-ui-sm hover:bg-hover"
       >
-        <span className={`inline-block w-3 text-foreground-subtlest transition-transform duration-200 ${open ? 'rotate-90' : ''}`}>▸</span>
+        <ChevronRightIcon className={`size-3 shrink-0 text-foreground-subtlest transition-transform duration-200 ${open ? 'rotate-90' : ''}`} />
         {running
           ? <span className="inline-block h-2.5 w-2.5 shrink-0 animate-spin rounded-full border-2 border-brand border-t-transparent" />
           : <Bot size={13} className="shrink-0 text-foreground-subtlest" />}
@@ -260,7 +263,7 @@ function AgentCard({ row }: { row: ToolRow }) {
       {/* 折叠态：运行中直播最新一条活动 */}
       {!open && running && latest && (
         <div className="flex items-center gap-1.5 border-t border-border px-3 py-1 text-ui-xs text-foreground-subtlest">
-          <span className="text-brand">›</span>
+          <ChevronRightIcon className="size-3 shrink-0 text-brand" />
           <span className="min-w-0 truncate">{latest}</span>
         </div>
       )}
@@ -279,8 +282,10 @@ function AgentCard({ row }: { row: ToolRow }) {
             {visible.map((a, i) => {
               const isLast = i === visible.length - 1;
               return (
-                <div key={i} className={`flex gap-1.5 py-px text-ui-xs ${isLast && running ? 'text-foreground-subtle' : 'text-foreground-subtlest'}`}>
-                  <span className={isLast && running ? 'text-brand' : ''}>{isLast && running ? '›' : '·'}</span>
+                <div key={i} className={`flex items-center gap-1.5 py-px text-ui-xs ${isLast && running ? 'text-foreground-subtle' : 'text-foreground-subtlest'}`}>
+                  {isLast && running
+                    ? <ChevronRightIcon className="size-3 shrink-0 text-brand" />
+                    : <span className="flex size-3 shrink-0 items-center justify-center"><span className="size-1 rounded-full bg-current" /></span>}
                   <span className="min-w-0 truncate">{a}</span>
                 </div>
               );
@@ -390,7 +395,7 @@ export function ReadGroup({ group }: { group: ReadGroupUnit }) {
         onClick={() => setOpen(!open)}
         className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-ui-sm hover:bg-hover"
       >
-        <span className={`inline-block w-3 text-foreground-subtlest transition-transform duration-200 ${open ? 'rotate-90' : ''}`}>▸</span>
+        <ChevronRightIcon className={`size-3 shrink-0 text-foreground-subtlest transition-transform duration-200 ${open ? 'rotate-90' : ''}`} />
         <span className="text-foreground-subtle">探索</span>
         <span className="min-w-0 truncate text-foreground-subtlest">
           读取了 {reads.length} 个文件{errCount ? ` · ${errCount} 个失败` : ''}
@@ -468,8 +473,10 @@ function PermissionCard({ row, sid }: { row: Extract<Row, { kind: 'permission' }
 function AskHint({ row }: { row: Extract<Row, { kind: 'confirm' | 'ask' }> }) {
   if (row.resolved) {
     return (
-      <div className="my-2 rounded-lg border border-border bg-surface px-3 py-2 text-ui-sm text-foreground-subtlest">
-        {row.question} → {row.answer}
+      <div className="my-2 flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-2 text-ui-sm text-foreground-subtlest">
+        <span className="min-w-0 truncate">{row.question}</span>
+        <CornerDownRightIcon className="size-3.5 shrink-0" />
+        <span className="min-w-0 truncate text-foreground-subtle">{row.answer}</span>
       </div>
     );
   }
@@ -494,12 +501,16 @@ function StatusLine({ row }: { row: Extract<Row, { kind: 'status' }> }) {
 }
 
 function Notice({ row }: { row: Extract<Row, { kind: 'notice' }> }) {
-  const cls = row.tone === 'error'
-    ? 'text-destructive'
-    : row.tone === 'stopped'
-      ? 'text-foreground-subtle'
-      : 'text-foreground-subtlest';
-  return <div className={`my-1.5 px-1 text-ui-sm ${cls}`}>{row.text}</div>;
+  if (row.tone === 'error' || row.tone === 'stopped') {
+    const Icon = row.tone === 'error' ? CircleAlertIcon : CircleStopIcon;
+    return (
+      <div className={`my-1.5 flex items-start gap-1.5 px-1 text-ui-sm ${row.tone === 'error' ? 'text-destructive' : 'text-foreground-subtle'}`}>
+        <Icon className="mt-0.75 size-3.5 shrink-0" />
+        <span className="min-w-0 whitespace-pre-wrap break-words">{row.text}</span>
+      </div>
+    );
+  }
+  return <div className="my-1.5 px-1 text-ui-sm text-foreground-subtlest">{row.text}</div>;
 }
 
 // ---------- 分发 ----------

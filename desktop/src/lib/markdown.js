@@ -108,7 +108,7 @@ function renderRaw(src) {
     const img = l.match(/^\s*!\[([^\]]*)\]\(([^)]+)\)\s*$/);
     if (img) {
       closeList();
-      out.push('<div class="md-img-note" data-img="' + esc(img[2]) + '">📸 ' + esc(img[1] || '截图') + '</div>');
+      out.push('<div class="md-img-note" data-img="' + esc(img[2]) + '">' + esc(img[1] || '截图') + '</div>');
       continue;
     }
     if (/^### /.test(l)) { closeList(); out.push('<h3>' + inline(esc(l.slice(4))) + '</h3>'); }
