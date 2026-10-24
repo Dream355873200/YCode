@@ -39,7 +39,7 @@ const EFFORTS: Array<{ id: string; label: string }> = [
   { id: 'high', label: '高' },
 ];
 
-const chipCls = 'flex h-7 items-center gap-1.5 rounded-lg px-2 text-ui-xs text-foreground-subtle transition-colors hover:bg-hover hover:text-foreground data-[state=open]:bg-hover data-[state=open]:text-foreground';
+const chipCls = 'flex h-7 items-center gap-1.5 rounded-lg px-2 text-ui-sm text-foreground-subtle transition-colors hover:bg-hover hover:text-foreground data-[state=open]:bg-hover data-[state=open]:text-foreground';
 
 function AgentPicker() {
   const { modes, projectMode, setProjectMode, openSettings } = useApp();
@@ -61,8 +61,8 @@ function AgentPicker() {
             <DropdownMenuRadioItem key={m.id} value={m.id} className="items-start py-2">
               <AgentAvatar icon={m.icon} size="sm" className="mt-0.5" />
               <span className="min-w-0 flex-1">
-                <span className="block text-ui-sm text-foreground">{m.name}</span>
-                {m.description && <span className="line-clamp-2 block text-ui-xs text-foreground-subtlest">{m.description}</span>}
+                <span className="block text-ui-base text-foreground">{m.name}</span>
+                {m.description && <span className="line-clamp-2 block text-ui-sm text-foreground-subtlest">{m.description}</span>}
               </span>
             </DropdownMenuRadioItem>
           ))}
@@ -98,8 +98,8 @@ function PermissionPicker() {
               <DropdownMenuRadioItem key={p.id} value={p.id} className="items-start py-2">
                 <PIcon className={cn('mt-0.5', p.tone)} />
                 <span className="min-w-0 flex-1">
-                  <span className="block text-ui-sm text-foreground">{p.label}</span>
-                  <span className="block text-ui-xs text-foreground-subtlest">{p.desc}</span>
+                  <span className="block text-ui-base text-foreground">{p.label}</span>
+                  <span className="block text-ui-sm text-foreground-subtlest">{p.desc}</span>
                 </span>
               </DropdownMenuRadioItem>
             );
@@ -166,31 +166,31 @@ function ModelPicker({ disabled }: { disabled: boolean }) {
         </button>
       </PopoverTrigger>
       <PopoverContent side="top" align="end" className="w-72 p-2">
-        <div className="px-1 pb-1.5 text-ui-2xs font-medium text-foreground-subtlest">思考强度</div>
+        <div className="px-1 pb-1.5 text-ui-xs font-medium text-foreground-subtlest">思考强度</div>
         <div className="grid grid-cols-5 gap-0.5 rounded-lg border border-border bg-input p-0.5" role="radiogroup">
           {EFFORTS.map((e) => (
             <button key={e.id || 'default'} type="button" role="radio" aria-checked={e.id === effort}
               onClick={() => pickEffort(e.id)}
-              className={cn('rounded-md py-1 text-ui-xs transition-colors',
+              className={cn('rounded-md py-1 text-ui-sm transition-colors',
                 e.id === effort ? 'bg-selected font-medium text-foreground' : 'text-foreground-subtle hover:bg-hover hover:text-foreground')}>
               {e.label}
             </button>
           ))}
         </div>
-        <div className="mt-2.5 px-1 pb-1 text-ui-2xs font-medium text-foreground-subtlest">模型</div>
+        <div className="mt-2.5 px-1 pb-1 text-ui-xs font-medium text-foreground-subtlest">模型</div>
         <div className="max-h-60 overflow-y-auto">
           {models.length === 0 && (
-            <div className="px-2 py-1.5 text-ui-xs text-foreground-subtlest">{model ? `当前：${model}` : '未获取到模型列表'}</div>
+            <div className="px-2 py-1.5 text-ui-sm text-foreground-subtlest">{model ? `当前：${model}` : '未获取到模型列表'}</div>
           )}
           {models.map((m) => (
             <button key={m} type="button" disabled={disabled} onClick={() => void pickModel(m)}
-              className={cn('flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-ui-sm transition-colors disabled:opacity-50',
+              className={cn('flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-ui-base transition-colors disabled:opacity-50',
                 m === model ? 'bg-selected text-foreground' : 'text-foreground-subtle hover:bg-hover hover:text-foreground')}>
               <span className="min-w-0 flex-1 truncate" title={m}>{m}</span>
             </button>
           ))}
         </div>
-        {disabled && <div className="px-1 pt-1.5 text-ui-2xs text-foreground-subtlest">任务执行中，结束后可切换模型</div>}
+        {disabled && <div className="px-1 pt-1.5 text-ui-xs text-foreground-subtlest">任务执行中，结束后可切换模型</div>}
       </PopoverContent>
     </Popover>
   );
@@ -351,7 +351,7 @@ export function Composer({ sid, variant = 'docked', seed }: {
           }}
           placeholder={placeholder}
           className="block w-full resize-none bg-transparent px-1 pt-1.5 text-ui-base text-foreground outline-none placeholder:text-foreground-subtlest"
-          style={{ minHeight: hero ? 72 : undefined }}
+          style={{ minHeight: 54 }}
         />
         <div className="mt-2 flex items-center gap-2">
           <div className="flex min-w-0 flex-1 items-center gap-0.5">
@@ -385,7 +385,7 @@ export function Composer({ sid, variant = 'docked', seed }: {
           </div>
         </div>
       </div>
-      {error && <div className="mt-1.5 px-2 text-ui-xs text-destructive">{error}</div>}
+      {error && <div className="mt-1.5 px-2 text-ui-sm text-destructive">{error}</div>}
     </div>
   );
 }

@@ -48,18 +48,18 @@ function RunStatus({ run }: { run: FlutterRun }) {
   }, [fresh, run.resultAt]);
   if (run.status === 'building' || run.status === 'reloading' || run.status === 'restarting') {
     const text = run.status === 'building' ? '正在构建并安装' : run.status === 'reloading' ? '正在热重载' : '正在热重启';
-    return <span className="flex items-center gap-1 text-ui-xs text-foreground-subtle"><Loader2Icon className="size-3 animate-spin text-brand" />{text}</span>;
+    return <span className="flex items-center gap-1 text-ui-sm text-foreground-subtle"><Loader2Icon className="size-3 animate-spin text-brand" />{text}</span>;
   }
   if (run.status === 'running') {
     return (
-      <span className="flex items-center gap-1.5 text-ui-xs text-foreground-subtle">
+      <span className="flex items-center gap-1.5 text-ui-sm text-foreground-subtle">
         <span className="size-1.5 rounded-full bg-success" />
         {fresh && run.result ? <span className={run.result === 'failed' ? 'text-destructive' : 'text-success'}>{RESULT_TEXT[run.result]}</span> : '运行中'}
       </span>
     );
   }
-  if (run.stopped || run.code === 0) return <span className="text-ui-xs text-foreground-subtlest">已停止</span>;
-  return <span className="text-ui-xs text-destructive">运行已结束{run.code != null ? `（退出码 ${run.code}）` : ''}</span>;
+  if (run.stopped || run.code === 0) return <span className="text-ui-sm text-foreground-subtlest">已停止</span>;
+  return <span className="text-ui-sm text-destructive">运行已结束{run.code != null ? `（退出码 ${run.code}）` : ''}</span>;
 }
 
 function RunLog({ run, open }: { run: FlutterRun; open: boolean }) {
@@ -69,7 +69,7 @@ function RunLog({ run, open }: { run: FlutterRun; open: boolean }) {
   }, [open, run.log]);
   if (!open || !run.log.length) return null;
   return (
-    <div ref={ref} className="max-h-40 overflow-y-auto rounded-md bg-surface px-2 py-1.5 font-mono text-ui-2xs leading-relaxed">
+    <div ref={ref} className="max-h-40 overflow-y-auto rounded-md bg-surface px-2 py-1.5 font-mono text-ui-xs leading-relaxed">
       {run.log.map((l, i) => (
         <div key={i} className={cn('whitespace-pre-wrap break-all',
           l.level === 'error' ? 'text-destructive' : l.level === 'progress' ? 'text-foreground-subtle' : 'text-foreground-subtlest')}>
@@ -115,7 +115,7 @@ function RunBar({ dir, deviceId, onStarted }: { dir: string; deviceId: string | 
   return (
     <div className="grid gap-1.5 border-b border-border/50 px-2 py-1.5">
       <div className="flex flex-wrap items-center gap-1.5">
-        <span className="text-ui-2xs font-medium uppercase tracking-wider text-foreground-subtlest">应用</span>
+        <span className="text-ui-xs font-medium uppercase tracking-wider text-foreground-subtlest">应用</span>
         {!active ? (
           <Button type="button" size="sm" variant="ghost" className="text-brand hover:bg-hover" disabled={!deviceId}
             title={deviceId ? '构建、安装并在手机上启动' : '先连接一台设备'} onClick={() => void doStart()}>
@@ -143,20 +143,20 @@ function RunBar({ dir, deviceId, onStarted }: { dir: string; deviceId: string | 
         {run && <RunStatus run={run} />}
         {run && run.log.length > 0 && (
           <button type="button" onClick={() => setLogOpen((v) => !v)}
-            className="ml-auto flex items-center gap-0.5 text-ui-2xs text-foreground-subtlest hover:text-foreground">
+            className="ml-auto flex items-center gap-0.5 text-ui-xs text-foreground-subtlest hover:text-foreground">
             日志<ChevronDownIcon className={cn('size-3 transition-transform', logOpen && 'rotate-180')} />
           </button>
         )}
       </div>
-      {lastProgress && !logOpen && <div className="truncate pl-0.5 text-ui-2xs text-foreground-subtlest" title={lastProgress}>{lastProgress}</div>}
+      {lastProgress && !logOpen && <div className="truncate pl-0.5 text-ui-xs text-foreground-subtlest" title={lastProgress}>{lastProgress}</div>}
       {active && run.status !== 'building' && (
-        <label className="flex w-fit cursor-pointer items-center gap-1.5 pl-0.5 text-ui-2xs text-foreground-subtle">
+        <label className="flex w-fit cursor-pointer items-center gap-1.5 pl-0.5 text-ui-xs text-foreground-subtle">
           <input type="checkbox" className="size-3 accent-[var(--color-brand)]" checked={autoReload}
             onChange={(e) => setAutoReload(e.target.checked)} />
           对话改完 Dart 代码后自动热重载
         </label>
       )}
-      {err && <div className="truncate text-ui-2xs text-destructive" title={err}>{err}</div>}
+      {err && <div className="truncate text-ui-xs text-destructive" title={err}>{err}</div>}
       {run && <RunLog run={run} open={logOpen} />}
     </div>
   );
@@ -210,18 +210,18 @@ export default function DevicePanel() {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-border/50 px-2 py-1.5">
-        <span className="text-ui-2xs font-medium uppercase tracking-wider text-foreground-subtlest">设备</span>
+        <span className="text-ui-xs font-medium uppercase tracking-wider text-foreground-subtlest">设备</span>
         {!adbOk ? (
-          <span className="text-ui-2xs text-foreground-subtlest">未找到 adb — 安装 Android 平台工具</span>
+          <span className="text-ui-xs text-foreground-subtlest">未找到 adb — 安装 Android 平台工具</span>
         ) : online.length === 0 && devices.length > 0 ? (
-          <span className="text-ui-2xs text-foreground-subtlest">
+          <span className="text-ui-xs text-foreground-subtlest">
             设备待授权/离线 — 在手机上允许「USB 调试」，或重新插拔
           </span>
         ) : online.length === 0 ? (
-          <span className="text-ui-2xs text-foreground-subtlest">未检测到设备 — 插入手机（开 USB 调试）或启动模拟器</span>
+          <span className="text-ui-xs text-foreground-subtlest">未检测到设备 — 插入手机（开 USB 调试）或启动模拟器</span>
         ) : (
           <select value={sel || ''} onChange={(e) => setSel(e.target.value)}
-            className="min-w-0 max-w-40 rounded-md border border-border bg-input px-1.5 py-0.5 text-ui-xs text-foreground outline-none">
+            className="min-w-0 max-w-40 rounded-md border border-border bg-input px-1.5 py-0.5 text-ui-sm text-foreground outline-none">
             {online.map((d) => (
               <option key={d.id} value={d.id}>
                 {d.model || d.id}{d.transport === 'wifi' ? ' · WiFi' : ''}
@@ -236,7 +236,7 @@ export default function DevicePanel() {
             {mirroring ? <><SquareIcon className="size-3" />停止投屏</> : <><CastIcon className="size-3" />投屏</>}
           </Button>
         )}
-        {err && <span className="max-w-full truncate text-ui-2xs text-destructive" title={err}>{err.slice(0, 80)}</span>}
+        {err && <span className="max-w-full truncate text-ui-xs text-destructive" title={err}>{err.slice(0, 80)}</span>}
       </div>
       {isFlutter && project && (
         <RunBar dir={project.dir} deviceId={sel && online.some((d) => d.id === sel) ? sel : null}
@@ -250,8 +250,8 @@ export default function DevicePanel() {
         ) : (
           <div className="flex h-full flex-col items-center justify-center gap-1 text-center">
             <SmartphoneIcon className="size-8 text-foreground-subtlest" />
-            <div className="text-ui-sm text-foreground-subtle">手机实时预览</div>
-            <div className="text-ui-2xs text-foreground-subtlest">
+            <div className="text-ui-base text-foreground-subtle">手机实时预览</div>
+            <div className="text-ui-xs text-foreground-subtlest">
               {isFlutter ? '点「运行」装到手机并自动投屏，可直接操作' : '投屏后此处显示设备画面，可直接操作'}
             </div>
           </div>

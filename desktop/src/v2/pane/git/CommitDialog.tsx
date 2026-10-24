@@ -65,12 +65,12 @@ export function CommitDialog({ dir, open, onOpenChange }: {
       <DialogContent className="max-w-125">
         <DialogHeader>
           <DialogTitle>提交改动</DialogTitle>
-          {summary && <DialogDescription className="text-ui-sm tabular-nums">{summary}</DialogDescription>}
+          {summary && <DialogDescription className="text-ui-base tabular-nums">{summary}</DialogDescription>}
         </DialogHeader>
         <div className="grid gap-2">
           <Textarea value={message} onChange={(e) => setMessage(e.target.value)} rows={6} autoFocus
             placeholder="提交说明：首行写摘要，空一行后写细节"
-            className="min-h-28 font-mono text-ui-sm"
+            className="min-h-28 font-mono text-ui-base"
             onKeyDown={(e) => {
               if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && message.trim()) { e.preventDefault(); void submit(false); }
             }} />
@@ -79,9 +79,9 @@ export function CommitDialog({ dir, open, onOpenChange }: {
               {generating ? <Loader2Icon className="animate-spin" /> : <WandSparklesIcon />}
               {generating ? '起草中…' : '让模型起草'}
             </Button>
-            <span className="text-ui-2xs text-foreground-subtlest">Ctrl+Enter 提交</span>
+            <span className="text-ui-xs text-foreground-subtlest">Ctrl+Enter 提交</span>
           </div>
-          {error && <div className="rounded-lg bg-destructive/10 px-2.5 py-1.5 text-ui-xs text-destructive">{error}</div>}
+          {error && <div className="rounded-lg bg-destructive/10 px-2.5 py-1.5 text-ui-sm text-destructive">{error}</div>}
         </div>
         <DialogFooter>
           <Button variant="outline" disabled={!!busy} onClick={() => onOpenChange(false)}>取消</Button>

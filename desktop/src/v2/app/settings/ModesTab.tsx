@@ -127,7 +127,7 @@ function ModeEditor({ initial, isNew, onDone, onCancel }: {
       </div>
       <FormField label="添加项目表单（JSON）" hint="type：text / textarea / folder / choice；dir 字段即项目目录">
         <Textarea value={form.projectFields} onChange={(e) => set('projectFields', e.target.value)}
-          spellCheck={false} className="max-h-60 font-mono text-ui-xs" />
+          spellCheck={false} className="max-h-60 font-mono text-ui-sm" />
       </FormField>
     </EditorFrame>
   );
@@ -148,15 +148,15 @@ function PluginSwitchRow({ mode, plugin, onToggle, busy }: {
         className="flex min-w-0 flex-1 items-start gap-2.5 text-left">
         <PuzzleIcon className={cn('mt-0.5 size-4 shrink-0', on ? 'text-brand' : 'text-foreground-subtlest')} />
         <span className="min-w-0 flex-1">
-          <span className="flex items-center gap-1.5 text-ui-sm text-foreground">
+          <span className="flex items-center gap-1.5 text-ui-base text-foreground">
             {plugin.name}
             {plugin.disabled && <Chip>已停用</Chip>}
-            {mcpErr > 0 && <span className="text-ui-2xs text-destructive">MCP 失败 {mcpErr}</span>}
+            {mcpErr > 0 && <span className="text-ui-xs text-destructive">MCP 失败 {mcpErr}</span>}
           </span>
-          {plugin.description && <span className="line-clamp-1 block text-ui-xs text-foreground-subtlest">{plugin.description}</span>}
+          {plugin.description && <span className="line-clamp-1 block text-ui-sm text-foreground-subtlest">{plugin.description}</span>}
           <span className="mt-1 flex flex-wrap gap-1">
             {pluginProvides(plugin, mcpCount).map((x) => (
-              <span key={x} className="rounded bg-surface px-1.5 text-ui-2xs text-foreground-subtle">{x}</span>
+              <span key={x} className="rounded bg-surface px-1.5 text-ui-xs text-foreground-subtle">{x}</span>
             ))}
           </span>
         </span>
@@ -242,7 +242,7 @@ function ModeDetail({ id, defaultMode, onSetDefault }: { id: string; defaultMode
       {!!mode.starters?.length && (
         <DetailSection title="开场建议">
           {mode.starters.map((s) => (
-            <InfoRow key={s.label} label={s.label}><span className="text-ui-xs text-foreground-subtle">{s.prompt}</span></InfoRow>
+            <InfoRow key={s.label} label={s.label}><span className="text-ui-sm text-foreground-subtle">{s.prompt}</span></InfoRow>
           ))}
         </DetailSection>
       )}
@@ -276,7 +276,7 @@ function ModeDetail({ id, defaultMode, onSetDefault }: { id: string; defaultMode
       )}
       <DetailSection title="添加项目">
         <InfoRow label="脚手架">
-          {mode.scaffold ? <span className="font-mono text-ui-xs">{mode.scaffold}</span> : '无（打开已有目录）'}
+          {mode.scaffold ? <span className="font-mono text-ui-sm">{mode.scaffold}</span> : '无（打开已有目录）'}
         </InfoRow>
         {mode.projectFields.map((f) => (
           <InfoRow key={f.id} label={f.label}>
@@ -322,13 +322,13 @@ export function ModesTab({ defaultMode, onSetDefault }: { defaultMode: string; o
                 <AgentAvatar icon={m.icon} size="md" />
                 <span className="min-w-0 flex-1">
                   <span className="flex items-center gap-1.5">
-                    <span className="truncate text-ui-sm font-medium text-foreground">{m.name}</span>
+                    <span className="truncate text-ui-base font-medium text-foreground">{m.name}</span>
                     {m.id === defaultMode && <Chip tone="brand">默认</Chip>}
                     {m.id === projectMode && <Chip>当前</Chip>}
                     {m.overrides && <Chip>已自定义</Chip>}
                   </span>
-                  {m.description && <span className="mt-0.5 line-clamp-2 block text-ui-xs text-foreground-subtlest">{m.description}</span>}
-                  <span className="mt-2 block truncate text-ui-2xs text-foreground-subtle">
+                  {m.description && <span className="mt-0.5 line-clamp-2 block text-ui-sm text-foreground-subtlest">{m.description}</span>}
+                  <span className="mt-2 block truncate text-ui-xs text-foreground-subtle">
                     {plugins.length ? plugins.map((p) => p.name).join(' · ') : '只有基础工具'}
                   </span>
                 </span>

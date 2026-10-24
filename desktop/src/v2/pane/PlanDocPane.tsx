@@ -3,7 +3,7 @@
 import { useApp } from '../app/appState';
 import { useSession } from '../conversation/store';
 import { extractPlans } from '../conversation/status/statusPanelModel';
-import { renderMD } from '../../lib/markdown';
+import { Markdown } from '../components/markdown/Markdown';
 
 export function parsePlanDocTabId(id: string): string | null {
   return id.startsWith('plan:') ? id.slice(5) : null;
@@ -14,11 +14,11 @@ export function PlanDocPane({ toolUseId }: { toolUseId: string }) {
   const session = useSession(sid || '');
   const plan = extractPlans(session.rows).find((p) => p.toolUseId === toolUseId);
   if (!plan) {
-    return <div className="p-6 text-center text-ui-xs text-foreground-subtlest">这份计划不在当前对话里</div>;
+    return <div className="p-6 text-center text-ui-sm text-foreground-subtlest">这份计划不在当前对话里</div>;
   }
   return (
     <div className="h-full overflow-y-auto px-4 py-3">
-      <div className="v2-md text-ui-sm text-foreground" dangerouslySetInnerHTML={{ __html: renderMD(plan.markdown) }} />
+      <div className="text-ui-base text-foreground"><Markdown text={plan.markdown} /></div>
     </div>
   );
 }

@@ -19,7 +19,7 @@ const initialValues = (m: ModeDecl | undefined): Values =>
   Object.fromEntries((m?.projectFields ?? []).map((f) => [f.id, f.default ?? '']));
 
 const chip = (active: boolean): string => cn(
-  'rounded-lg border px-3 py-1.5 text-ui-sm transition-colors',
+  'rounded-lg border px-3 py-1.5 text-ui-base transition-colors',
   active
     ? 'border-brand bg-accent text-brand'
     : 'border-border text-foreground-subtle hover:bg-hover hover:text-foreground',
@@ -33,7 +33,7 @@ function Field({ field, value, onChange, onPickDir }: {
 }) {
   return (
     <div className="grid gap-1.5">
-      <Label className="text-ui-sm font-normal text-foreground-subtle">
+      <Label className="text-ui-base font-normal text-foreground-subtle">
         {field.label}{field.required && <span className="text-destructive"> *</span>}
       </Label>
       {field.type === 'text' && (
@@ -58,7 +58,7 @@ function Field({ field, value, onChange, onPickDir }: {
           ))}
         </div>
       )}
-      {field.hint && <span className="text-ui-xs text-foreground-subtlest">{field.hint}</span>}
+      {field.hint && <span className="text-ui-sm text-foreground-subtlest">{field.hint}</span>}
     </div>
   );
 }
@@ -119,11 +119,11 @@ export function NewProjectDialog() {
       <DialogContent className="max-w-150">
         <DialogHeader>
           <DialogTitle>添加项目</DialogTitle>
-          <DialogDescription className="text-ui-sm">选择一个智能体：打开已有文件夹，或按它的模板生成新工程。之后在项目里可以随时换智能体。</DialogDescription>
+          <DialogDescription className="text-ui-base">选择一个智能体：打开已有文件夹，或按它的模板生成新工程。之后在项目里可以随时换智能体。</DialogDescription>
         </DialogHeader>
 
         {modes.length === 0 ? (
-          <div className="text-ui-sm text-foreground-subtle">引擎未就绪，暂无可用智能体。</div>
+          <div className="text-ui-base text-foreground-subtle">引擎未就绪，暂无可用智能体。</div>
         ) : (
           <div className="grid gap-4">
             <div className="grid grid-cols-2 gap-2">
@@ -135,11 +135,11 @@ export function NewProjectDialog() {
                   )}>
                   <AgentAvatar icon={m.icon} size="md" />
                   <span className="min-w-0 flex-1">
-                    <span className="flex items-center gap-1.5 text-ui-sm font-medium text-foreground">
+                    <span className="flex items-center gap-1.5 text-ui-base font-medium text-foreground">
                       {m.name}
-                      {m.scaffold && <span className="rounded bg-info/12 px-1 text-ui-2xs font-normal text-info">生成工程</span>}
+                      {m.scaffold && <span className="rounded bg-info/12 px-1 text-ui-xs font-normal text-info">生成工程</span>}
                     </span>
-                    {m.description && <span className="line-clamp-2 text-ui-xs text-foreground-subtlest">{m.description}</span>}
+                    {m.description && <span className="line-clamp-2 text-ui-sm text-foreground-subtlest">{m.description}</span>}
                   </span>
                 </button>
               ))}
@@ -153,7 +153,7 @@ export function NewProjectDialog() {
           </div>
         )}
 
-        {error && <div className="text-ui-sm text-destructive">{error}</div>}
+        {error && <div className="text-ui-base text-destructive">{error}</div>}
 
         <DialogFooter>
           <Button variant="outline" onClick={() => close(false)} disabled={busy}>取消</Button>

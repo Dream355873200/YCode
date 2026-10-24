@@ -51,7 +51,7 @@ export function GroupHeader({ title, count, actions }: {
     <div className="flex flex-wrap items-center justify-between gap-3">
       <h3 className="flex h-7 items-center gap-1.5 text-ui-base font-medium text-foreground">
         {title}
-        <span className="text-ui-sm font-normal text-foreground-subtle">{count}</span>
+        <span className="text-ui-base font-normal text-foreground-subtle">{count}</span>
       </h3>
       {actions}
     </div>
@@ -95,7 +95,7 @@ export function ResourceRow({ icon, name, desc, right, onClick }: {
       </div>
       <div className="min-w-0">
         <div className="truncate text-ui-base font-medium text-foreground">{name}</div>
-        {desc && <div className="mt-0.5 truncate text-ui-sm text-foreground-subtle">{desc}</div>}
+        {desc && <div className="mt-0.5 truncate text-ui-base text-foreground-subtle">{desc}</div>}
       </div>
       <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">{right}</div>
     </div>
@@ -106,7 +106,7 @@ export function ResourceRow({ icon, name, desc, right, onClick }: {
 export function Chip({ children, tone = 'muted' }: { children: React.ReactNode; tone?: 'muted' | 'brand' }) {
   return (
     <span className={cn(
-      'inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-ui-2xs',
+      'inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-ui-xs',
       tone === 'brand'
         ? 'bg-brand/15 font-medium text-brand'
         : 'border border-border bg-surface text-foreground-subtlest',
@@ -126,7 +126,7 @@ const MCP_STATUS = {
 export function McpStatusBadge({ status }: { status?: MCPServerStatus }) {
   const s = status ? MCP_STATUS[status.status] : { label: '未启用', dot: 'bg-foreground-subtlest' };
   return (
-    <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border bg-surface px-2 py-0.5 text-ui-2xs text-foreground-subtle">
+    <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border bg-surface px-2 py-0.5 text-ui-xs text-foreground-subtle">
       <span className={cn('size-1.5 rounded-full', s.dot)} aria-hidden="true" />
       {s.label}
       {status?.status === 'connected' && <span className="text-foreground-subtlest">· {status.tools.length} 工具</span>}
@@ -137,7 +137,7 @@ export function McpStatusBadge({ status }: { status?: MCPServerStatus }) {
 /** 工具名胶囊（等宽小字）。 */
 export function ToolPill({ name }: { name: string }) {
   return (
-    <span className="inline-flex items-center gap-1 rounded-md border border-border/50 bg-background px-1.5 py-0.5 font-mono text-ui-2xs text-foreground-subtle">
+    <span className="inline-flex items-center gap-1 rounded-md border border-border/50 bg-background px-1.5 py-0.5 font-mono text-ui-xs text-foreground-subtle">
       <WrenchIcon className="size-3" />{name}
     </span>
   );
@@ -148,26 +148,26 @@ export function EmptyHint({ icon, title, desc }: { icon: React.ReactNode; title:
   return (
     <div className="flex flex-col items-center gap-1.5 rounded-xl border border-dashed border-border px-6 py-10 text-center">
       <span className="text-foreground-subtlest">{icon}</span>
-      <div className="text-ui-sm font-medium text-foreground-subtle">{title}</div>
-      {desc && <div className="max-w-md text-ui-xs text-foreground-subtlest">{desc}</div>}
+      <div className="text-ui-base font-medium text-foreground-subtle">{title}</div>
+      {desc && <div className="max-w-md text-ui-sm text-foreground-subtlest">{desc}</div>}
     </div>
   );
 }
 
 export function ErrorBox({ message }: { message: string }) {
-  return <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-ui-sm text-destructive">{message}</div>;
+  return <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-ui-base text-destructive">{message}</div>;
 }
 
 export function Loading() {
-  return <div className="px-1 py-6 text-ui-sm text-foreground-subtlest">加载中…</div>;
+  return <div className="px-1 py-6 text-ui-base text-foreground-subtlest">加载中…</div>;
 }
 
 /** 键值信息行（详情页 definition list）。 */
 export function InfoRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="grid grid-cols-[96px_minmax(0,1fr)] items-baseline gap-3">
-      <span className="text-ui-xs text-foreground-subtlest">{label}</span>
-      <div className="min-w-0 text-ui-sm text-foreground">{children}</div>
+      <span className="text-ui-sm text-foreground-subtlest">{label}</span>
+      <div className="min-w-0 text-ui-base text-foreground">{children}</div>
     </div>
   );
 }
@@ -197,7 +197,7 @@ export function DetailFrame({ icon, title, desc, actions, children }: {
         </div>
         <div className="min-w-0 flex-1">
           <div className="text-ui-base font-semibold text-foreground">{title}</div>
-          {desc && <div className="mt-0.5 line-clamp-3 text-ui-xs text-foreground-subtlest">{desc}</div>}
+          {desc && <div className="mt-0.5 line-clamp-3 text-ui-sm text-foreground-subtlest">{desc}</div>}
         </div>
         {actions && <div className="flex shrink-0 items-center gap-1.5">{actions}</div>}
       </div>
@@ -210,7 +210,7 @@ export function DetailFrame({ icon, title, desc, actions, children }: {
 export function DetailSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="space-y-2.5">
-      <h3 className="text-ui-sm font-medium text-foreground">{title}</h3>
+      <h3 className="text-ui-base font-medium text-foreground">{title}</h3>
       <div className="space-y-2 rounded-xl border border-border/50 bg-surface px-4 py-3">{children}</div>
     </section>
   );
@@ -228,15 +228,15 @@ export function CardSection({ title, count, empty = '无', hint, actions, childr
   const items = Children.toArray(children);
   return (
     <section className="space-y-2.5">
-      <h3 className="flex items-center gap-1.5 text-ui-sm font-medium text-foreground">
+      <h3 className="flex items-center gap-1.5 text-ui-base font-medium text-foreground">
         {title}
         {count !== undefined && <span className="font-normal text-foreground-subtlest">{count}</span>}
         {actions && <span className="ml-auto flex items-center gap-1">{actions}</span>}
       </h3>
       {items.length
         ? <div className="grid grid-cols-1 gap-2 md:grid-cols-2">{items}</div>
-        : <div className="rounded-xl border border-dashed border-border/70 px-4 py-3 text-ui-sm text-foreground-subtlest">{empty}</div>}
-      {hint && <p className="text-ui-xs text-foreground-subtlest">{hint}</p>}
+        : <div className="rounded-xl border border-dashed border-border/70 px-4 py-3 text-ui-base text-foreground-subtlest">{empty}</div>}
+      {hint && <p className="text-ui-sm text-foreground-subtlest">{hint}</p>}
     </section>
   );
 }
@@ -266,10 +266,10 @@ export function LinkCard({ icon, title, desc, badge, mono, onClick }: {
       </span>
       <span className="min-w-0 flex-1">
         <span className="flex min-w-0 items-center gap-1.5">
-          <span className={cn('truncate text-ui-sm font-medium text-foreground', mono && 'font-mono')}>{title}</span>
+          <span className={cn('truncate text-ui-base font-medium text-foreground', mono && 'font-mono')}>{title}</span>
           {badge}
         </span>
-        {desc && <span className="mt-0.5 line-clamp-2 block text-ui-xs text-foreground-subtlest">{desc}</span>}
+        {desc && <span className="mt-0.5 line-clamp-2 block text-ui-sm text-foreground-subtlest">{desc}</span>}
       </span>
       {onClick && (
         <ChevronRightIcon className="mt-2 size-3.5 shrink-0 text-foreground-subtlest opacity-0 transition-opacity group-hover:opacity-100" />
@@ -291,10 +291,10 @@ export function FilePreview({ path }: { path: string }) {
       .catch((e: unknown) => { if (alive) setState({ error: e instanceof Error ? e.message : String(e) }); });
     return () => { alive = false; };
   }, [path]);
-  if (!state) return <div className="text-ui-xs text-foreground-subtlest">读取中…</div>;
-  if (state.error) return <div className="break-all text-ui-xs text-destructive">{state.error}</div>;
+  if (!state) return <div className="text-ui-sm text-foreground-subtlest">读取中…</div>;
+  if (state.error) return <div className="break-all text-ui-sm text-destructive">{state.error}</div>;
   return (
-    <pre className="max-h-96 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-background px-3 py-2 font-mono text-ui-xs leading-relaxed text-foreground-subtle">
+    <pre className="max-h-96 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-background px-3 py-2 font-mono text-ui-sm leading-relaxed text-foreground-subtle">
       {state.content || '（空文件）'}
     </pre>
   );
@@ -306,10 +306,10 @@ export function FileSection({ title, path, defaultOpen = true }: { title: string
   return (
     <section className="space-y-2.5">
       <button type="button" onClick={() => setOpen(!open)}
-        className="flex w-full items-center gap-1.5 text-left text-ui-sm font-medium text-foreground">
+        className="flex w-full items-center gap-1.5 text-left text-ui-base font-medium text-foreground">
         {open ? <ChevronDownIcon className="size-3.5" /> : <ChevronRightIcon className="size-3.5" />}
         {title}
-        <span className="min-w-0 flex-1 truncate text-right font-mono text-ui-2xs font-normal text-foreground-subtlest" title={path}>
+        <span className="min-w-0 flex-1 truncate text-right font-mono text-ui-xs font-normal text-foreground-subtlest" title={path}>
           {baseName(path)}
         </span>
       </button>

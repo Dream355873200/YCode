@@ -70,7 +70,7 @@ function TurnBlock({ unit, sid, live }: { unit: Extract<TurnUnit, { type: 'turn'
       {(hasWork || running) && (
         <div className="mb-0.5">
           <button type="button" onClick={() => { if (!running && !aborted) setManual(!open); }}
-            className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-ui-xs text-foreground-subtlest hover:bg-hover">
+            className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-ui-sm text-foreground-subtlest hover:bg-hover">
             {!expanded && <ChevronRightIcon className={`size-3 transition-transform duration-200 ${open ? 'rotate-90' : ''}`} />}
             <span>工作过程</span>
             {running ? (
@@ -91,7 +91,8 @@ function TurnBlock({ unit, sid, live }: { unit: Extract<TurnUnit, { type: 'turn'
             <ReadGroup key={r.id} group={r} />
           ) : (
             <RowView key={r.id} row={r as Row} sid={sid}
-              liveThinking={r.kind === 'reasoning' && r.id === bodyRows[bodyRows.length - 1]?.id && running} />
+              liveThinking={r.kind === 'reasoning' && r.id === bodyRows[bodyRows.length - 1]?.id && running}
+              live={running && r.kind === 'assistant_text' && r.id === bodyRows[bodyRows.length - 1]?.id} />
           )
         )}
         <div className="h-1.5" />
@@ -193,7 +194,7 @@ function TurnRail({ turns, containerRef, onJump }: {
               className={`rounded-full transition-all duration-200 ${dist === 0 || i === active ? 'bg-white' : 'bg-border'}`}
               style={{ width: w, height: 3 }} />
             {/* 悬浮信息条：该轮用户输入 + agent 回复摘要（淡入 + 右移动效） */}
-            <span className="pointer-events-none absolute left-6 top-1/2 z-20 min-w-40 max-w-80 -translate-y-1/2 rounded-md border border-border bg-card px-2 py-1 text-ui-xs opacity-0 shadow-md transition-all duration-150 group-hover:translate-x-1 group-hover:opacity-100">
+            <span className="pointer-events-none absolute left-6 top-1/2 z-20 min-w-40 max-w-80 -translate-y-1/2 rounded-md border border-border bg-card px-2 py-1 text-ui-sm opacity-0 shadow-md transition-all duration-150 group-hover:translate-x-1 group-hover:opacity-100">
               <span className="block max-w-80 truncate text-foreground-subtle">{t.title}</span>
               <span className="block max-w-72 truncate text-foreground-subtlest">
                 {t.reply ? t.reply : '（未回复）'}
@@ -302,7 +303,7 @@ export const Timeline = memo(function Timeline({ rows, sid, columnClassName }: {
       {/* 左缘轮次轨：固定在视口左缘，不随内容滚动 */}
       <TurnRail turns={turns} containerRef={scrollRef} onJump={jumpToTurn} />
       <div ref={scrollRef} onScroll={onScroll} className="scroll-fine h-full overflow-y-auto">
-        <div className={cn('mx-auto h-full max-w-3xl px-6 py-3 transition-transform duration-300', columnClassName)}>
+        <div className={cn('mx-auto h-full w-full @min-[864px]/conversation:w-[calc(100%_-_6rem)] @min-[864px]/conversation:max-w-4xl @min-[1280px]/conversation:w-[calc(100%_-_24rem)] @min-[1280px]/conversation:max-w-6xl px-6 py-3 transition-transform duration-300', columnClassName)}>
           {units.map((u, i) =>
             u.type === 'user'
               ? (
@@ -316,14 +317,14 @@ export const Timeline = memo(function Timeline({ rows, sid, columnClassName }: {
 
           {/* 工作计时 / 思考直播已并入工作段头部（TurnBlock）；这里只留询问中提示 */}
           {pendingAsk && (
-            <div className="flex items-center gap-1.5 px-1 py-1 text-ui-xs text-foreground-subtlest">
+            <div className="flex items-center gap-1.5 px-1 py-1 text-ui-sm text-foreground-subtlest">
               <MessageCircleQuestionIcon className="size-3.5 text-warning" />
               <span>正在询问</span>
             </div>
           )}
           {/* 主 agent 空闲但后台子 agent 仍在跑：完成后自动唤醒续跑 */}
           {!busy && waiting > 0 && (
-            <div className="flex items-center gap-1.5 px-1 py-1 text-ui-xs text-foreground-subtlest">
+            <div className="flex items-center gap-1.5 px-1 py-1 text-ui-sm text-foreground-subtlest">
               <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-brand" />
               <span>等待 {waiting} 个后台子代理完成…完成后自动继续</span>
             </div>
@@ -332,7 +333,7 @@ export const Timeline = memo(function Timeline({ rows, sid, columnClassName }: {
       </div>
       {showJumpBack(anchor, bottomDist(scrollRef.current)) && (
         <button type="button" onClick={jumpBack}
-          className="absolute bottom-12 left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-full border border-border bg-card px-3 py-1 text-ui-xs text-foreground-subtle shadow-md hover:text-foreground">
+          className="absolute bottom-12 left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-full border border-border bg-card px-3 py-1 text-ui-sm text-foreground-subtle shadow-md hover:text-foreground">
           <ArrowDownIcon className="size-3.5" />回到底部
         </button>
       )}

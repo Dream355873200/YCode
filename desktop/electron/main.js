@@ -87,6 +87,10 @@ ipcMain.handle('win:close', () => { if (win) win.close(); });
 // ---------- IPC：配置 / 文件 ----------
 ipcMain.handle('config:get', () => loadConfig());
 ipcMain.handle('config:save', (_e, cfg) => { saveConfig(cfg); return true; });
+ipcMain.handle('fs:exists', (_e, p) => {
+  try { return { ok: fs.existsSync(p) }; }
+  catch (e) { return { ok: false, error: e.message }; }
+});
 ipcMain.handle('fs:readFile', (_e, p) => {
   try { return { ok: true, content: fs.readFileSync(p, 'utf-8') }; }
   catch (e) { return { ok: false, error: e.message }; }

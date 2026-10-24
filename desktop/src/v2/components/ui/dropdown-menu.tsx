@@ -36,7 +36,7 @@ function DropdownMenuContent({
 }
 
 const itemCls =
-  "relative flex cursor-default select-none items-center gap-2 rounded-lg px-2.5 py-1.5 text-ui-sm text-foreground outline-none transition-colors data-[highlighted]:bg-hover data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 [&_svg:not([class*='text-'])]:text-foreground-subtle";
+  "relative flex cursor-default select-none items-center gap-2 rounded-lg px-2.5 py-1.5 text-ui-base text-foreground outline-none transition-colors data-[highlighted]:bg-hover data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 [&_svg:not([class*='text-'])]:text-foreground-subtle";
 
 function DropdownMenuItem({
   className,
@@ -76,7 +76,7 @@ function DropdownMenuLabel({ className, ...props }: React.ComponentProps<typeof 
   return (
     <MenuPrimitive.Label
       data-slot="dropdown-menu-label"
-      className={cn("px-2.5 pb-1 pt-1.5 text-ui-2xs font-medium text-foreground-subtlest", className)}
+      className={cn("px-2.5 pb-1 pt-1.5 text-ui-xs font-medium text-foreground-subtlest", className)}
       {...props}
     />
   );
@@ -87,7 +87,7 @@ function DropdownMenuSeparator({ className, ...props }: React.ComponentProps<typ
 }
 
 function DropdownMenuShortcut({ className, ...props }: React.ComponentProps<"span">) {
-  return <span className={cn("ml-auto pl-4 text-ui-2xs text-foreground-subtlest", className)} {...props} />;
+  return <span className={cn("ml-auto pl-4 text-ui-xs text-foreground-subtlest", className)} {...props} />;
 }
 
 export {

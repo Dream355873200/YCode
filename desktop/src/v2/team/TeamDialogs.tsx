@@ -71,14 +71,14 @@ function AgentSelect({ value, onChange, allowNone }: { value: string; onChange(v
     <div className="flex flex-wrap gap-1">
       {allowNone && (
         <button type="button" onClick={() => onChange('')}
-          className={cn('rounded-full border px-2.5 py-1 text-ui-xs transition-colors',
+          className={cn('rounded-full border px-2.5 py-1 text-ui-sm transition-colors',
             !value ? 'border-brand/60 bg-brand/10 text-foreground' : 'border-border text-foreground-subtle hover:bg-hover')}>
           不额外继承
         </button>
       )}
       {modes.map((m) => (
         <button key={m.id} type="button" onClick={() => onChange(m.id)} title={m.description}
-          className={cn('flex items-center gap-1.5 rounded-full border py-0.5 pl-0.5 pr-2.5 text-ui-xs transition-colors',
+          className={cn('flex items-center gap-1.5 rounded-full border py-0.5 pl-0.5 pr-2.5 text-ui-sm transition-colors',
             value === m.id ? 'border-brand/60 bg-brand/10 text-foreground' : 'border-border text-foreground-subtle hover:bg-hover')}>
           <AgentAvatar icon={m.icon} size="sm" className="rounded-full" />
           {m.name}
@@ -101,7 +101,7 @@ function MemberCard({ m, index, onChange, onRemove, toolsets, highlight, lockNam
   return (
     <div className={cn('rounded-xl border bg-card p-3', highlight ? 'border-brand/60' : 'border-border')}>
       <div className="mb-2 flex items-center gap-2">
-        <span className="text-ui-xs font-medium text-foreground-subtle">成员 {index + 1}</span>
+        <span className="text-ui-sm font-medium text-foreground-subtle">成员 {index + 1}</span>
         {onRemove && (
           <button type="button" aria-label="移除成员" onClick={onRemove}
             className="ml-auto rounded p-1 text-foreground-subtlest hover:bg-hover hover:text-destructive">
@@ -117,11 +117,11 @@ function MemberCard({ m, index, onChange, onRemove, toolsets, highlight, lockNam
             placeholder="身份：他是谁、负责什么、交付什么" className="min-w-0 flex-1" />
         </div>
         <div>
-          <div className="mb-1 text-ui-2xs text-foreground-subtlest">能力来自智能体</div>
+          <div className="mb-1 text-ui-xs text-foreground-subtlest">能力来自智能体</div>
           <AgentSelect value={m.agent} onChange={(agent) => onChange({ agent })} allowNone />
         </div>
         <button type="button" onClick={() => setMore(!more)}
-          className="flex w-fit items-center gap-1 text-ui-2xs text-foreground-subtlest hover:text-foreground-subtle">
+          className="flex w-fit items-center gap-1 text-ui-xs text-foreground-subtlest hover:text-foreground-subtle">
           <ChevronRightIcon className={cn('size-3 transition-transform', more && 'rotate-90')} />
           更多能力{m.toolsets.length ? `（${m.toolsets.length}）` : ''}
         </button>
@@ -132,7 +132,7 @@ function MemberCard({ m, index, onChange, onRemove, toolsets, highlight, lockNam
               return (
                 <button key={t.id} type="button" title={t.notes || undefined}
                   onClick={() => onChange({ toolsets: on ? m.toolsets.filter((x) => x !== t.id) : [...m.toolsets, t.id] })}
-                  className={cn('rounded-full border px-2 py-0.5 text-ui-2xs transition-colors',
+                  className={cn('rounded-full border px-2 py-0.5 text-ui-xs transition-colors',
                     on ? 'border-brand/60 bg-brand/10 text-foreground' : 'border-border text-foreground-subtle hover:bg-hover')}>
                   {t.id}
                 </button>
@@ -148,23 +148,23 @@ function MemberCard({ m, index, onChange, onRemove, toolsets, highlight, lockNam
 function LeaderCard({ draft, set }: { draft: Omit<TeamDraft, 'name'>; set(p: Partial<TeamDraft>): void }) {
   return (
     <div className="rounded-xl border border-border bg-card p-3">
-      <div className="mb-2 flex items-center gap-1.5 text-ui-xs font-medium text-foreground-subtle">
+      <div className="mb-2 flex items-center gap-1.5 text-ui-sm font-medium text-foreground-subtle">
         <CrownIcon className="size-3.5 text-warning" />队长：拆解目标、分派、汇总
       </div>
       <Textarea value={draft.leaderRole} onChange={(e) => set({ leaderRole: e.target.value })} rows={2}
         placeholder="身份：队长怎么拆任务、怎么验收成员的产出" className="min-h-0" />
       <div className="mt-2 flex flex-wrap items-center gap-1">
-        <span className="mr-1 text-ui-2xs text-foreground-subtlest">审批策略</span>
+        <span className="mr-1 text-ui-xs text-foreground-subtlest">审批策略</span>
         {PERMS.map((p) => (
           <button key={p.id} type="button" title={p.hint} onClick={() => set({ leaderPermission: p.id })}
-            className={cn('rounded-full border px-2.5 py-0.5 text-ui-xs transition-colors',
+            className={cn('rounded-full border px-2.5 py-0.5 text-ui-sm transition-colors',
               draft.leaderPermission === p.id ? 'border-brand/60 bg-brand/10 text-foreground' : 'border-border text-foreground-subtle hover:bg-hover')}>
             {p.label}
           </button>
         ))}
       </div>
       <div className="mt-2">
-        <div className="mb-1 text-ui-2xs text-foreground-subtlest">队长也可以继承一个智能体的能力</div>
+        <div className="mb-1 text-ui-xs text-foreground-subtlest">队长也可以继承一个智能体的能力</div>
         <AgentSelect value={draft.leaderAgent} onChange={(leaderAgent) => set({ leaderAgent })} allowNone />
       </div>
     </div>
@@ -227,15 +227,15 @@ export function CreateTeamDialog() {
       <DialogContent className="max-h-[86vh] max-w-150 grid-rows-[auto_1fr_auto] overflow-hidden">
         <DialogHeader>
           <DialogTitle>组建团队</DialogTitle>
-          <DialogDescription className="text-ui-sm">几个智能体各带身份常驻协作：队长拆解分派，成员执行汇报，你在群聊里随时插话。</DialogDescription>
+          <DialogDescription className="text-ui-base">几个智能体各带身份常驻协作：队长拆解分派，成员执行汇报，你在群聊里随时插话。</DialogDescription>
         </DialogHeader>
         <div className="-mx-1 min-h-0 overflow-y-auto px-1">
           <div className="mb-3 grid grid-cols-3 gap-2">
             {TEMPLATES.map((t) => (
               <button key={t.id} type="button" onClick={() => setDraft({ ...t.make(agent), name: t.make(agent).name })}
                 className="rounded-xl border border-border bg-card px-3 py-2 text-left transition-colors hover:border-brand/50 hover:bg-hover">
-                <div className="text-ui-sm font-medium text-foreground">{t.label}</div>
-                <div className="text-ui-2xs text-foreground-subtlest">{t.desc}</div>
+                <div className="text-ui-base font-medium text-foreground">{t.label}</div>
+                <div className="text-ui-xs text-foreground-subtlest">{t.desc}</div>
               </button>
             ))}
           </div>
@@ -257,7 +257,7 @@ export function CreateTeamDialog() {
           </div>
         </div>
         <div className="grid gap-2">
-          {error && <div className="rounded-lg bg-destructive/10 px-2.5 py-1.5 text-ui-xs text-destructive">{error}</div>}
+          {error && <div className="rounded-lg bg-destructive/10 px-2.5 py-1.5 text-ui-sm text-destructive">{error}</div>}
           <DialogFooter>
             <Button variant="outline" disabled={busy} onClick={() => setTeamDialogDir(null)}>取消</Button>
             <Button disabled={busy} onClick={() => void submit()}>{busy ? '创建中…' : '创建团队'}</Button>
@@ -295,7 +295,7 @@ export function EditTeamDialog({ team, focus, onClose }: { team: TeamDetail; foc
       <DialogContent className="max-h-[86vh] max-w-150 grid-rows-[auto_1fr_auto] overflow-hidden">
         <DialogHeader>
           <DialogTitle>编辑团队 {team.name}</DialogTitle>
-          <DialogDescription className="text-ui-sm">改动从成员的下一轮开始生效，已有的会话历史保留；移除的成员会连同其会话一起删除。</DialogDescription>
+          <DialogDescription className="text-ui-base">改动从成员的下一轮开始生效，已有的会话历史保留；移除的成员会连同其会话一起删除。</DialogDescription>
         </DialogHeader>
         <div className="-mx-1 min-h-0 overflow-y-auto px-1">
           <Input value={draft.goal} onChange={(e) => set({ goal: e.target.value })} placeholder="团队目标" className="mb-3" />
@@ -314,7 +314,7 @@ export function EditTeamDialog({ team, focus, onClose }: { team: TeamDetail; foc
           </div>
         </div>
         <div className="grid gap-2">
-          {error && <div className="rounded-lg bg-destructive/10 px-2.5 py-1.5 text-ui-xs text-destructive">{error}</div>}
+          {error && <div className="rounded-lg bg-destructive/10 px-2.5 py-1.5 text-ui-sm text-destructive">{error}</div>}
           <DialogFooter>
             <Button variant="outline" disabled={busy} onClick={() => onClose(false)}>取消</Button>
             <Button disabled={busy} onClick={() => void save()}>{busy ? '保存中…' : '保存'}</Button>

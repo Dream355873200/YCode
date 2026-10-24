@@ -126,7 +126,7 @@ export default function ContextRing({ sid }: { sid: string }) {
           <div className="space-y-2 p-3">
             <div className="mb-3 flex items-center gap-3">
               <span className="shrink-0 text-ui-base font-medium text-foreground">上下文</span>
-              <span className="ml-auto shrink-0 text-right font-mono text-ui-sm text-foreground-subtle">
+              <span className="ml-auto shrink-0 text-right font-mono text-ui-base text-foreground-subtle">
                 {usedLabel}/{fmtK(ctx)} ({fmtPct(percent)})
               </span>
             </div>
@@ -140,19 +140,19 @@ export default function ContextRing({ sid }: { sid: string }) {
           </div>
           <div className="space-y-1.5 bg-menu p-3 pt-0">
             {segments.map((s, i) => (
-              <div key={s.source} className="flex min-w-0 items-center gap-2 text-ui-sm">
+              <div key={s.source} className="flex min-w-0 items-center gap-2 text-ui-base">
                 <span aria-hidden="true" className="size-2 shrink-0 rounded-sm border border-border"
                   style={{ background: TONE_COLORS[Math.min(i, TONE_COLORS.length - 1)] }} />
                 <span className="min-w-0 truncate text-foreground-subtle">{s.label}</span>
-                <span className="ml-auto min-w-10 shrink-0 text-right font-mono text-ui-sm text-foreground">
+                <span className="ml-auto min-w-10 shrink-0 text-right font-mono text-ui-base text-foreground">
                   {fmtPct(s.percent)}
                 </span>
               </div>
             ))}
             {hitLabel && (
-              <div className="flex items-center justify-between gap-3 border-t border-border pt-2 text-ui-sm">
+              <div className="flex items-center justify-between gap-3 border-t border-border pt-2 text-ui-base">
                 <span className="text-foreground-subtle">缓存命中率</span>
-                <span className="font-mono text-ui-sm text-foreground">{hitLabel}</span>
+                <span className="font-mono text-ui-base text-foreground">{hitLabel}</span>
               </div>
             )}
           </div>

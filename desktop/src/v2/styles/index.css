@@ -8,6 +8,10 @@
 @import 'tw-animate-css';
 @import 'shadcn/tailwind.css';
 
+/* Streamdown 默认渲染器（section/p/hr/任务列表勾选框等）带 Tailwind 类，
+   必须扫进产物 CSS，否则 markdown 块间距全部失效 */
+@source '../../../node_modules/streamdown/dist/*.js';
+
 @custom-variant dark (&:is(.dark *));
 
 :root {
@@ -168,33 +172,41 @@ body {
 .drag { -webkit-app-region: drag; }
 .no-drag { -webkit-app-region: no-drag; }
 
-/* ---------- markdown（renderMD 产出的受控 HTML） ---------- */
+/* ---------- markdown（renderMD 产出的受控 HTML；Streamdown 组件另见 Markdown.tsx）
+   字号刻度对齐 ZCode：h1 xl / h2 lg / h3-h6 base 分权重，正文 base。
+   仍被 TestReportPanel 使用。 ---------- */
 .v2-md { line-height: 1.65; }
-.v2-md p { margin: .35em 0; }
-.v2-md h1, .v2-md h2, .v2-md h3, .v2-md h4 { margin: .8em 0 .35em; font-weight: 600; line-height: 1.35; }
-.v2-md h1 { font-size: var(--text-ui-lg); }
-.v2-md h2 { font-size: var(--text-ui-base); }
-.v2-md h3, .v2-md h4 { font-size: var(--text-ui-sm); }
+.v2-md p { margin: .5em 0; }
+.v2-md h1, .v2-md h2, .v2-md h3, .v2-md h4, .v2-md h5, .v2-md h6 { margin: .9em 0 .4em; line-height: 1.35; }
+.v2-md h1 { font-size: var(--text-ui-xl); font-weight: 600; }
+.v2-md h2 { font-size: var(--text-ui-lg); font-weight: 600; }
+.v2-md h3 { font-size: var(--text-ui-base); font-weight: 600; }
+.v2-md h4 { font-size: var(--text-ui-base); font-weight: 600; }
+.v2-md h5 { font-size: var(--text-ui-base); font-weight: 500; }
+.v2-md h6 { font-size: var(--text-ui-base); font-weight: 400; }
 .v2-md ul, .v2-md ol { margin: .35em 0; padding-left: 1.5em; }
 .v2-md ul { list-style: disc; }
 .v2-md ol { list-style: decimal; }
 .v2-md li { margin: .15em 0; }
+.v2-md li::marker { color: var(--color-foreground-subtlest); }
 .v2-md code {
   font-family: var(--font-mono);
-  font-size: .92em;
-  background: var(--color-tag);
-  border-radius: 4px;
-  padding: .1em .35em;
+  font-size: var(--text-ui-sm);
+  background: color-mix(in oklab, var(--color-tag) 50%, transparent);
+  border-radius: 6px;
+  padding: .12em .35em;
+  margin: 0 .1em;
 }
 .v2-md pre {
-  background: var(--color-tag);
+  background: var(--color-card);
   border: 1px solid var(--color-border);
-  border-radius: 10px;
+  border-radius: 12px;
   padding: .7em .9em;
   overflow-x: auto;
   margin: .5em 0;
 }
-.v2-md pre code { background: none; padding: 0; font-size: var(--text-ui-sm); }
+.v2-md pre code { background: none; padding: 0; margin: 0; font-size: var(--text-ui-sm); }
+.v2-md strong { font-weight: 500; }
 .v2-md blockquote {
   border-left: 2px solid var(--color-border);
   margin: .5em 0;
@@ -272,6 +284,33 @@ body {
   color: #f9a8d4;
 }
 .dark .hljs-meta { color: #9ca3af; }
+
+/* ---------- 工具卡展开细节（toolRender.jsx 的 Detail 组件） ---------- */
+.a-detail-code {
+  font-family: var(--font-mono);
+  font-size: var(--text-ui-sm);
+  line-height: 1.55;
+}
+.a-cmd {
+  padding: 3px 6px;
+  margin-bottom: 4px;
+  border-radius: 6px;
+  background: color-mix(in oklab, var(--color-foreground) 6%, transparent);
+  color: var(--color-foreground);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.a-raw {
+  max-height: 18rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--color-foreground-subtle);
+}
+.a-more {
+  margin-top: 4px;
+  color: var(--color-foreground-subtlest);
+}
 
 /* ---------- Edit diff 行（+N −N 展开后的红绿背景，对齐 ZCode） ---------- */
 .cl {

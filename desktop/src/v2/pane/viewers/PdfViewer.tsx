@@ -73,7 +73,7 @@ export default function PdfViewer({ b64 }: { b64: string }) {
     setPageInput(String(clamped));
   };
 
-  if (error) return <div className="p-3 text-ui-xs text-destructive">{error}</div>;
+  if (error) return <div className="p-3 text-ui-sm text-destructive">{error}</div>;
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-neutral-900">
       {/* 工具条：页码导航 + 缩放 */}
@@ -84,8 +84,8 @@ export default function PdfViewer({ b64 }: { b64: string }) {
         </Button>
         <input value={pageInput} onChange={(e) => setPageInput(e.target.value.replace(/\D/g, ''))}
           onKeyDown={(e) => { if (e.key === 'Enter') go(parseInt(pageInput, 10) || 1); }}
-          className="h-5 w-9 rounded border border-neutral-600 bg-neutral-800 text-center text-ui-2xs text-neutral-200 outline-none" />
-        <span className="text-ui-2xs text-neutral-400">/ {numPages || '…'}</span>
+          className="h-5 w-9 rounded border border-neutral-600 bg-neutral-800 text-center text-ui-xs text-neutral-200 outline-none" />
+        <span className="text-ui-xs text-neutral-400">/ {numPages || '…'}</span>
         <Button variant="ghost" size="icon-sm" aria-label="下一页" disabled={page >= numPages}
           className="size-6 text-neutral-300 hover:bg-neutral-700 hover:text-white" onClick={() => go(page + 1)}>
           <ChevronRightIcon className="size-4" />
@@ -96,7 +96,7 @@ export default function PdfViewer({ b64 }: { b64: string }) {
           onClick={() => setScale((s) => Math.max(0.4, +(s - 0.2).toFixed(2)))}>
           <ZoomOutIcon className="size-4" />
         </Button>
-        <span className="w-9 text-center text-ui-2xs text-neutral-400">{Math.round(scale * 100)}%</span>
+        <span className="w-9 text-center text-ui-xs text-neutral-400">{Math.round(scale * 100)}%</span>
         <Button variant="ghost" size="icon-sm" aria-label="放大"
           className={cn('size-6 text-neutral-300 hover:bg-neutral-700 hover:text-white')}
           onClick={() => setScale((s) => Math.min(3, +(s + 0.2).toFixed(2)))}>

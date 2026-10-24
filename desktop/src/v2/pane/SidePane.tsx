@@ -1,20 +1,19 @@
 // SidePane — 右侧面板（ZCode 式动态标签页流）：
 //   初始 = 卡片引导「选择要在侧边面板中打开的标签」；此后全部是浏览器式
-//   tab——「+」添加新标签（Git/任务/计划/浏览器/模式面板），「×」关闭；
+//   tab——「+」添加新标签（Git/浏览器/模式面板），「×」关闭；
 //   文件（树里点开）与浏览器实例（agent 或用户开的）自动进 tab 流。
+//   任务与计划不在这里：状态胶囊已覆盖（任务清单/计划文档都在面板里按需展开）。
 //   收起用标题栏右端的开合钮（本面板不再放收起钮）。左缘拖拽自由调宽。
 import { useEffect, useRef, useState, type ComponentType } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  BoxesIcon, ClipboardListIcon, FileDiffIcon, FileTextIcon, GlobeIcon, ListChecksIcon, PlusIcon, UserIcon,
+  BoxesIcon, FileDiffIcon, FileTextIcon, GlobeIcon, PlusIcon, UserIcon,
   WorkflowIcon, XIcon,
 } from 'lucide-react';
 import { useApp, type PaneTabState } from '../app/appState';
 import { useCurrentMode } from '../app/modeRegistry';
 import { cn } from '../components/lib/utils';
 import { ReviewPanel } from './ReviewPanel';
-import { TasksPanel } from './TasksPanel';
-import { PlanPanel } from './PlanPanel';
 import SpecPanel from './SpecPanel';
 import TestReportPanel from './TestReportPanel';
 import DevicePanel from './DevicePanel';
@@ -41,8 +40,7 @@ const MIN_W = 320, MAX_W = 760, DEFAULT_W = 336;
 
 type Card = { id: string; kind: PaneTabState['kind']; label: string; desc: string; icon: typeof FileDiffIcon };
 const KIND_ICONS: Partial<Record<PaneTabState['kind'], typeof FileDiffIcon>> = {
-  git: FileDiffIcon, tasks: ListChecksIcon, plan: ClipboardListIcon, planDoc: ClipboardListIcon,
-  browser: GlobeIcon, file: FileTextIcon, pipeline: WorkflowIcon, teamMember: UserIcon, mode: BoxesIcon,
+  git: FileDiffIcon, browser: GlobeIcon, file: FileTextIcon, pipeline: WorkflowIcon, teamMember: UserIcon, mode: BoxesIcon,
 };
 
 export function SidePane({ open }: { open: boolean }) {
@@ -107,12 +105,11 @@ export function SidePane({ open }: { open: boolean }) {
   }, [open]);
 
   // ---------- 可添加的标签类型（「+」菜单与空态启动器共用） ----------
+  // 任务/计划/流水线不设独立入口：胶囊与状态面板已按需承载（计划文档走
+  // planDoc tab、流水线走 capsule 行），启动器只留常驻面板。
   const cards: Card[] = [
     { id: 'git', kind: 'git', label: '变更', desc: '逐文件审查改动，撤销或提交', icon: FileDiffIcon },
     { id: 'browser', kind: 'browser', label: '浏览器', desc: '内置浏览器，智能体也能操作它', icon: GlobeIcon },
-    { id: 'tasks', kind: 'tasks', label: '任务', desc: '本对话的任务清单', icon: ListChecksIcon },
-    { id: 'plan', kind: 'plan', label: '计划', desc: '规划模式下的计划文档', icon: ClipboardListIcon },
-    { id: 'pipeline', kind: 'pipeline', label: '流水线', desc: '多节点并行执行的运行图与历史', icon: WorkflowIcon },
     ...(mode?.resolved.sidePanels || [])
       .filter((p) => p.id !== 'browser' && MODE_PANELS[p.id])
       .map((p) => ({ id: `mode:${p.id}`, kind: 'mode' as const, label: p.label, desc: MODE_PANELS[p.id]!.desc, icon: BoxesIcon })),
@@ -166,8 +163,6 @@ export function SidePane({ open }: { open: boolean }) {
   const planDoc = activeTab?.kind === 'planDoc' ? parsePlanDocTabId(activeTab.id) : null;
   const member = activeTab?.kind === 'teamMember' ? parseMemberTabId(activeTab.id) : null;
   const BuiltinPanel = activeTab?.kind === 'git' ? ReviewPanel
-    : activeTab?.kind === 'tasks' ? TasksPanel
-    : activeTab?.kind === 'plan' ? PlanPanel
     : activeTab?.kind === 'pipeline' ? PipelinePanel
     : null;
 
@@ -198,8 +193,9 @@ export function SidePane({ open }: { open: boolean }) {
       )}
       {rendered && (
         <div className="flex h-full min-w-0 flex-1 flex-col border-l border-border bg-panel">
-          {/* 面板头：动态 tab 条 + 添加钮（无收起钮——收起走标题栏开合钮） */}
-          <div className="flex h-10 shrink-0 items-center gap-0.5 overflow-x-auto border-b border-border/50 px-1.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {/* 面板头：动态 tab 条 + 添加钮（没有标签页时不占位——空态只有启动器） */}
+          {paneTabs.length > 0 && (
+            <div className="flex h-10 shrink-0 items-center gap-0.5 overflow-x-auto border-b border-border/50 px-1.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {paneTabs.map((t) => {
               const Icon = KIND_ICONS[t.kind];
               const active = paneActive === t.id;
@@ -209,7 +205,7 @@ export function SidePane({ open }: { open: boolean }) {
                 : t.label;
               return (
                 <div key={t.id} className={cn(
-                  'group flex shrink-0 items-center gap-1 rounded-lg text-ui-xs transition-colors',
+                  'group flex shrink-0 items-center gap-1 rounded-lg text-ui-sm transition-colors',
                   'pl-2 pr-1',
                   active ? 'bg-selected font-medium text-foreground' : 'text-foreground-subtle hover:bg-hover hover:text-foreground',
                 )}>
@@ -233,7 +229,8 @@ export function SidePane({ open }: { open: boolean }) {
               onClick={toggleMenu}>
               <PlusIcon className="size-4" />
             </button>
-          </div>
+            </div>
+          )}
 
           {/* 「+」菜单：portal 到 body，避开 tab 条 overflow 裁剪 */}
           {menuPos && createPortal(
@@ -242,7 +239,7 @@ export function SidePane({ open }: { open: boolean }) {
               style={{ left: menuPos.x, top: menuPos.y }}>
               {available.map((c) => (
                 <button key={c.id} type="button"
-                  className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-ui-sm text-foreground hover:bg-hover"
+                  className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-ui-base text-foreground hover:bg-hover"
                   onClick={() => { setMenuPos(null); openCard(c); }}>
                   <c.icon className="size-3.5 text-foreground-subtle" />
                   {c.label}
@@ -274,7 +271,7 @@ export function SidePane({ open }: { open: boolean }) {
 function Launcher({ cards, onPick }: { cards: Card[]; onPick: (c: Card) => void }) {
   return (
     <div className="flex-1 overflow-y-auto p-3">
-      <div className="px-1 pb-2 text-ui-xs font-medium text-foreground-subtle">打开一个面板</div>
+      <div className="px-1 pb-2 text-ui-sm font-medium text-foreground-subtle">打开一个面板</div>
       <div className="grid gap-1">
         {cards.map((c) => (
           <button key={c.id} type="button" onClick={() => onPick(c)}
@@ -283,8 +280,8 @@ function Launcher({ cards, onPick }: { cards: Card[]; onPick: (c: Card) => void 
               <c.icon className="size-4.5" />
             </span>
             <span className="min-w-0 flex-1">
-              <span className="block text-ui-sm text-foreground">{c.label}</span>
-              <span className="block truncate text-ui-xs text-foreground-subtlest">{c.desc}</span>
+              <span className="block text-ui-base text-foreground">{c.label}</span>
+              <span className="block truncate text-ui-sm text-foreground-subtlest">{c.desc}</span>
             </span>
           </button>
         ))}

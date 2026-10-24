@@ -31,7 +31,7 @@ function ContextMenuItem({
   return (
     <ContextPrimitive.Item
       className={cn(
-        "relative flex cursor-default select-none items-center gap-2 rounded-lg px-2.5 py-1.5 text-ui-sm text-foreground outline-none transition-colors data-[highlighted]:bg-hover data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 [&_svg:not([class*='text-'])]:text-foreground-subtle",
+        "relative flex cursor-default select-none items-center gap-2 rounded-lg px-2.5 py-1.5 text-ui-base text-foreground outline-none transition-colors data-[highlighted]:bg-hover data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 [&_svg:not([class*='text-'])]:text-foreground-subtle",
         tone === "destructive" && "text-destructive data-[highlighted]:bg-destructive/10 [&_svg:not([class*='text-'])]:text-destructive",
         className,
       )}

@@ -49,9 +49,9 @@ function Field({ label, hint, children }: {
 }) {
   return (
     <div className="grid gap-1.5">
-      <Label className="text-ui-sm font-normal text-foreground-subtle">{label}</Label>
+      <Label className="text-ui-base font-normal text-foreground-subtle">{label}</Label>
       {children}
-      {hint && <p className="text-ui-xs text-foreground-subtlest">{hint}</p>}
+      {hint && <p className="text-ui-sm text-foreground-subtlest">{hint}</p>}
     </div>
   );
 }
@@ -66,7 +66,7 @@ function Section({ title, desc, children }: {
     <section className="grid gap-3">
       <div>
         <h2 className="text-ui-base font-semibold text-foreground">{title}</h2>
-        {desc && <p className="mt-0.5 text-ui-xs text-foreground-subtlest">{desc}</p>}
+        {desc && <p className="mt-0.5 text-ui-sm text-foreground-subtlest">{desc}</p>}
       </div>
       <div className="grid gap-3">{children}</div>
     </section>
@@ -84,7 +84,7 @@ function Segmented<T extends string | number>({ value, options, onChange }: {
       {options.map((o) => (
         <button key={String(o.value)} type="button" role="radio" aria-checked={o.value === value}
           className={cn(
-            'rounded-md px-3 py-1 text-ui-sm transition-colors',
+            'rounded-md px-3 py-1 text-ui-base transition-colors',
             o.value === value
               ? 'bg-selected text-foreground shadow-xs'
               : 'text-foreground-subtle hover:bg-hover hover:text-foreground',
@@ -237,7 +237,7 @@ export function SettingsPage() {
     <div className="fixed inset-0 z-40 flex flex-col bg-background [app-region:no-drag]">
       {/* 页头：与 TitleBar 同节奏（h-12 + 下边框），右端关闭钮 */}
       <header className="flex h-12 shrink-0 items-center justify-between border-b border-border/50 px-4">
-        <span className="text-ui-sm font-semibold text-foreground">设置</span>
+        <span className="text-ui-base font-semibold text-foreground">设置</span>
         <Button type="button" variant="ghost" size="icon-sm" aria-label="关闭设置"
           className="text-foreground-subtle hover:bg-hover hover:text-foreground"
           onClick={() => close(false)}>
@@ -252,14 +252,14 @@ export function SettingsPage() {
             <nav className="flex w-52 shrink-0 flex-col gap-0.5 overflow-y-auto border-r border-border/50 p-2">
               {TAB_GROUPS.map((g) => (
                 <div key={g.title || 'tail'} className={cn('grid gap-0.5', g.title ? 'mb-2' : 'mt-auto border-t border-border/50 pt-2')}>
-                  {g.title && <div className="px-2.5 pb-0.5 pt-1 text-ui-2xs font-medium text-foreground-subtlest">{g.title}</div>}
+                  {g.title && <div className="px-2.5 pb-0.5 pt-1 text-ui-xs font-medium text-foreground-subtlest">{g.title}</div>}
                   {g.tabs.map((id) => {
                     const t = TABS.find((x) => x.id === id)!;
                     const Icon = t.icon;
                     return (
                       <button key={t.id} type="button"
                         className={cn(
-                          'flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-ui-sm transition-colors',
+                          'flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-ui-base transition-colors',
                           tab === t.id
                             ? 'bg-selected font-medium text-foreground'
                             : 'text-foreground-subtle hover:bg-hover hover:text-foreground',
@@ -294,7 +294,7 @@ export function SettingsPage() {
                           onClick={() => stepFont(-1)}>
                           <MinusIcon />
                         </Button>
-                        <span className="w-12 text-center text-ui-sm tabular-nums text-foreground">
+                        <span className="w-12 text-center text-ui-base tabular-nums text-foreground">
                           {cfg.uiFontSize ?? 14}px
                         </span>
                         <Button type="button" variant="outline" size="icon-sm" aria-label="增大字号"
@@ -308,7 +308,7 @@ export function SettingsPage() {
                         <div className="flex flex-wrap gap-1.5">
                           {modes.map((m) => (
                             <button key={m.id} type="button" onClick={() => void setDefault(m.id)}
-                              className={cn('flex items-center gap-1.5 rounded-full border py-0.5 pl-0.5 pr-2.5 text-ui-sm transition-colors',
+                              className={cn('flex items-center gap-1.5 rounded-full border py-0.5 pl-0.5 pr-2.5 text-ui-base transition-colors',
                                 m.id === defaultMode ? 'border-brand/60 bg-brand/10 text-foreground' : 'border-border text-foreground-subtle hover:bg-hover')}>
                               <AgentAvatar icon={m.icon} size="sm" className="rounded-full" />
                               {m.name}
@@ -340,7 +340,7 @@ export function SettingsPage() {
                       </Button>
                       {testResult && (
                         <span className={cn(
-                          'text-ui-xs',
+                          'text-ui-sm',
                           testResult.startsWith('连接正常') ? 'text-success' : 'text-destructive',
                         )}>
                           {testResult}
@@ -360,10 +360,10 @@ export function SettingsPage() {
                       <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-ui-lg font-bold text-primary-foreground">Y</span>
                       <div>
                         <div className="text-ui-base font-semibold text-foreground">YCode</div>
-                        <div className="text-ui-xs text-foreground-subtlest">版本 0.1.0 · 桌面 AI 智能体工作台</div>
+                        <div className="text-ui-sm text-foreground-subtlest">版本 0.1.0 · 桌面 AI 智能体工作台</div>
                       </div>
                     </div>
-                    <div className="mt-1 grid gap-2 rounded-xl border border-border bg-card p-3 text-ui-sm">
+                    <div className="mt-1 grid gap-2 rounded-xl border border-border bg-card p-3 text-ui-base">
                       <div className="flex justify-between gap-4">
                         <span className="text-foreground-subtle">引擎状态</span>
                         <span className="text-foreground">{engineStatus.status === 'running' ? '运行中' : engineStatus.status}</span>
@@ -377,7 +377,7 @@ export function SettingsPage() {
                         <span className="min-w-0 truncate font-mono text-foreground" title={eng.binary}>{eng.binary || '—'}</span>
                       </div>
                     </div>
-                    <p className="text-ui-xs text-foreground-subtlest">
+                    <p className="text-ui-sm text-foreground-subtlest">
                       本产品聚合了多个开源组件，许可声明见安装目录 THIRD-PARTY-NOTICES.md。
                     </p>
                   </Section>

@@ -151,32 +151,32 @@ export function CommandPalette() {
               <SearchIcon className="size-4 shrink-0 text-foreground-subtlest" />
               <input autoFocus value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={onKey}
                 placeholder="搜索对话、操作或文件（> 操作 · # 对话 · @ 文件）"
-                className="min-w-0 flex-1 bg-transparent text-ui-sm text-foreground outline-none placeholder:text-foreground-subtlest" />
+                className="min-w-0 flex-1 bg-transparent text-ui-base text-foreground outline-none placeholder:text-foreground-subtlest" />
             </div>
           </div>
           <div className="flex gap-1 px-2.5 pt-2">
             {([['all', '全部'], ['action', '操作'], ['thread', '对话'], ['file', '文件']] as Array<[Scope, string]>).map(([id, label]) => (
               <button key={id} type="button" onClick={() => setScope(id)}
-                className={cn('h-6 rounded-full border px-2.5 text-ui-xs font-medium transition-colors',
+                className={cn('h-6 rounded-full border px-2.5 text-ui-sm font-medium transition-colors',
                   effScope === id ? 'border-border bg-selected text-foreground' : 'border-transparent text-foreground-subtle hover:bg-hover')}>
                 {label}
               </button>
             ))}
           </div>
           <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto p-1.5">
-            {items.length === 0 && <div className="px-3 py-8 text-center text-ui-sm text-foreground-subtlest">没有相关结果</div>}
+            {items.length === 0 && <div className="px-3 py-8 text-center text-ui-base text-foreground-subtlest">没有相关结果</div>}
             {items.map((it, i) => {
               const header = it.group !== lastGroup ? it.group : null;
               lastGroup = it.group;
               return (
                 <div key={it.id}>
-                  {header && <div className="px-2.5 pb-1 pt-2 text-ui-2xs font-medium text-foreground-subtlest">{header}</div>}
+                  {header && <div className="px-2.5 pb-1 pt-2 text-ui-xs font-medium text-foreground-subtlest">{header}</div>}
                   <button type="button" data-idx={i} onMouseMove={() => setActive(i)} onClick={() => it.run()}
-                    className={cn('flex min-h-8 w-full items-center gap-2.5 rounded-xl px-2.5 py-1.5 text-left text-ui-sm transition-colors [&_svg]:size-4 [&_svg]:shrink-0 [&_svg]:text-foreground-subtle',
+                    className={cn('flex min-h-8 w-full items-center gap-2.5 rounded-xl px-2.5 py-1.5 text-left text-ui-base transition-colors [&_svg]:size-4 [&_svg]:shrink-0 [&_svg]:text-foreground-subtle',
                       i === active ? 'bg-hover text-foreground' : 'text-foreground-subtle')}>
                     {it.icon}
                     <span className="min-w-0 flex-1 truncate text-foreground">{it.title}</span>
-                    {it.hint && <span className="max-w-56 shrink-0 truncate text-ui-xs text-foreground-subtlest">{it.hint}</span>}
+                    {it.hint && <span className="max-w-56 shrink-0 truncate text-ui-sm text-foreground-subtlest">{it.hint}</span>}
                   </button>
                 </div>
               );

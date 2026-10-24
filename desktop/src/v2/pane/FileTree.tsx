@@ -121,7 +121,7 @@ function fileIconOf(name: string) {
         <FIcon className={cn('size-3.5 shrink-0', fcls)} />
         <span className={cn('min-w-0 flex-1 truncate group-hover:text-foreground',
           n.st ? 'font-medium ' + (st ?? '') : 'text-foreground-subtle')}>{n.name}</span>
-        {n.st && <span className={cn('shrink-0 text-ui-2xs font-semibold', st)}>{n.st === '??' ? 'U' : n.st}</span>}
+        {n.st && <span className={cn('shrink-0 text-ui-xs font-semibold', st)}>{n.st === '??' ? 'U' : n.st}</span>}
       </button>
     );
   };
@@ -131,7 +131,7 @@ function fileIconOf(name: string) {
       {/* 头：标题 + 刷新 + 收起 */}
       <div className="flex h-9 shrink-0 items-center gap-1 border-b border-border/50 px-2">
         <FolderIcon className="size-3.5 shrink-0 text-brand" />
-        <span className="min-w-0 flex-1 truncate text-ui-xs font-medium text-foreground">{project?.name || '文件'}</span>
+        <span className="min-w-0 flex-1 truncate text-ui-sm font-medium text-foreground">{project?.name || '文件'}</span>
         <Button variant="ghost" size="icon-sm" aria-label="刷新"
           className={cn('shrink-0 text-foreground-subtle hover:bg-hover hover:text-foreground', loading && 'animate-spin')}
           onClick={() => load()}>
@@ -149,19 +149,19 @@ function fileIconOf(name: string) {
       <div className="shrink-0 px-2 py-1.5">
         <input value={filter} onChange={(e) => setFilter(e.target.value)}
           placeholder="按路径过滤…"
-          className="h-6 w-full rounded-md border border-border/60 bg-input px-2 text-ui-xs text-foreground outline-none placeholder:text-foreground-subtlest focus:border-ring" />
+          className="h-6 w-full rounded-md border border-border/60 bg-input px-2 text-ui-sm text-foreground outline-none placeholder:text-foreground-subtlest focus:border-ring" />
       </div>
       {/* 树 */}
       <div className="min-h-0 flex-1 overflow-y-auto px-1 pb-2">
         {!project ? (
-          <div className="px-2 py-6 text-center text-ui-xs text-foreground-subtlest">先选择一个项目</div>
+          <div className="px-2 py-6 text-center text-ui-sm text-foreground-subtlest">先选择一个项目</div>
         ) : !shown ? (
-          <div className="px-2 py-6 text-center text-ui-xs text-foreground-subtlest">加载中…</div>
+          <div className="px-2 py-6 text-center text-ui-sm text-foreground-subtlest">加载中…</div>
         ) : shown.length === 0 ? (
-          <div className="px-2 py-6 text-center text-ui-xs text-foreground-subtlest">{q ? '没有匹配的文件' : '空目录'}</div>
+          <div className="px-2 py-6 text-center text-ui-sm text-foreground-subtlest">{q ? '没有匹配的文件' : '空目录'}</div>
         ) : shown.map((n) => renderNode(n, 0))}
       </div>
-      <div className="shrink-0 border-t border-border/50 px-3 py-1.5 text-ui-2xs text-foreground-subtlest">
+      <div className="shrink-0 border-t border-border/50 px-3 py-1.5 text-ui-xs text-foreground-subtlest">
         点击文件在右栏查看 · M 改 A 增 D 删 U 新
       </div>
     </div>

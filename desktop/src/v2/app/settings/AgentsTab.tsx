@@ -59,7 +59,7 @@ function AgentFields({ plugin, agent, initial, onDone, onCancel }: {
         <Input value={form.tools} onChange={(e) => set('tools', e.target.value)} placeholder="Read, Glob, Grep" className="font-mono" />
       </FormField>
       <FormField label="系统提示（正文）">
-        <Textarea value={form.prompt} onChange={(e) => set('prompt', e.target.value)} className="max-h-[28rem] min-h-40 font-mono text-ui-xs" />
+        <Textarea value={form.prompt} onChange={(e) => set('prompt', e.target.value)} className="max-h-[28rem] min-h-40 font-mono text-ui-sm" />
       </FormField>
     </EditorFrame>
   );
@@ -108,12 +108,12 @@ function AgentDetail({ name }: { name: string }) {
       }>
       {error && <ErrorBox message={error} />}
       <DetailSection title="装配">
-        <InfoRow label="工具名"><span className="font-mono text-ui-xs">Agent_{a.name}</span></InfoRow>
+        <InfoRow label="工具名"><span className="font-mono text-ui-sm">Agent_{a.name}</span></InfoRow>
         <InfoRow label="最大轮数">{a.maxTurns ?? '默认'}</InfoRow>
       </DetailSection>
       <DetailSection title={`可用工具（${a.tools.length}）`}>
         <div className="flex flex-wrap gap-1">{a.tools.map((t) => <ToolPill key={t} name={t} />)}</div>
-        <div className="text-ui-xs text-foreground-subtlest">
+        <div className="text-ui-sm text-foreground-subtlest">
           子代理的工具调用不经主循环审批，引擎启动时校验这些工具全部为只读；整个子代理因此也是只读工具，计划模式可用。
         </div>
       </DetailSection>
@@ -161,7 +161,7 @@ export function AgentsTab() {
           </div>
         ))
       )}
-      <p className="text-ui-xs text-foreground-subtlest">
+      <p className="text-ui-sm text-foreground-subtlest">
         主 agent 通过 Agent_&lt;name&gt; 工具委派任务：子代理在独立上下文里多步检索，只把结论带回主对话。在自定义插件详情页新建子代理，保存后即时生效；内置插件先「复制为自定义」。
       </p>
     </div>

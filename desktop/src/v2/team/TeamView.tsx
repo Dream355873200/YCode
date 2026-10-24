@@ -6,7 +6,7 @@ import {
   CheckIcon, ChevronDownIcon, CornerDownRightIcon, CrownIcon, EllipsisIcon, MessageCircleQuestionIcon, PencilIcon,
   SendIcon, ShieldAlertIcon, SquareIcon, Trash2Icon, UserIcon, UsersIcon, XIcon,
 } from 'lucide-react';
-import { renderMD } from '../../lib/markdown';
+import { Markdown } from '../components/markdown/Markdown';
 import { useApp } from '../app/appState';
 import { AgentAvatar } from '../app/agentIcon';
 import { useWorkspace } from '../app/workspace';
@@ -28,7 +28,7 @@ function MemberChip({ m, onOpen, onStop }: { m: TeamMemberInfo; onOpen(): void; 
   const running = m.status === 'running';
   return (
     <span className={cn(
-      'group flex h-7 max-w-56 shrink-0 items-center gap-1.5 rounded-full border pl-1 pr-1.5 text-ui-xs transition-colors',
+      'group flex h-7 max-w-56 shrink-0 items-center gap-1.5 rounded-full border pl-1 pr-1.5 text-ui-sm transition-colors',
       running ? 'border-brand/50 bg-brand/8 text-foreground' : 'border-border text-foreground-subtle hover:bg-hover hover:text-foreground',
     )}>
       <button type="button" onClick={onOpen} className="flex min-w-0 items-center gap-1.5" title={m.activity ? `正在：${m.activity}` : m.role}>
@@ -62,13 +62,13 @@ function RelayLine({ m }: { m: TeamChatMsg }) {
   return (
     <div className="rounded-xl border border-dashed border-border/70 px-3 py-1.5">
       <button type="button" onClick={() => setOpen(!open)}
-        className="flex w-full min-w-0 items-center gap-1.5 text-left text-ui-xs text-foreground-subtlest hover:text-foreground-subtle">
+        className="flex w-full min-w-0 items-center gap-1.5 text-left text-ui-sm text-foreground-subtlest hover:text-foreground-subtle">
         <CornerDownRightIcon className="size-3 shrink-0" />
         <span className="shrink-0 text-foreground-subtle">{from ? `${who(from)} 插话给 ${who(to)}` : `插话给 ${who(to)}`}</span>
         {!open && <span className="min-w-0 truncate">{preview}</span>}
         <ChevronDownIcon className={cn('ml-auto size-3 shrink-0 transition-transform', open && 'rotate-180')} />
       </button>
-      {open && <div className="v2-md mt-1 break-words text-ui-sm leading-relaxed text-foreground" dangerouslySetInnerHTML={{ __html: renderMD(body) }} />}
+      {open && <div className="mt-1 break-words text-ui-base text-foreground"><Markdown text={body} /></div>}
     </div>
   );
 }
@@ -84,11 +84,11 @@ function Bubble({ m, team, onReply }: { m: TeamChatMsg; team: TeamDetail; onRepl
     const toUser = m.to === 'user';
     return (
       <div className="rounded-2xl border border-brand/40 bg-brand/5 px-3.5 py-2.5">
-        <div className="flex items-center gap-1.5 text-ui-xs font-medium text-brand">
+        <div className="flex items-center gap-1.5 text-ui-sm font-medium text-brand">
           <MessageCircleQuestionIcon className="size-3.5" />
           {m.from === 'leader' ? '队长' : m.from} {toUser ? '向你提问' : '向队长提问'}
         </div>
-        <div className="v2-md mt-1 text-ui-sm leading-relaxed text-foreground" dangerouslySetInnerHTML={{ __html: renderMD(m.text) }} />
+        <div className="mt-1 text-ui-base text-foreground"><Markdown text={m.text} /></div>
         {toUser && (
           <Button size="sm" variant="outline" className="mt-2" onClick={() => onReply(m.from)}>回复</Button>
         )}
@@ -98,11 +98,11 @@ function Bubble({ m, team, onReply }: { m: TeamChatMsg; team: TeamDetail; onRepl
   if (m.type === 'permission' && m.request_id) {
     return (
       <div className="rounded-2xl border border-warning/40 bg-warning/5 px-3.5 py-2.5">
-        <div className="flex items-center gap-1.5 text-ui-xs font-medium text-warning">
+        <div className="flex items-center gap-1.5 text-ui-sm font-medium text-warning">
           <ShieldAlertIcon className="size-3.5" />需要你批准 · {m.to || m.from}
         </div>
-        <div className="mt-1 text-ui-sm leading-relaxed text-foreground">{m.text}</div>
-        {settled ? <div className="mt-1.5 text-ui-xs text-foreground-subtlest">已处理</div> : (
+        <div className="mt-1 text-ui-base leading-relaxed text-foreground">{m.text}</div>
+        {settled ? <div className="mt-1.5 text-ui-sm text-foreground-subtlest">已处理</div> : (
           <div className="mt-2 flex gap-1.5">
             <Button size="sm" onClick={async () => { await teamApi.approve(m.request_id!, true); setSettled(true); }}>
               <CheckIcon />批准
@@ -117,7 +117,7 @@ function Bubble({ m, team, onReply }: { m: TeamChatMsg; team: TeamDetail; onRepl
   }
   if (m.type === 'steer') return <RelayLine m={m} />;
   if (m.type === 'system') {
-    return <div className="line-clamp-2 text-center text-ui-xs text-foreground-subtlest" title={m.text}>{m.text}</div>;
+    return <div className="line-clamp-2 text-center text-ui-sm text-foreground-subtlest" title={m.text}>{m.text}</div>;
   }
   const isUser = m.from === 'user';
   const agent = modes.find((x) => x.id === sender?.agent);
@@ -128,7 +128,7 @@ function Bubble({ m, team, onReply }: { m: TeamChatMsg; team: TeamDetail; onRepl
         ? <span className="flex size-7 shrink-0 items-center justify-center rounded-full border border-border bg-card text-foreground-subtle"><UserIcon className="size-3.5" /></span>
         : <AgentAvatar icon={agent?.icon} size="md" className="size-7 rounded-full" />}
       <div className={cn('min-w-0 max-w-[85%]', isUser && 'flex flex-col items-end')}>
-        <div className="mb-0.5 flex items-center gap-1.5 text-ui-2xs text-foreground-subtlest">
+        <div className="mb-0.5 flex items-center gap-1.5 text-ui-xs text-foreground-subtlest">
           <span className="font-medium text-foreground-subtle">{isUser ? '你' : sender?.isLeader ? '队长' : m.from}</span>
           {m.type === 'dispatch' && <span className="rounded bg-info/12 px-1 text-info">分派</span>}
           {m.type === 'result' && <span className="rounded bg-success/12 px-1 text-success">产出</span>}
@@ -136,11 +136,12 @@ function Bubble({ m, team, onReply }: { m: TeamChatMsg; team: TeamDetail; onRepl
           {Number.isFinite(time) && <span>{clock(time)}</span>}
         </div>
         <div className={cn('rounded-2xl px-3 py-2', isUser ? 'rounded-tr-sm bg-selected' : 'rounded-tl-sm border border-border bg-card')}>
-          <div className={cn('v2-md break-words text-ui-sm leading-relaxed text-foreground',
-            !expanded && long && 'max-h-56 overflow-hidden [mask-image:linear-gradient(to_bottom,black_70%,transparent)]')}
-            dangerouslySetInnerHTML={{ __html: renderMD(m.text) }} />
+          <div className={cn('break-words text-ui-base text-foreground',
+            !expanded && long && 'max-h-56 overflow-hidden [mask-image:linear-gradient(to_bottom,black_70%,transparent)]')}>
+            <Markdown text={m.text} />
+          </div>
           {long && (
-            <button type="button" className="mt-1 text-ui-xs text-brand hover:underline" onClick={() => setExpanded(!expanded)}>
+            <button type="button" className="mt-1 text-ui-sm text-brand hover:underline" onClick={() => setExpanded(!expanded)}>
               {expanded ? '收起' : '展开全文'}
             </button>
           )}
@@ -213,7 +214,7 @@ export function TeamView({ dir, name }: { dir: string; name: string }) {
 
   if (!team) {
     return (
-      <div className="flex flex-1 items-center justify-center text-ui-sm text-foreground-subtlest">
+      <div className="flex flex-1 items-center justify-center text-ui-base text-foreground-subtlest">
         {error || '读取团队…'}
       </div>
     );
@@ -226,8 +227,8 @@ export function TeamView({ dir, name }: { dir: string; name: string }) {
         <div className="mx-auto flex max-w-3xl items-center gap-2">
           <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-brand/12 text-brand"><UsersIcon className="size-4" /></span>
           <div className="min-w-0 flex-1">
-            <div className="truncate text-ui-sm font-medium text-foreground">{team.name}</div>
-            {team.goal && <div className="truncate text-ui-xs text-foreground-subtlest" title={team.goal}>{team.goal}</div>}
+            <div className="truncate text-ui-base font-medium text-foreground">{team.name}</div>
+            {team.goal && <div className="truncate text-ui-sm text-foreground-subtlest" title={team.goal}>{team.goal}</div>}
           </div>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -259,7 +260,7 @@ export function TeamView({ dir, name }: { dir: string; name: string }) {
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto grid max-w-3xl grid-cols-1 gap-3 px-6 py-4">
           {msgs.length === 0 && (
-            <div className="py-10 text-center text-ui-sm text-foreground-subtlest">
+            <div className="py-10 text-center text-ui-base text-foreground-subtlest">
               给队长一个目标，队长会拆解任务、分派给成员，成员的产出会回到这里
             </div>
           )}
@@ -273,10 +274,10 @@ export function TeamView({ dir, name }: { dir: string; name: string }) {
       <div className="shrink-0 px-4 pb-3">
         <div className="mx-auto max-w-3xl rounded-2xl border border-input-border bg-input p-3 focus-within:border-input-border-focused">
           <div className="mb-2 flex flex-wrap items-center gap-1">
-            <span className="mr-0.5 text-ui-xs text-foreground-subtlest">发给</span>
+            <span className="mr-0.5 text-ui-sm text-foreground-subtlest">发给</span>
             {[{ key: '', label: '队长' }, ...others.map((m) => ({ key: m.name, label: `@${m.name}` }))].map((r) => (
               <button key={r.key || 'leader'} type="button" onClick={() => setAt(r.key)}
-                className={cn('rounded-full border px-2 py-0.5 text-ui-xs transition-colors',
+                className={cn('rounded-full border px-2 py-0.5 text-ui-sm transition-colors',
                   at === r.key ? 'border-brand/60 bg-brand/10 text-foreground' : 'border-border text-foreground-subtle hover:bg-hover hover:text-foreground')}>
                 {r.label}
               </button>
@@ -297,7 +298,7 @@ export function TeamView({ dir, name }: { dir: string; name: string }) {
               <SendIcon className="size-4" />
             </Button>
           </div>
-          {error && <div className="mt-1.5 text-ui-xs text-destructive">{error}</div>}
+          {error && <div className="mt-1.5 text-ui-sm text-destructive">{error}</div>}
         </div>
       </div>
 

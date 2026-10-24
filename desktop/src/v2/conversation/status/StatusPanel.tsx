@@ -62,12 +62,12 @@ function Section({ id, title, trailing, separated, maxH = 'max-h-48', children }
     <section className={cn('min-w-0 flex-none', separated && 'border-t border-border/60 pt-1')}>
       <div className="flex h-8 min-w-0 items-center gap-1.5 px-2">
         <button type="button" aria-expanded={open} onClick={() => setOpen(id, !open)}
-          className="group flex min-w-0 items-center gap-1 text-ui-xs font-medium text-foreground-subtle hover:text-foreground">
+          className="group flex min-w-0 items-center gap-1 text-ui-sm font-medium text-foreground-subtle hover:text-foreground">
           <span className="truncate">{title}</span>
           <ChevronRightIcon className={cn('size-3 shrink-0 opacity-60 transition-transform duration-150 group-hover:opacity-100', open && 'rotate-90')} />
         </button>
         {trailing && (
-          <div className="ml-auto flex min-w-0 items-center gap-1.5 text-ui-2xs tabular-nums text-foreground-subtlest">
+          <div className="ml-auto flex min-w-0 items-center gap-1.5 text-ui-xs tabular-nums text-foreground-subtlest">
             {trailing(open)}
           </div>
         )}
@@ -79,13 +79,13 @@ function Section({ id, title, trailing, separated, maxH = 'max-h-48', children }
   );
 }
 
-const rowCls = 'flex min-h-8 w-full min-w-0 items-center gap-2 rounded-lg px-2 py-1.5 text-left text-ui-sm text-foreground transition-colors';
+const rowCls = 'flex min-h-8 w-full min-w-0 items-center gap-2 rounded-lg px-2 py-1.5 text-left text-ui-base text-foreground transition-colors';
 
 function StopButton({ onStop, label }: { onStop(): void; label: string }) {
   return (
     <button type="button" aria-label={label} title={label}
       onClick={(e) => { e.stopPropagation(); onStop(); }}
-      className="relative z-[1] ml-auto flex h-6 shrink-0 items-center gap-1 rounded-md px-1.5 text-ui-xs text-foreground-subtle hover:bg-destructive/10 hover:text-destructive">
+      className="relative z-[1] ml-auto flex h-6 shrink-0 items-center gap-1 rounded-md px-1.5 text-ui-sm text-foreground-subtle hover:bg-destructive/10 hover:text-destructive">
       <SquareIcon className="size-2.5 fill-current" />停止
     </button>
   );
@@ -134,25 +134,25 @@ function GoalSection({ sid, goal, separated }: { sid: string; goal: ThreadGoal; 
     <Section id="goal" title="目标" separated={separated}
       trailing={() => <><span>{formatDuration(goalElapsedMs(goal, now))}</span>{control}</>}>
       <div className="grid gap-2 px-2 pb-1.5 pt-0.5">
-        <p className="line-clamp-3 text-ui-sm leading-snug text-foreground" title={goal.objective}>{goal.objective}</p>
+        <p className="line-clamp-3 text-ui-base leading-snug text-foreground" title={goal.objective}>{goal.objective}</p>
         <div className="flex items-center gap-2">
           <GoalTrack goal={goal} />
-          <span className="ml-auto shrink-0 text-ui-2xs tabular-nums text-foreground-subtlest">
+          <span className="ml-auto shrink-0 text-ui-xs tabular-nums text-foreground-subtlest">
             {goal.status === 'verified' ? `${goal.checks?.length ?? 0} 轮达成` : `第 ${goal.iteration}/${goal.maxIterations} 轮`}
           </span>
         </div>
         {last && (
-          <div className="rounded-lg bg-surface px-2 py-1.5 text-ui-xs leading-relaxed">
+          <div className="rounded-lg bg-surface px-2 py-1.5 text-ui-sm leading-relaxed">
             <span className={last.passed ? 'text-success' : 'text-warning'}>第 {last.iteration} 轮{last.passed ? '达成' : '未通过'}</span>
             {last.reason && <span className="text-foreground-subtle">：{last.reason}</span>}
             {!last.passed && last.nextAction && <div className="text-foreground-subtlest">下一步：{last.nextAction}</div>}
           </div>
         )}
         {goal.status === 'paused' && goal.pausedReason && (
-          <div className="text-ui-xs text-warning">已暂停 · {goal.pausedReason}</div>
+          <div className="text-ui-sm text-warning">已暂停 · {goal.pausedReason}</div>
         )}
         <button type="button" onClick={() => void clearGoal(sid)}
-          className="w-fit text-ui-2xs text-foreground-subtlest hover:text-destructive">
+          className="w-fit text-ui-xs text-foreground-subtlest hover:text-destructive">
           结束目标
         </button>
       </div>
@@ -170,7 +170,7 @@ function TodoIcon({ status }: { status: string }) {
 
 function TodoRows({ items }: { items: TaskItem[] }) {
   return items.map((t) => (
-    <li key={t.id} className="flex min-h-8 items-start gap-2 rounded-lg px-2 py-1.5 text-ui-sm hover:bg-hover">
+    <li key={t.id} className="flex min-h-8 items-start gap-2 rounded-lg px-2 py-1.5 text-ui-base hover:bg-hover">
       <TodoIcon status={t.status} />
       <span title={t.subject} className={cn('line-clamp-2 min-w-0 flex-1 break-words leading-5',
         t.status === 'completed' ? 'text-foreground-subtlest line-through' : 'text-foreground')}>
@@ -188,7 +188,7 @@ function FoldRow({ group, items }: { group: 'preceding' | 'following'; items: Ta
       {open && group === 'following' ? null : (
         <li>
           <button type="button" onClick={() => setOpen(!open)}
-            className="flex h-7 w-full items-center gap-2 rounded-lg px-2 text-left text-ui-xs text-foreground-subtle hover:bg-hover">
+            className="flex h-7 w-full items-center gap-2 rounded-lg px-2 text-left text-ui-sm text-foreground-subtle hover:bg-hover">
             <ChevronRightIcon className={cn('size-3 shrink-0 transition-transform', open && 'rotate-90')} />
             {open ? '收起' : foldLabel(group, items)}
           </button>
@@ -198,7 +198,7 @@ function FoldRow({ group, items }: { group: 'preceding' | 'following'; items: Ta
       {open && group === 'following' && (
         <li>
           <button type="button" onClick={() => setOpen(false)}
-            className="flex h-7 w-full items-center gap-2 rounded-lg px-2 text-left text-ui-xs text-foreground-subtle hover:bg-hover">
+            className="flex h-7 w-full items-center gap-2 rounded-lg px-2 text-left text-ui-sm text-foreground-subtle hover:bg-hover">
             <ChevronRightIcon className="size-3 shrink-0 -rotate-90" />收起
           </button>
         </li>
@@ -242,17 +242,17 @@ function CollabSection({ sid, model, separated }: { sid: string; model: StatusPa
       {model.pipeline && (
         <button type="button" onClick={() => openPaneTab({ id: 'pipeline', kind: 'pipeline', label: '流水线' })}
           className="block w-full rounded-lg px-2 py-1.5 text-left hover:bg-hover">
-          <span className="flex min-w-0 items-center gap-2 text-ui-sm text-foreground">
+          <span className="flex min-w-0 items-center gap-2 text-ui-base text-foreground">
             <WorkflowIcon className="size-4 shrink-0 text-foreground-subtle" />
             <span className="min-w-0 flex-1 truncate">{model.pipeline.title}</span>
-            <span className="shrink-0 text-ui-2xs tabular-nums text-foreground-subtlest">
+            <span className="shrink-0 text-ui-xs tabular-nums text-foreground-subtlest">
               {model.pipeline.settled}/{model.pipeline.total} · {formatDuration(now - model.pipeline.startedAt)}
             </span>
           </span>
           <span className="mt-1.5 flex flex-wrap gap-1 pl-6">
             {model.pipeline.nodes.map((n) => (
               <span key={n.name} title={`${n.name}：${n.status}`}
-                className={cn('flex h-5 max-w-28 items-center gap-1 rounded-md px-1.5 text-ui-2xs', NODE_CLS[n.status] ?? NODE_CLS.pending)}>
+                className={cn('flex h-5 max-w-28 items-center gap-1 rounded-md px-1.5 text-ui-xs', NODE_CLS[n.status] ?? NODE_CLS.pending)}>
                 {n.status === 'running' && <span className="size-1.5 shrink-0 animate-pulse rounded-full bg-brand" />}
                 <span className="truncate">{n.name}</span>
               </span>
@@ -268,8 +268,8 @@ function CollabSection({ sid, model, separated }: { sid: string; model: StatusPa
               className="absolute inset-0 rounded-lg" />
             <BotIcon className="pointer-events-none relative mt-0.5 size-4 shrink-0 text-foreground-subtle" />
             <span className="pointer-events-none relative flex min-w-0 flex-1 flex-col gap-1">
-              <span className="line-clamp-2 text-ui-sm leading-5 text-foreground">{a.title}</span>
-              <span className="text-ui-xs tabular-nums text-foreground-subtle">已运行 {formatDuration(now - a.startedAt)}</span>
+              <span className="line-clamp-2 text-ui-base leading-5 text-foreground">{a.title}</span>
+              <span className="text-ui-sm tabular-nums text-foreground-subtle">已运行 {formatDuration(now - a.startedAt)}</span>
             </span>
             <span className="relative self-center">
               <StopButton label="停止该子代理" onStop={() => { void stopAgent(sid, a.id).then(() => refreshSessionStatus(sid)); }} />
@@ -278,7 +278,7 @@ function CollabSection({ sid, model, separated }: { sid: string; model: StatusPa
         ))}
       </ul>
       {model.endedAgents > 0 && (
-        <div className="px-2 py-1 text-ui-2xs text-foreground-subtlest">已结束 {model.endedAgents} 个子代理</div>
+        <div className="px-2 py-1 text-ui-xs text-foreground-subtlest">已结束 {model.endedAgents} 个子代理</div>
       )}
     </Section>
   );
@@ -308,8 +308,8 @@ function TerminalSection({ sid, model, separated }: { sid: string; model: Status
             )}
             <SquareTerminalIcon className="pointer-events-none relative mt-0.5 size-4 shrink-0 text-foreground-subtle" />
             <span className="pointer-events-none relative flex min-w-0 flex-1 flex-col gap-1">
-              <span className="line-clamp-2 break-all font-mono text-ui-xs leading-5 text-foreground">{t.title}</span>
-              <span className="text-ui-xs tabular-nums text-foreground-subtle">已运行 {formatDuration(now - t.startedAt)}</span>
+              <span className="line-clamp-2 break-all font-mono text-ui-sm leading-5 text-foreground">{t.title}</span>
+              <span className="text-ui-sm tabular-nums text-foreground-subtle">已运行 {formatDuration(now - t.startedAt)}</span>
             </span>
             <span className="relative self-center">
               <StopButton label="停止该后台命令" onStop={() => void stop(t.id)} />
@@ -376,7 +376,7 @@ function WorkspaceSection({ dir, model, separated }: { dir: string; model: Statu
           <button type="button" onClick={() => openPaneTab({ id: 'git', kind: 'git', label: '变更' })} className={cn(rowCls, 'hover:bg-hover')}>
             <FileDiffIcon className="size-4 shrink-0 text-foreground-subtle" />
             <span className="min-w-0 flex-1 truncate">改动 · {git.files} 个文件</span>
-            <span className="shrink-0 font-mono text-ui-xs tabular-nums">
+            <span className="shrink-0 font-mono text-ui-sm tabular-nums">
               <span className="text-success">+{git.added}</span> <span className="text-destructive">-{git.deleted}</span>
             </span>
           </button>
@@ -384,8 +384,8 @@ function WorkspaceSection({ dir, model, separated }: { dir: string; model: Statu
             <button type="button" className={cn(rowCls, 'hover:bg-hover')}>
               <GitBranchIcon className="size-4 shrink-0 text-foreground-subtle" />
               <span className="min-w-0 flex-1 truncate">{git.branch || '分支'}</span>
-              {(git.ahead ?? 0) > 0 && <span className="flex shrink-0 items-center text-ui-xs text-info"><ArrowUpIcon className="size-3" />{git.ahead}</span>}
-              {(git.behind ?? 0) > 0 && <span className="flex shrink-0 items-center text-ui-xs text-warning"><ArrowDownIcon className="size-3" />{git.behind}</span>}
+              {(git.ahead ?? 0) > 0 && <span className="flex shrink-0 items-center text-ui-sm text-info"><ArrowUpIcon className="size-3" />{git.ahead}</span>}
+              {(git.behind ?? 0) > 0 && <span className="flex shrink-0 items-center text-ui-sm text-warning"><ArrowDownIcon className="size-3" />{git.behind}</span>}
             </button>
           </BranchSwitcher>
           {git.files > 0 ? (
@@ -399,14 +399,14 @@ function WorkspaceSection({ dir, model, separated }: { dir: string; model: Statu
               <span className="min-w-0 flex-1 truncate">推送 {git.ahead} 个提交</span>
             </button>
           ) : null}
-          {pushError && <div className="mx-2 rounded-md bg-destructive/10 px-2 py-1 text-ui-2xs text-destructive">{pushError}</div>}
+          {pushError && <div className="mx-2 rounded-md bg-destructive/10 px-2 py-1 text-ui-xs text-destructive">{pushError}</div>}
         </>
       )}
       {(env?.browserPages ?? 0) > 0 && (
         <button type="button" onClick={openBrowser} className={cn(rowCls, 'hover:bg-hover')}>
           <GlobeIcon className="size-4 shrink-0 text-foreground-subtle" />
           <span className="min-w-0 flex-1 truncate">浏览器</span>
-          <span className="shrink-0 text-ui-xs text-foreground-subtle">{env!.browserPages} 个页面</span>
+          <span className="shrink-0 text-ui-sm text-foreground-subtle">{env!.browserPages} 个页面</span>
         </button>
       )}
       {(env?.devices?.length ?? 0) > 0 && (
@@ -421,7 +421,7 @@ function WorkspaceSection({ dir, model, separated }: { dir: string; model: Statu
           title={mcpErr.map((s) => `${s.name}：${s.error || '连接失败'}`).join('\n') || undefined}>
           <CableIcon className="size-4 shrink-0 text-foreground-subtle" />
           <span className="min-w-0 flex-1 truncate">MCP 服务</span>
-          <span className={cn('shrink-0 text-ui-xs', mcpErr.length ? 'text-destructive' : 'text-foreground-subtle')}>
+          <span className={cn('shrink-0 text-ui-sm', mcpErr.length ? 'text-destructive' : 'text-foreground-subtle')}>
             {mcpErr.length ? `${mcpErr.length} 个失败` : `${mcpOk}/${env!.mcp!.length} 正常`}
           </span>
         </button>
@@ -468,7 +468,7 @@ function CapsuleBody({ capsule }: { capsule: Capsule }) {
       {m.kind === 'plan' && <span className="min-w-0 truncate">{m.title}</span>}
       {m.kind === 'activity' && <span className="min-w-0 truncate">后台运行中</span>}
       {(capsule.agents > 0 || capsule.terminals > 0) && (
-        <span className="ml-0.5 flex shrink-0 items-center gap-1.5 border-l border-border pl-2 text-ui-xs tabular-nums text-foreground-subtle">
+        <span className="ml-0.5 flex shrink-0 items-center gap-1.5 border-l border-border pl-2 text-ui-sm tabular-nums text-foreground-subtle">
           {capsule.agents > 0 && <span className="flex items-center gap-0.5"><BotIcon className="size-3.5" />{capsule.agents}</span>}
           {capsule.terminals > 0 && <span className="flex items-center gap-0.5"><SquareTerminalIcon className="size-3.5" />{capsule.terminals}</span>}
         </span>
@@ -508,15 +508,15 @@ export function StatusPanel({ sid, dir, model }: { sid: string; dir: string; mod
           'pointer-events-auto relative overflow-hidden rounded-2xl border border-popover-border bg-popover text-foreground shadow-md transition-[border-radius,box-shadow] duration-300',
           variant === 'mini' ? 'inline-flex w-max max-w-[min(22rem,calc(100cqw-2rem))]'
             : variant === 'panel' ? 'flex max-h-[min(64dvh,34rem)] w-80 max-w-[calc(100cqw-2rem)] flex-col'
-              : 'inline-flex w-max max-w-[min(22rem,calc(100cqw-2rem))] @min-[1120px]/conversation:flex @min-[1120px]/conversation:max-h-[min(64dvh,34rem)] @min-[1120px]/conversation:w-80 @min-[1120px]/conversation:flex-col',
+              : 'inline-flex w-max max-w-[min(22rem,calc(100cqw-2rem))] @min-[1280px]/conversation:flex @min-[1280px]/conversation:max-h-[min(64dvh,34rem)] @min-[1280px]/conversation:w-80 @min-[1280px]/conversation:flex-col',
         )}>
         {variant !== 'mini' && (
-          <div className={cn('min-h-0 flex-1 flex-col', auto ? 'hidden @min-[1120px]/conversation:flex' : 'flex')}>
+          <div className={cn('min-h-0 flex-1 flex-col', auto ? 'hidden @min-[1280px]/conversation:flex' : 'flex')}>
             {/* 面板头：谁在干活 + 本轮时长 + 展开偏好 */}
             <div className="flex h-11 shrink-0 items-center gap-2 border-b border-border/60 pl-3 pr-1.5">
               <AgentAvatar icon={mode?.icon} size="sm" className={cn(busy && 'ring-2 ring-brand/40')} />
-              <span className="min-w-0 truncate text-ui-sm font-medium text-foreground">{mode?.name ?? '智能体'}</span>
-              <span className={cn('shrink-0 text-ui-2xs tabular-nums', busy ? 'text-brand' : 'text-foreground-subtlest')}>
+              <span className="min-w-0 truncate text-ui-base font-medium text-foreground">{mode?.name ?? '智能体'}</span>
+              <span className={cn('shrink-0 text-ui-xs tabular-nums', busy ? 'text-brand' : 'text-foreground-subtlest')}>
                 {busy ? `工作中${runStartedAt ? ` · ${formatDuration(now - runStartedAt)}` : ''}` : '待命'}
               </span>
               <span className="ml-auto flex shrink-0 items-center">
@@ -551,9 +551,9 @@ export function StatusPanel({ sid, dir, model }: { sid: string; dir: string; mod
           <button type="button" aria-label="展开对话状态" title="展开对话状态"
             onClick={() => setVariant('panel')}
             className={cn(
-              'group flex h-9 w-max max-w-full items-center gap-2 pl-1.5 pr-3 text-left text-ui-sm text-foreground transition-colors hover:bg-menu-hover',
+              'group flex h-9 w-max max-w-full items-center gap-2 pl-1.5 pr-3 text-left text-ui-base text-foreground transition-colors hover:bg-menu-hover',
               variant === 'panel' && 'hidden',
-              auto && '@min-[1120px]/conversation:hidden',
+              auto && '@min-[1280px]/conversation:hidden',
             )}>
             <AgentAvatar icon={mode?.icon} size="sm" className={cn(busy && 'ring-2 ring-brand/40')} />
             <CapsuleBody capsule={capsule} />

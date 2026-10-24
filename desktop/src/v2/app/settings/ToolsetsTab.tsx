@@ -21,11 +21,11 @@ function ToolList({ names, tools }: { names: string[]; tools: ToolInfo[] }) {
         return (
           <div key={n} className="min-w-0 space-y-0.5">
             <div className="flex items-center gap-1.5">
-              <span className="font-mono text-ui-sm text-foreground">{n}</span>
+              <span className="font-mono text-ui-base text-foreground">{n}</span>
               {t && <Chip>{PERMISSION[t.permission] ?? t.permission}</Chip>}
               {t?.concurrent && <Chip>可并发</Chip>}
             </div>
-            {desc && <div className="line-clamp-2 text-ui-xs text-foreground-subtlest">{desc}</div>}
+            {desc && <div className="line-clamp-2 text-ui-sm text-foreground-subtlest">{desc}</div>}
           </div>
         );
       })}
@@ -42,7 +42,7 @@ function BaseToolsDetail() {
       <DetailSection title={`工具（${tools.length}）`}>
         {tools.length
           ? <ToolList names={tools.map((t) => t.name)} tools={catalog.tools} />
-          : <span className="text-ui-sm text-foreground-subtlest">引擎未返回工具清单</span>}
+          : <span className="text-ui-base text-foreground-subtlest">引擎未返回工具清单</span>}
       </DetailSection>
     </DetailFrame>
   );
@@ -57,12 +57,12 @@ function ToolsetDetail({ id }: { id: string }) {
       desc="由插件打包；只有拿到该插件的智能体能用。">
       <DetailSection title={`注册工具（${d.tools?.length ?? 0}）`}>
         {(d.tools?.length ?? 0) === 0
-          ? <span className="text-ui-sm text-foreground-subtlest">无独立工具（运行期机制型工具集）</span>
+          ? <span className="text-ui-base text-foreground-subtlest">无独立工具（运行期机制型工具集）</span>
           : <ToolList names={d.tools!} tools={catalog.tools} />}
       </DetailSection>
       {(d.notes?.length ?? 0) > 0 && (
         <DetailSection title="运行期机制">
-          {d.notes!.map((n, i) => <div key={i} className="text-ui-xs text-foreground-subtle">{n}</div>)}
+          {d.notes!.map((n, i) => <div key={i} className="text-ui-sm text-foreground-subtle">{n}</div>)}
         </DetailSection>
       )}
     </DetailFrame>

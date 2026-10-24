@@ -59,8 +59,8 @@ export function statusPanelLayout(hasContent: boolean, variant: StatusPanelVaria
   return variant === 'panel' ? 'inline' : 'auto';
 }
 
-/** 状态面板宽容器断点（对话列 max-w-3xl 居中，左移 168px 后 w-80 面板恰好放得下）。 */
-export const STATUS_PANEL_OFFSET_CLASS = '@min-[1120px]/conversation:-translate-x-42';
+/** 状态面板宽容器断点：与对话列宽布局同一 1280px 分水岭（ZCode 同款），面板左移 168px 让位。 */
+export const STATUS_PANEL_OFFSET_CLASS = '@min-[1280px]/conversation:-translate-x-42';
 
 export function useStatusPanelModel(sid: string | null): StatusPanelModel | null {
   const { project, thread } = useApp();

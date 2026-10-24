@@ -47,7 +47,7 @@ function SkillFields({ skill, initial, onDone, onCancel }: {
         <Input value={form.whenToUse} onChange={(e) => set('whenToUse', e.target.value)} />
       </FormField>
       <FormField label="正文">
-        <Textarea value={form.body} onChange={(e) => set('body', e.target.value)} className="max-h-[32rem] min-h-48 font-mono text-ui-xs" />
+        <Textarea value={form.body} onChange={(e) => set('body', e.target.value)} className="max-h-[32rem] min-h-48 font-mono text-ui-sm" />
       </FormField>
     </EditorFrame>
   );
@@ -88,7 +88,7 @@ function SkillDetail({ id }: { id: string }) {
       {error && <ErrorBox message={error} />}
       {skill.whenToUse && (
         <DetailSection title="何时使用">
-          <div className="text-ui-sm text-foreground-subtle">{skill.whenToUse}</div>
+          <div className="text-ui-base text-foreground-subtle">{skill.whenToUse}</div>
         </DetailSection>
       )}
       {skill.filePath ? <FileSection title="内容" path={skill.filePath} /> : (

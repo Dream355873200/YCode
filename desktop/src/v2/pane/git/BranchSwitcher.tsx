@@ -60,33 +60,33 @@ export function BranchSwitcher({ dir, children, side = 'left' }: {
                 else if (shown[0] && !shown[0].current) void run(shown[0].name, false);
               }
             }}
-            className="h-7 min-w-0 flex-1 bg-transparent text-ui-sm text-foreground outline-none placeholder:text-foreground-subtlest" />
+            className="h-7 min-w-0 flex-1 bg-transparent text-ui-base text-foreground outline-none placeholder:text-foreground-subtlest" />
         </div>
         <div className="mt-1 max-h-56 overflow-y-auto">
           {!branches && !error && (
-            <div className="flex items-center gap-2 px-2.5 py-2 text-ui-xs text-foreground-subtlest">
+            <div className="flex items-center gap-2 px-2.5 py-2 text-ui-sm text-foreground-subtlest">
               <Loader2Icon className="size-3.5 animate-spin" />读取分支…
             </div>
           )}
           {shown.map((b) => (
             <button key={b.name} type="button" disabled={b.current || !!busy}
               onClick={() => void run(b.name, false)}
-              className={cn('flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-ui-sm transition-colors',
+              className={cn('flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-ui-base transition-colors',
                 b.current ? 'text-foreground' : 'text-foreground-subtle hover:bg-hover hover:text-foreground')}>
               {busy === b.name ? <Loader2Icon className="size-3.5 shrink-0 animate-spin" /> : <GitBranchIcon className="size-3.5 shrink-0" />}
               <span className="min-w-0 flex-1 truncate">{b.name}</span>
-              {b.current ? <CheckIcon className="size-3.5 shrink-0 text-brand" /> : <span className="shrink-0 text-ui-2xs text-foreground-subtlest">{b.when}</span>}
+              {b.current ? <CheckIcon className="size-3.5 shrink-0 text-brand" /> : <span className="shrink-0 text-ui-xs text-foreground-subtlest">{b.when}</span>}
             </button>
           ))}
           {canCreate && (
             <button type="button" disabled={!!busy} onClick={() => void run(q, true)}
-              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-ui-sm text-foreground hover:bg-hover">
+              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-ui-base text-foreground hover:bg-hover">
               {busy === q ? <Loader2Icon className="size-3.5 shrink-0 animate-spin" /> : <PlusIcon className="size-3.5 shrink-0 text-brand" />}
               <span className="min-w-0 flex-1 truncate">新建并切换到 {q}</span>
             </button>
           )}
         </div>
-        {error && <div className="mt-1 rounded-lg bg-destructive/10 px-2.5 py-1.5 text-ui-xs text-destructive">{error}</div>}
+        {error && <div className="mt-1 rounded-lg bg-destructive/10 px-2.5 py-1.5 text-ui-sm text-destructive">{error}</div>}
       </PopoverContent>
     </Popover>
   );

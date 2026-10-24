@@ -34,16 +34,16 @@ function DiffBody({ dir, file }: { dir: string; file: GitFileStat }) {
     });
     return () => { alive = false; };
   }, [dir, file.path, file.untracked, file.added, file.deleted]);
-  if (error) return <div className="px-3 py-2 text-ui-xs text-destructive">{error}</div>;
-  if (!diff) return <div className="flex items-center gap-2 px-3 py-2 text-ui-xs text-foreground-subtlest"><Loader2Icon className="size-3.5 animate-spin" />读取中…</div>;
-  if (diff.binary) return <div className="px-3 py-2 text-ui-xs text-foreground-subtlest">二进制文件，不显示内容差异</div>;
-  if (!diff.lines.length) return <div className="px-3 py-2 text-ui-xs text-foreground-subtlest">没有文本差异（可能只改了权限或换行符）</div>;
+  if (error) return <div className="px-3 py-2 text-ui-sm text-destructive">{error}</div>;
+  if (!diff) return <div className="flex items-center gap-2 px-3 py-2 text-ui-sm text-foreground-subtlest"><Loader2Icon className="size-3.5 animate-spin" />读取中…</div>;
+  if (diff.binary) return <div className="px-3 py-2 text-ui-sm text-foreground-subtlest">二进制文件，不显示内容差异</div>;
+  if (!diff.lines.length) return <div className="px-3 py-2 text-ui-sm text-foreground-subtlest">没有文本差异（可能只改了权限或换行符）</div>;
   const lang = langOf(file.path);
   const lines = diff.lines.slice(0, MAX_LINES);
   return (
-    <div className="overflow-x-auto bg-background/40 py-1 font-mono text-ui-xs leading-5">
+    <div className="overflow-x-auto bg-background/40 py-1 font-mono text-ui-sm leading-5">
       {lines.map((l, i) => (l.type === 'hunk'
-        ? <div key={i} className="my-0.5 bg-info/8 px-3 text-ui-2xs leading-5 text-info">{l.text || '…'}</div>
+        ? <div key={i} className="my-0.5 bg-info/8 px-3 text-ui-xs leading-5 text-info">{l.text || '…'}</div>
         : (
           <div key={i} className={cn('cl', l.type === 'add' && 'cl-add', l.type === 'del' && 'cl-del')}>
             <span className="cl-no">{l.type === 'add' ? '' : l.oldNo}</span>
@@ -53,7 +53,7 @@ function DiffBody({ dir, file }: { dir: string; file: GitFileStat }) {
           </div>
         )))}
       {diff.lines.length > MAX_LINES && (
-        <div className="px-3 py-1 text-ui-2xs text-foreground-subtlest">还有 {diff.lines.length - MAX_LINES} 行未显示，在查看器里打开完整文件</div>
+        <div className="px-3 py-1 text-ui-xs text-foreground-subtlest">还有 {diff.lines.length - MAX_LINES} 行未显示，在查看器里打开完整文件</div>
       )}
     </div>
   );
@@ -67,13 +67,13 @@ function FileRow({ dir, file, open, onToggle }: { dir: string; file: GitFileStat
   return (
     <div className="border-b border-border/40 last:border-b-0">
       <div role="button" tabIndex={0} onClick={onToggle} onKeyDown={(e) => { if (e.key === 'Enter') onToggle(); }}
-        className={cn('group sticky top-0 z-[1] flex h-8 cursor-pointer items-center gap-2 bg-panel px-3 text-ui-sm hover:bg-hover', open && 'bg-hover')}>
+        className={cn('group sticky top-0 z-[1] flex h-8 cursor-pointer items-center gap-2 bg-panel px-3 text-ui-base hover:bg-hover', open && 'bg-hover')}>
         <ChevronRightIcon className={cn('size-3.5 shrink-0 text-foreground-subtlest transition-transform', open && 'rotate-90')} />
         <span className="min-w-0 shrink truncate text-foreground" title={file.path}>{name}</span>
-        {folder && <span className="min-w-0 flex-1 truncate text-ui-xs text-foreground-subtlest">{folder}</span>}
+        {folder && <span className="min-w-0 flex-1 truncate text-ui-sm text-foreground-subtlest">{folder}</span>}
         {!folder && <span className="flex-1" />}
-        {file.untracked && <span className="shrink-0 rounded bg-success/12 px-1 text-ui-2xs text-success">新</span>}
-        <span className="shrink-0 font-mono text-ui-xs tabular-nums group-hover:hidden">
+        {file.untracked && <span className="shrink-0 rounded bg-success/12 px-1 text-ui-xs text-success">新</span>}
+        <span className="shrink-0 font-mono text-ui-sm tabular-nums group-hover:hidden">
           {file.binary ? <span className="text-foreground-subtlest">二进制</span> : (
             <><span className="text-success">+{file.added}</span> <span className="text-destructive">-{file.deleted}</span></>
           )}
@@ -111,19 +111,19 @@ export function ReviewPanel() {
   const [commitOpen, setCommitOpen] = useState(false);
   const [initing, setIniting] = useState(false);
 
-  if (!project) return <div className="p-6 text-center text-ui-xs text-foreground-subtlest">选择项目后查看改动</div>;
-  if (!changes) return <div className="flex items-center justify-center gap-2 p-6 text-ui-xs text-foreground-subtlest"><Loader2Icon className="size-3.5 animate-spin" />读取改动…</div>;
+  if (!project) return <div className="p-6 text-center text-ui-sm text-foreground-subtlest">选择项目后查看改动</div>;
+  if (!changes) return <div className="flex items-center justify-center gap-2 p-6 text-ui-sm text-foreground-subtlest"><Loader2Icon className="size-3.5 animate-spin" />读取改动…</div>;
   if (!changes.ok) {
     return (
       <div className="flex flex-col items-center gap-3 p-8 text-center">
         <GitBranchIcon className="size-8 text-foreground-subtlest" />
-        <div className="text-ui-sm text-foreground-subtle">{changes.notRepo ? '这个项目还不是 Git 仓库' : 'Git 不可用'}</div>
+        <div className="text-ui-base text-foreground-subtle">{changes.notRepo ? '这个项目还不是 Git 仓库' : 'Git 不可用'}</div>
         {changes.notRepo ? (
           <Button size="sm" variant="outline" disabled={initing}
             onClick={async () => { setIniting(true); await window.amc.git.init(dir); setIniting(false); refreshGit(dir); }}>
             {initing ? <Loader2Icon className="animate-spin" /> : <GitBranchIcon />}初始化仓库
           </Button>
-        ) : <div className="text-ui-xs text-foreground-subtlest">{changes.error}</div>}
+        ) : <div className="text-ui-sm text-foreground-subtlest">{changes.error}</div>}
       </div>
     );
   }
@@ -132,13 +132,13 @@ export function ReviewPanel() {
     <div className="flex h-full flex-col">
       <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border/50 px-3">
         <BranchSwitcher dir={dir} side="bottom">
-          <button type="button" className="flex min-w-0 items-center gap-1.5 rounded-md px-1.5 py-1 text-ui-sm text-foreground hover:bg-hover">
+          <button type="button" className="flex min-w-0 items-center gap-1.5 rounded-md px-1.5 py-1 text-ui-base text-foreground hover:bg-hover">
             <GitBranchIcon className="size-3.5 shrink-0 text-foreground-subtle" />
             <span className="max-w-40 truncate">{changes.branch || '分支'}</span>
           </button>
         </BranchSwitcher>
         {files.length > 0 && (
-          <span className="font-mono text-ui-xs tabular-nums">
+          <span className="font-mono text-ui-sm tabular-nums">
             <span className="text-success">+{changes.added}</span> <span className="text-destructive">-{changes.deleted}</span>
           </span>
         )}
@@ -151,8 +151,8 @@ export function ReviewPanel() {
         {files.length === 0 ? (
           <div className="flex flex-col items-center gap-2 p-10 text-center">
             <FileTextIcon className="size-8 text-foreground-subtlest" />
-            <div className="text-ui-sm text-foreground-subtle">工作区很干净</div>
-            <div className="text-ui-xs text-foreground-subtlest">智能体改动文件后，逐文件的差异会出现在这里</div>
+            <div className="text-ui-base text-foreground-subtle">工作区很干净</div>
+            <div className="text-ui-sm text-foreground-subtlest">智能体改动文件后，逐文件的差异会出现在这里</div>
           </div>
         ) : files.map((f) => (
           <FileRow key={f.path} dir={dir} file={f} open={openFile === f.path}

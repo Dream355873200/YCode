@@ -45,7 +45,7 @@ function VerdictBadge({ verdict }: { verdict: string }) {
       ? 'bg-[var(--color-diff-removed)] text-destructive'
       : 'bg-surface text-warning';
   return (
-    <span className={`flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-ui-2xs font-medium ${cls}`}>
+    <span className={`flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-ui-xs font-medium ${cls}`}>
       {verdict === 'pass' ? <OkIco className="size-3" /> : verdict === 'fail' ? <BadIco className="size-3" /> : <PartIco className="size-3" />}
       {verdict === 'pass' ? 'PASS' : verdict === 'fail' ? 'FAIL' : '部分'}
     </span>
@@ -130,7 +130,7 @@ export default function TestReportPanel() {
       >
         <div className="flex shrink-0 items-center gap-2 border-b border-border/50 px-2.5 py-1.5">
           <button type="button" onClick={() => { setOpenIdx(-1); setZoom(null); }}
-            className="flex items-center gap-1 text-ui-xs text-foreground-subtle hover:text-foreground">
+            className="flex items-center gap-1 text-ui-sm text-foreground-subtle hover:text-foreground">
             <ArrowLeftIcon className="size-3.5" />报告列表
           </button>
           <VerdictBadge verdict={m.verdict || ''} />
@@ -151,7 +151,7 @@ export default function TestReportPanel() {
   return (
     <div className="min-h-0 flex-1 overflow-y-auto p-2">
       {reports.length === 0 ? (
-        <div className="mt-8 text-center text-ui-xs leading-6 text-foreground-subtlest">
+        <div className="mt-8 text-center text-ui-sm leading-6 text-foreground-subtlest">
           暂无测试报告<br />AI 全量测试后调用 test_report 工具自动生成
         </div>
       ) : reports.map((r, i) => {
@@ -161,10 +161,10 @@ export default function TestReportPanel() {
           <button key={r.file} type="button" onClick={() => setOpenIdx(i)}
             className="mb-1.5 block w-full rounded-lg border border-border bg-card px-2.5 py-2 text-left transition-colors hover:bg-hover">
             <div className="flex items-center gap-2">
-              <span className="min-w-0 flex-1 truncate text-ui-sm font-medium text-foreground" title={name}>{name}</span>
+              <span className="min-w-0 flex-1 truncate text-ui-base font-medium text-foreground" title={name}>{name}</span>
               {m.verdict && <VerdictBadge verdict={m.verdict} />}
             </div>
-            <div className="mt-0.5 flex items-center gap-2.5 text-ui-2xs text-foreground-subtlest">
+            <div className="mt-0.5 flex items-center gap-2.5 text-ui-xs text-foreground-subtlest">
               {m.date && <span>{m.date}</span>}
               {m.device && <span className="truncate">{m.device}</span>}
               {m.total && <span className="text-success">{m.pass || 0} 过</span>}

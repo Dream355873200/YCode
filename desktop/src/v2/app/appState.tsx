@@ -93,10 +93,10 @@ interface AppCtxValue {
 
 /** 右栏标签页状态：kind 决定渲染器。 */
 export interface PaneTabState {
-  // 'file:<path>' | 'browser:<instId>' | 'git' | 'tasks' | 'plan' | 'mode:<panelId>' | 'pipeline'
+  // 'file:<path>' | 'browser:<instId>' | 'git' | 'mode:<panelId>' | 'pipeline'
   // | 'pnode:<runId>:<node>' | 'subtrace:<sid>:<toolUse>' | 'tmember:<team>:<member>' | 'plan:<toolUseId>'
   id: string;
-  kind: 'file' | 'browser' | 'git' | 'tasks' | 'plan' | 'mode' | 'pipeline' | 'pipelineNode' | 'subagentTrace' | 'teamMember' | 'planDoc';
+  kind: 'file' | 'browser' | 'git' | 'mode' | 'pipeline' | 'pipelineNode' | 'subagentTrace' | 'teamMember' | 'planDoc';
   label: string;
 }
 

@@ -109,31 +109,31 @@ export function QuestionPanel({ row, sid }: { row: Extract<Row, { kind: 'confirm
       className="rounded-lg border border-border-hover bg-card px-3 py-2.5 outline-none">
       {/* 头部：模式标签 + 问题 + 批次计数（引擎下发 1-based index） */}
       <div className="flex items-start gap-2">
-        <span className="mt-0.5 shrink-0 rounded border border-border bg-surface px-1.5 py-0.5 text-ui-xs text-foreground-subtle">
+        <span className="mt-0.5 shrink-0 rounded border border-border bg-surface px-1.5 py-0.5 text-ui-sm text-foreground-subtle">
           {isAsk ? '提问' : elicit ? (elicit.mode === 'url' ? 'MCP 链接' : 'MCP 表单') : multi ? '多选' : '选择'}
         </span>
-        <div className="min-w-0 flex-1 text-ui-sm font-medium text-foreground">{row.question}</div>
+        <div className="min-w-0 flex-1 text-ui-base font-medium text-foreground">{row.question}</div>
         {row.kind === 'confirm' && row.total && row.total > 1 && (
-          <span className="shrink-0 text-ui-xs tabular-nums text-foreground-subtlest">
+          <span className="shrink-0 text-ui-sm tabular-nums text-foreground-subtlest">
             {row.index ?? 1}/{row.total}
           </span>
         )}
       </div>
-      {row.kind === 'confirm' && row.detail && <div className="mt-1 text-ui-sm text-foreground-subtle">{row.detail}</div>}
-      {elicit?.error && <div className="mt-1 text-ui-xs text-destructive">{elicit.error}</div>}
+      {row.kind === 'confirm' && row.detail && <div className="mt-1 text-ui-base text-foreground-subtle">{row.detail}</div>}
+      {elicit?.error && <div className="mt-1 text-ui-sm text-destructive">{elicit.error}</div>}
 
       {/* MCP elicitation：表单字段 / 链接确认 */}
       {elicit && fields.length > 0 && (
         <div className="mt-2 space-y-1.5">
           {fields.map((f) => (
             <div key={f.name} className="flex items-center gap-2">
-              <span className="w-28 shrink-0 truncate text-ui-xs text-foreground-subtle" title={f.title}>{f.title}</span>
+              <span className="w-28 shrink-0 truncate text-ui-sm text-foreground-subtle" title={f.title}>{f.title}</span>
               {f.type === 'boolean' ? (
                 <span className="flex min-w-0 flex-1 gap-1">
                   {['true', 'false'].map((v) => (
                     <button key={v} type="button"
                       onClick={() => setForm((m) => ({ ...m, [f.name]: v }))}
-                      className={`rounded-md border px-2.5 py-1 text-ui-xs transition-colors ${form[f.name] === v ? 'border-brand bg-hover text-foreground' : 'border-border text-foreground-subtle hover:bg-hover'}`}>
+                      className={`rounded-md border px-2.5 py-1 text-ui-sm transition-colors ${form[f.name] === v ? 'border-brand bg-hover text-foreground' : 'border-border text-foreground-subtle hover:bg-hover'}`}>
                       {v === 'true' ? '是' : '否'}
                     </button>
                   ))}
@@ -148,7 +148,7 @@ export function QuestionPanel({ row, sid }: { row: Extract<Row, { kind: 'confirm
                   }}
                   type={f.type === 'number' || f.type === 'integer' ? 'number' : 'text'}
                   placeholder={f.required ? '必填' : '可留空'}
-                  className="h-7 min-w-0 flex-1 bg-surface text-ui-sm"
+                  className="h-7 min-w-0 flex-1 bg-surface text-ui-base"
                 />
               )}
             </div>
@@ -156,7 +156,7 @@ export function QuestionPanel({ row, sid }: { row: Extract<Row, { kind: 'confirm
         </div>
       )}
       {elicit?.mode === 'url' && elicit.url && (
-        <div className="mt-2 flex items-center gap-2 text-ui-xs">
+        <div className="mt-2 flex items-center gap-2 text-ui-sm">
           <a href={elicit.url} target="_blank" rel="noreferrer"
             className="min-w-0 truncate text-brand underline underline-offset-2">{elicit.url}</a>
           <span className="shrink-0 text-foreground-subtlest">打开后在此确认</span>
@@ -171,8 +171,8 @@ export function QuestionPanel({ row, sid }: { row: Extract<Row, { kind: 'confirm
           return (
             <button key={`${i}-${c}`} type="button" onMouseEnter={() => setHi(i)}
               onClick={() => { if (multi) toggle(i); else void answer(sid, row.id, row.requestId, c); }}
-              className={`flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-ui-sm transition-colors ${hi === i ? 'bg-hover' : ''}`}>
-              <span className={`w-4 shrink-0 text-right text-ui-xs tabular-nums ${selected ? 'text-brand' : 'text-foreground-subtlest'}`}>
+              className={`flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-ui-base transition-colors ${hi === i ? 'bg-hover' : ''}`}>
+              <span className={`w-4 shrink-0 text-right text-ui-sm tabular-nums ${selected ? 'text-brand' : 'text-foreground-subtlest'}`}>
                 {i + 1}
               </span>
               <span className={`min-w-0 flex-1 ${selected ? 'text-foreground' : 'text-foreground-subtle'}`}>{c}</span>
@@ -182,19 +182,19 @@ export function QuestionPanel({ row, sid }: { row: Extract<Row, { kind: 'confirm
         })}
         {inputOpen ? (
           <div className="flex items-center gap-2.5 px-2.5 py-1">
-            <span className="w-4 shrink-0 text-right text-ui-xs tabular-nums text-foreground-subtlest">{itemCount}</span>
+            <span className="w-4 shrink-0 text-right text-ui-sm tabular-nums text-foreground-subtlest">{itemCount}</span>
             <Input ref={inputRef} value={custom} onChange={(e) => setCustom(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && custom.trim()) { e.preventDefault(); submit(); }
                 e.stopPropagation();
               }}
-              placeholder="输入你的回答…" className="h-7 min-w-0 flex-1 bg-surface text-ui-sm" />
+              placeholder="输入你的回答…" className="h-7 min-w-0 flex-1 bg-surface text-ui-base" />
           </div>
         ) : (
           <button type="button" onMouseEnter={() => setHi(choices.length)}
             onClick={() => { setInputOpen(true); setTimeout(() => inputRef.current?.focus(), 0); }}
-            className={`flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-ui-sm ${hi === choices.length ? 'bg-hover' : ''}`}>
-            <span className="w-4 shrink-0 text-right text-ui-xs tabular-nums text-foreground-subtlest">{itemCount}</span>
+            className={`flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-ui-base ${hi === choices.length ? 'bg-hover' : ''}`}>
+            <span className="w-4 shrink-0 text-right text-ui-sm tabular-nums text-foreground-subtlest">{itemCount}</span>
             <span className="text-foreground-subtlest">输入你的回答…</span>
           </button>
         )}
@@ -203,7 +203,7 @@ export function QuestionPanel({ row, sid }: { row: Extract<Row, { kind: 'confirm
 
       {/* 底部：操作提示 + 忽略/提交 */}
       <div className="mt-2 flex items-center gap-2 border-t border-border pt-2">
-        <span className="min-w-0 flex-1 truncate text-ui-xs text-foreground-subtlest">
+        <span className="min-w-0 flex-1 truncate text-ui-sm text-foreground-subtlest">
           {elicit
             ? (elicit.mode === 'url' ? '打开链接后确认；忽略 = 取消本次请求' : '填写后提交；忽略 = 取消本次请求')
             : 'ⓘ 使用 Tab / 上下键选择，回车或空格选中'}

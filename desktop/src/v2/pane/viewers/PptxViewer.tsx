@@ -31,18 +31,18 @@ export default function PptxViewer({ b64 }: { b64: string }) {
 
   useEffect(() => { load(); }, [load]);
 
-  if (error) return <div className="p-3 text-ui-xs text-destructive">{error}</div>;
+  if (error) return <div className="p-3 text-ui-sm text-destructive">{error}</div>;
   return (
     <div className="min-h-0 flex-1 overflow-auto p-3">
-      {!slides.length && !error && <div className="text-ui-xs text-foreground-subtlest">解析中…</div>}
+      {!slides.length && !error && <div className="text-ui-sm text-foreground-subtlest">解析中…</div>}
       <div className="mx-auto flex max-w-2xl flex-col gap-3">
         {slides.map((s) => (
           <div key={s.n} className="rounded-xl border border-border bg-card p-4 shadow-sm">
             <div className="mb-1 flex items-center gap-2">
-              <span className="rounded bg-selected px-1.5 py-0.5 text-ui-2xs text-foreground-subtle">{s.n}</span>
-              <span className="truncate text-ui-sm font-semibold text-foreground">{s.title}</span>
+              <span className="rounded bg-selected px-1.5 py-0.5 text-ui-xs text-foreground-subtle">{s.n}</span>
+              <span className="truncate text-ui-base font-semibold text-foreground">{s.title}</span>
             </div>
-            <ul className="ml-4 list-disc text-ui-xs leading-5 text-foreground-subtle">
+            <ul className="ml-4 list-disc text-ui-sm leading-5 text-foreground-subtle">
               {s.lines.map((l, i) => <li key={i}>{l}</li>)}
             </ul>
           </div>

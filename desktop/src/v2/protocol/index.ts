@@ -129,6 +129,7 @@ declare global {
       };
       fs: {
         readFile(p: string): Promise<unknown>;
+        exists(p: string): Promise<{ ok: boolean; error?: string }>;
         writeFile(p: string, content: string): Promise<unknown>;
         listDir(p: string): Promise<unknown>;
         readImage(p: string): Promise<unknown>;

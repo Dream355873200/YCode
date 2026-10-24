@@ -59,13 +59,13 @@ function TextSection({ title, meta, text }: { title: string; meta?: React.ReactN
   return (
     <section className="space-y-2.5">
       <button type="button" onClick={() => setOpen(!open)}
-        className="flex w-full items-center gap-1.5 text-left text-ui-sm font-medium text-foreground">
+        className="flex w-full items-center gap-1.5 text-left text-ui-base font-medium text-foreground">
         {open ? <ChevronDownIcon className="size-3.5" /> : <ChevronRightIcon className="size-3.5" />}
         {title}
         <span className="ml-auto flex items-center gap-1.5 font-normal">{meta}</span>
       </button>
       {open && (
-        <pre className="max-h-96 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-background px-3 py-2 font-mono text-ui-xs leading-relaxed text-foreground-subtle">
+        <pre className="max-h-96 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-background px-3 py-2 font-mono text-ui-sm leading-relaxed text-foreground-subtle">
           {text || '（空）'}
         </pre>
       )}
@@ -89,7 +89,7 @@ function EffectivePrompt() {
   const agentName = state?.mode ? modes.find((m) => m.id === state.mode)?.name ?? state.mode : '';
   return (
     <DetailSection title="当前对话的系统提示词">
-      <div className="flex items-center gap-2 text-ui-xs text-foreground-subtle">
+      <div className="flex items-center gap-2 text-ui-sm text-foreground-subtle">
         <span className="min-w-0 flex-1 truncate">
           {project?.name ?? '当前项目'}{agentName ? ` · ${agentName}` : ''}
         </span>
@@ -99,7 +99,7 @@ function EffectivePrompt() {
       </div>
       {state?.error && <ErrorBox message={state.error} />}
       {state?.prompt && (
-        <pre className="max-h-[32rem] overflow-auto whitespace-pre-wrap break-words rounded-lg bg-background px-3 py-2 font-mono text-ui-xs leading-relaxed text-foreground-subtle">
+        <pre className="max-h-[32rem] overflow-auto whitespace-pre-wrap break-words rounded-lg bg-background px-3 py-2 font-mono text-ui-sm leading-relaxed text-foreground-subtle">
           {state.prompt}
         </pre>
       )}
@@ -114,12 +114,12 @@ function BuiltinPromptDetail() {
       desc="引擎内置的完整系统提示词，按段组装（身份 / 任务执行 / 语气风格 / 工具使用…），跟随引擎升级。"
       actions={<Chip>内置</Chip>}>
       <section className="space-y-3">
-        <h3 className="text-ui-sm font-medium text-foreground">分段</h3>
+        <h3 className="text-ui-base font-medium text-foreground">分段</h3>
         {!loaded ? <Loading /> : (
           <div className="space-y-3 rounded-xl border border-border/50 bg-surface px-4 py-3">
             {sections.map((s) => (
               <TextSection key={s.name} title={sectionLabel(s.name)} text={s.content}
-                meta={<span className="font-mono text-ui-2xs text-foreground-subtlest">{s.name}</span>} />
+                meta={<span className="font-mono text-ui-xs text-foreground-subtlest">{s.name}</span>} />
             ))}
           </div>
         )}
@@ -141,8 +141,8 @@ function SectionEditor({ group, name, fallback, overridden, onClose }: {
     <EditorFrame title={`${sectionLabel(name)} · ${name}`} error={error || file.error} saving={saving}
       onCancel={onClose} onSave={() => void run([{ write: { path: `prompts/${group.name}/${name}`, content: value } }], onClose)}>
       <Textarea value={value} onChange={(e) => setText(e.target.value)}
-        className="max-h-[36rem] min-h-60 font-mono text-ui-xs" />
-      {!overridden && <div className="text-ui-2xs text-foreground-subtlest">已预填内置文本；保存后该段改用这里的内容。</div>}
+        className="max-h-[36rem] min-h-60 font-mono text-ui-sm" />
+      {!overridden && <div className="text-ui-xs text-foreground-subtlest">已预填内置文本；保存后该段改用这里的内容。</div>}
     </EditorFrame>
   );
 }
@@ -176,7 +176,7 @@ function PromptGroupDetail({ name }: { name: string }) {
       }>
       {error && <ErrorBox message={error} />}
       <section className="space-y-3">
-        <h3 className="flex items-center gap-1.5 text-ui-sm font-medium text-foreground">
+        <h3 className="flex items-center gap-1.5 text-ui-base font-medium text-foreground">
           分段<span className="font-normal text-foreground-subtlest">已覆盖 {files.filter((f) => known.has(f)).length} / {sections.length}</span>
         </h3>
         {!loaded ? <Loading /> : (
@@ -211,7 +211,7 @@ function PromptGroupDetail({ name }: { name: string }) {
           </div>
         )}
         {isUser && extra.length > 0 && (
-          <div className="text-ui-xs text-foreground-subtlest">
+          <div className="text-ui-sm text-foreground-subtlest">
             非内置段名的文件不参与组装：{extra.join('、')}
           </div>
         )}
@@ -296,7 +296,7 @@ export function PromptsTab() {
       <div className="space-y-3">
         <GroupHeader title="领域规范" count={rulePlugins.length} />
         {catalog.loaded && rulePlugins.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-border/70 px-4 py-3 text-ui-sm text-foreground-subtlest">
+          <div className="rounded-xl border border-dashed border-border/70 px-4 py-3 text-ui-base text-foreground-subtlest">
             还没有插件声明领域规范（插件编辑里填写）
           </div>
         ) : (

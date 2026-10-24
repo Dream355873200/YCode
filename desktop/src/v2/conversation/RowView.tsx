@@ -3,7 +3,7 @@
 // 交互卡（审批/确认/提问）直接挂 store 回传。
 import { memo, useEffect, useRef, useState } from 'react';
 import {
-  Bot, Brain, Check as CheckIco, ChevronRightIcon, CircleAlertIcon, CircleStopIcon, CornerDownLeft as SendIco,
+  Bot, Brain, Check as CheckIco, ChevronRightIcon, CircleAlertIcon, CircleStopIcon,
   CornerDownRightIcon, FileTextIcon, GoalIcon, Loader2 as Loader2Ico, PanelRightIcon, Square as StopIco, X as XIco,
 } from 'lucide-react';
 import type { Row, ToolRow } from './projection/rows';
@@ -11,10 +11,10 @@ import { useConversation } from './store';
 import { useApp } from '../app/appState';
 import { subAgentTraceTabId } from '../lib/traceTabs';
 import { resolveRenderer, actObj, actVerbPlain, toolStats } from '../../lib/toolRender';
-import { renderMD } from '../../lib/markdown';
+import { Markdown as MarkdownImpl } from '../components/markdown/Markdown';
 import { Button } from '../components/ui/button';
 import { Collapse } from '../components/ui/collapse';
-import { Input } from '../components/ui/input';
+import { SteerComposer } from './SteerComposer';
 
 // ---------- 工具结果产物（ZCode 式）----------
 
@@ -38,7 +38,7 @@ function ArtifactChips({ text }: { text: string }) {
     <div className="flex flex-wrap gap-1.5">
       {paths.map((p) => (
         <button key={p} type="button" title={p}
-          className="flex items-center gap-1.5 rounded-lg border border-border bg-card px-2.5 py-1.5 text-ui-xs text-foreground transition-colors hover:border-brand/50 hover:bg-hover"
+          className="flex items-center gap-1.5 rounded-lg border border-border bg-card px-2.5 py-1.5 text-ui-sm text-foreground transition-colors hover:border-brand/50 hover:bg-hover"
           onClick={() => openViewerFile(p)}>
           <FileTextIcon className="size-3.5 text-brand" />
           <span className="max-w-48 truncate">{basename(p)}</span>
@@ -51,11 +51,8 @@ function ArtifactChips({ text }: { text: string }) {
 
 // ---------- 正文 / 思考 ----------
 
-// renderMD 按原文缓存（lib/markdown）；memo 挡掉父级无关重渲染
-const Markdown = memo(function Markdown({ text }: { text: string }) {
-  // renderMD 产出受控 HTML（先转义再高亮，无注入面）
-  return <div className="v2-md" dangerouslySetInnerHTML={{ __html: renderMD(text) }} />;
-});
+// Markdown 内部按 text memo；这里再挡掉父级无关重渲染
+const Markdown = memo(MarkdownImpl);
 
 function Reasoning({ row, live }: { row: Extract<Row, { kind: 'reasoning' }>; live?: boolean }) {
   const [manualOpen, setManualOpen] = useState(false);
@@ -70,7 +67,7 @@ function Reasoning({ row, live }: { row: Extract<Row, { kind: 'reasoning' }>; li
       <button
         type="button"
         onClick={() => setManualOpen(!open)}
-        className="inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-ui-xs text-foreground-subtlest hover:bg-hover hover:text-foreground-subtle"
+        className="inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-ui-sm text-foreground-subtlest hover:bg-hover hover:text-foreground-subtle"
       >
         <Brain size={12}
           className={`shrink-0 ${live ? 'animate-pulse text-brand' : 'text-foreground-subtlest'}`} />
@@ -78,7 +75,7 @@ function Reasoning({ row, live }: { row: Extract<Row, { kind: 'reasoning' }>; li
       </button>
       <Collapse open={open}>
         <div ref={boxRef}
-          className={`scroll-fine mt-1 overflow-y-auto whitespace-pre-wrap border-l-2 border-border pl-3 text-ui-sm text-foreground-subtle ${live ? 'h-28' : 'max-h-72'}`}>
+          className={`scroll-fine mt-1 overflow-y-auto whitespace-pre-wrap border-l-2 border-border pl-3 text-ui-base text-foreground-subtle ${live ? 'h-28' : 'max-h-72'}`}>
           {row.text}
         </div>
       </Collapse>
@@ -113,7 +110,7 @@ function ToolCard({ row }: { row: Extract<Row, { kind: 'tool' }> }) {
       <button
         type="button"
         onClick={() => R.expandable && setOpen(!open)}
-        className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-ui-sm ${R.expandable ? 'cursor-pointer hover:bg-hover' : 'cursor-default'}`}
+        className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-ui-base ${R.expandable ? 'cursor-pointer hover:bg-hover' : 'cursor-default'}`}
       >
         {R.expandable && (
           <ChevronRightIcon className={`size-3 shrink-0 text-foreground-subtlest transition-transform duration-200 ${open ? 'rotate-90' : ''}`} />
@@ -122,7 +119,7 @@ function ToolCard({ row }: { row: Extract<Row, { kind: 'tool' }> }) {
         <span className="text-foreground-subtle">{label}</span>
         {obj && <span className="min-w-0 truncate text-foreground-subtlest">{obj}</span>}
         {stats && (
-          <span className="ml-auto shrink-0 font-mono text-ui-xs">
+          <span className="ml-auto shrink-0 font-mono text-ui-sm">
             {stats.add > 0 && <span className="text-success">+{stats.add}</span>}
             {stats.add > 0 && stats.del > 0 && <span className="text-foreground-subtlest"> </span>}
             {stats.del > 0 && <span className="text-destructive">−{stats.del}</span>}
@@ -147,7 +144,7 @@ function ToolCard({ row }: { row: Extract<Row, { kind: 'tool' }> }) {
       <Collapse open={expandable && open} className="border-t border-border px-3 py-2">
         {R.Detail
           ? <R.Detail act={{ verb: row.name, input, obj, st: row.state === 'running' ? '…' : row.state === 'err' ? 'err' : 'ok', detail: row.result || '', toolUseId: row.toolUseId, expand: true }} />
-          : <pre className="scroll-fine max-h-72 overflow-auto whitespace-pre-wrap text-ui-xs text-foreground-subtle">{(row.result || '').replace(IMG_MARKER_STRIP_RE, '')}</pre>}
+          : <pre className="scroll-fine max-h-72 overflow-auto whitespace-pre-wrap text-ui-sm text-foreground-subtle">{(row.result || '').replace(IMG_MARKER_STRIP_RE, '')}</pre>}
       </Collapse>
     </div>
   );
@@ -167,7 +164,6 @@ const fmtTokens = (n: number): string => (n >= 1000 ? `${(n / 1000).toFixed(1)}k
 function AgentCard({ row }: { row: ToolRow }) {
   const [open, setOpen] = useState(false);
   const [showOld, setShowOld] = useState(false);
-  const [steer, setSteer] = useState('');
   const listRef = useRef<HTMLDivElement>(null);
   const { sid, openPaneTab, setPaneActive } = useApp();
   const steerAgent = useConversation((s) => s.steerAgent);
@@ -205,19 +201,12 @@ function AgentCard({ row }: { row: ToolRow }) {
   // 结果去掉统计附注（卡头已显示）
   const result = (row.result || '').replace(/\n*--- agent「[^」]*」: .*---\s*$/, '').trim();
 
-  const sendSteer = (): void => {
-    const text = steer.trim();
-    if (!text || !sid || !row.toolUseId) return;
-    setSteer('');
-    void steerAgent(sid, row.toolUseId, text);
-  };
-
   return (
     <div className="my-1 rounded-lg border border-border bg-surface">
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-ui-sm hover:bg-hover"
+        className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-ui-base hover:bg-hover"
       >
         <ChevronRightIcon className={`size-3 shrink-0 text-foreground-subtlest transition-transform duration-200 ${open ? 'rotate-90' : ''}`} />
         {running
@@ -225,7 +214,7 @@ function AgentCard({ row }: { row: ToolRow }) {
           : <Bot size={13} className="shrink-0 text-foreground-subtlest" />}
         <span className="shrink-0 text-foreground-subtle">子代理 {name}</span>
         {task && <span className="min-w-0 truncate text-foreground-subtlest">{task}</span>}
-        <span className="ml-auto flex shrink-0 items-center gap-2 text-ui-xs">
+        <span className="ml-auto flex shrink-0 items-center gap-2 text-ui-sm">
           {meta && <span className="text-foreground-subtlest">{meta}</span>}
           <span className={stCls}>{stText}</span>
           {running && sid && row.toolUseId && (
@@ -262,7 +251,7 @@ function AgentCard({ row }: { row: ToolRow }) {
       </button>
       {/* 折叠态：运行中直播最新一条活动 */}
       {!open && running && latest && (
-        <div className="flex items-center gap-1.5 border-t border-border px-3 py-1 text-ui-xs text-foreground-subtlest">
+        <div className="flex items-center gap-1.5 border-t border-border px-3 py-1 text-ui-sm text-foreground-subtlest">
           <ChevronRightIcon className="size-3 shrink-0 text-brand" />
           <span className="min-w-0 truncate">{latest}</span>
         </div>
@@ -274,7 +263,7 @@ function AgentCard({ row }: { row: ToolRow }) {
               <button
                 type="button"
                 onClick={() => setShowOld(!showOld)}
-                className="mb-0.5 text-ui-xs text-foreground-subtlest hover:text-foreground-subtle"
+                className="mb-0.5 text-ui-sm text-foreground-subtlest hover:text-foreground-subtle"
               >
                 {showOld ? '收起更早的活动' : `更早 ${older} 条…`}
               </button>
@@ -282,7 +271,7 @@ function AgentCard({ row }: { row: ToolRow }) {
             {visible.map((a, i) => {
               const isLast = i === visible.length - 1;
               return (
-                <div key={i} className={`flex items-center gap-1.5 py-px text-ui-xs ${isLast && running ? 'text-foreground-subtle' : 'text-foreground-subtlest'}`}>
+                <div key={i} className={`flex items-center gap-1.5 py-px text-ui-sm ${isLast && running ? 'text-foreground-subtle' : 'text-foreground-subtlest'}`}>
                   {isLast && running
                     ? <ChevronRightIcon className="size-3 shrink-0 text-brand" />
                     : <span className="flex size-3 shrink-0 items-center justify-center"><span className="size-1 rounded-full bg-current" /></span>}
@@ -293,37 +282,18 @@ function AgentCard({ row }: { row: ToolRow }) {
           </div>
         )}
         {status === 'failed' && ag?.error && (
-          <div className="border-t border-border px-3 py-1.5 text-ui-xs text-destructive">{ag.error}</div>
+          <div className="border-t border-border px-3 py-1.5 text-ui-sm text-destructive">{ag.error}</div>
         )}
         {result && (
-          <div className="scroll-fine max-h-72 overflow-y-auto border-t border-border px-3 py-2 text-ui-sm">
+          <div className="scroll-fine max-h-72 overflow-y-auto border-t border-border px-3 py-2 text-ui-base">
             <Markdown text={result} />
           </div>
         )}
       </Collapse>
       {/* 运行中：插话下沉——指示在子代理自己的工具批边界送达，不用等它整个结束 */}
       {running && sid && row.toolUseId && (
-        <div className="flex items-center gap-1.5 border-t border-border px-3 py-1.5">
-          <Input
-            value={steer}
-            onChange={(e) => setSteer(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && steer.trim()) { e.preventDefault(); sendSteer(); }
-              e.stopPropagation();
-            }}
-            placeholder={`给 ${name} 发指示…`}
-            className="h-7 min-w-0 flex-1 bg-surface text-ui-xs"
-          />
-          <button
-            type="button"
-            aria-label="发送指示"
-            title="发送指示"
-            disabled={!steer.trim()}
-            className="shrink-0 rounded p-1 text-foreground-subtlest hover:bg-hover hover:text-foreground disabled:opacity-40"
-            onClick={sendSteer}
-          >
-            <SendIco size={13} />
-          </button>
+        <div className="border-t border-border px-2.5 py-1.5">
+          <SteerComposer name={name} onSend={(t) => sid && row.toolUseId && void steerAgent(sid, row.toolUseId, t)} />
         </div>
       )}
     </div>
@@ -364,7 +334,7 @@ function ReadItem({ row }: { row: ToolRow }) {
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="flex w-full items-center gap-2 px-3 py-1 text-left text-ui-xs hover:bg-hover"
+        className="flex w-full items-center gap-2 px-3 py-1 text-left text-ui-sm hover:bg-hover"
       >
         <span className="min-w-0 truncate text-foreground-subtle">
           {path.split(/[\\/]/).pop() || path || '（未知文件）'}
@@ -372,7 +342,7 @@ function ReadItem({ row }: { row: ToolRow }) {
         <span className={`ml-auto shrink-0 ${stCls}`}>{stIco}</span>
       </button>
       <Collapse open={open}>
-        <pre className="scroll-fine max-h-60 overflow-auto border-t border-border px-3 py-2 text-ui-xs text-foreground-subtle">
+        <pre className="scroll-fine max-h-60 overflow-auto border-t border-border px-3 py-2 text-ui-sm text-foreground-subtle">
           {row.result}
         </pre>
       </Collapse>
@@ -393,7 +363,7 @@ export function ReadGroup({ group }: { group: ReadGroupUnit }) {
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-ui-sm hover:bg-hover"
+        className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-ui-base hover:bg-hover"
       >
         <ChevronRightIcon className={`size-3 shrink-0 text-foreground-subtlest transition-transform duration-200 ${open ? 'rotate-90' : ''}`} />
         <span className="text-foreground-subtle">探索</span>
@@ -416,7 +386,7 @@ function PermissionCard({ row, sid }: { row: Extract<Row, { kind: 'permission' }
   const [bad, setBad] = useState('');
   if (row.resolved) {
     return (
-      <div className="my-2 rounded-lg border border-border bg-surface px-3 py-2 text-ui-sm text-foreground-subtlest">
+      <div className="my-2 rounded-lg border border-border bg-surface px-3 py-2 text-ui-base text-foreground-subtlest">
         {row.toolName} · {row.resolved === 'approved' ? '已允许' : '已拒绝'}
       </div>
     );
@@ -436,7 +406,7 @@ function PermissionCard({ row, sid }: { row: Extract<Row, { kind: 'permission' }
   };
   return (
     <div className="my-2 rounded-lg border border-border-hover bg-card px-3 py-2.5">
-      <div className="text-ui-sm">
+      <div className="text-ui-base">
         <span className="font-medium text-foreground">允许执行 {row.toolName}</span>
         {obj && <span className="ml-2 text-foreground-subtlest">{obj}</span>}
       </div>
@@ -447,9 +417,9 @@ function PermissionCard({ row, sid }: { row: Extract<Row, { kind: 'permission' }
             onChange={(e) => { setDraft(e.target.value); setBad(''); }}
             rows={Math.min(12, Math.max(3, draft.split('\n').length))}
             spellCheck={false}
-            className="mt-2 w-full rounded-md border border-border bg-surface p-2 font-mono text-ui-xs text-foreground outline-none focus:border-brand/60"
+            className="mt-2 w-full rounded-md border border-border bg-surface p-2 font-mono text-ui-sm text-foreground outline-none focus:border-brand/60"
           />
-          {bad && <div className="mt-1 text-ui-xs text-destructive">{bad}</div>}
+          {bad && <div className="mt-1 text-ui-sm text-destructive">{bad}</div>}
           <div className="mt-2 flex gap-2">
             <Button type="button" size="sm" onClick={approveEdited}>以此参数允许</Button>
             <Button type="button" variant="ghost" size="sm" onClick={() => setEditing(false)}>取消</Button>
@@ -473,7 +443,7 @@ function PermissionCard({ row, sid }: { row: Extract<Row, { kind: 'permission' }
 function AskHint({ row }: { row: Extract<Row, { kind: 'confirm' | 'ask' }> }) {
   if (row.resolved) {
     return (
-      <div className="my-2 flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-2 text-ui-sm text-foreground-subtlest">
+      <div className="my-2 flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-2 text-ui-base text-foreground-subtlest">
         <span className="min-w-0 truncate">{row.question}</span>
         <CornerDownRightIcon className="size-3.5 shrink-0" />
         <span className="min-w-0 truncate text-foreground-subtle">{row.answer}</span>
@@ -481,7 +451,7 @@ function AskHint({ row }: { row: Extract<Row, { kind: 'confirm' | 'ask' }> }) {
     );
   }
   return (
-    <div className="my-2 flex items-center gap-1.5 px-1 text-ui-xs text-foreground-subtlest">
+    <div className="my-2 flex items-center gap-1.5 px-1 text-ui-sm text-foreground-subtlest">
       <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-brand" />
       <span className="min-w-0 truncate">{row.question}</span>
       <span className="shrink-0">· 请在下方作答</span>
@@ -493,7 +463,7 @@ function AskHint({ row }: { row: Extract<Row, { kind: 'confirm' | 'ask' }> }) {
 
 function StatusLine({ row }: { row: Extract<Row, { kind: 'status' }> }) {
   return (
-    <div className="my-1 flex items-center gap-2 px-1 text-ui-xs text-brand">
+    <div className="my-1 flex items-center gap-2 px-1 text-ui-sm text-brand">
       <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-brand border-t-transparent" />
       {row.text}
     </div>
@@ -504,13 +474,13 @@ function Notice({ row }: { row: Extract<Row, { kind: 'notice' }> }) {
   if (row.tone === 'error' || row.tone === 'stopped') {
     const Icon = row.tone === 'error' ? CircleAlertIcon : CircleStopIcon;
     return (
-      <div className={`my-1.5 flex items-start gap-1.5 px-1 text-ui-sm ${row.tone === 'error' ? 'text-destructive' : 'text-foreground-subtle'}`}>
+      <div className={`my-1.5 flex items-start gap-1.5 px-1 text-ui-base ${row.tone === 'error' ? 'text-destructive' : 'text-foreground-subtle'}`}>
         <Icon className="mt-0.75 size-3.5 shrink-0" />
         <span className="min-w-0 whitespace-pre-wrap break-words">{row.text}</span>
       </div>
     );
   }
-  return <div className="my-1.5 px-1 text-ui-sm text-foreground-subtlest">{row.text}</div>;
+  return <div className="my-1.5 px-1 text-ui-base text-foreground-subtlest">{row.text}</div>;
 }
 
 // ---------- 分发 ----------
@@ -525,7 +495,7 @@ function GoalTurnDivider({ text }: { text: string }) {
   return (
     <div className="my-3 flex items-center gap-2" title={text}>
       <span className="h-px flex-1 bg-border" />
-      <span className="flex max-w-[80%] items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1 text-ui-xs text-foreground-subtle">
+      <span className="flex max-w-[80%] items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1 text-ui-sm text-foreground-subtle">
         <GoalIcon className="size-3.5 shrink-0 text-brand" />
         <span className="shrink-0">目标第 {n} 轮</span>
         {(next || reason) && <span className="min-w-0 truncate text-foreground-subtlest">· {next || reason}</span>}
@@ -535,7 +505,7 @@ function GoalTurnDivider({ text }: { text: string }) {
   );
 }
 
-export function RowView({ row, sid, liveThinking }: { row: Row; sid: string; liveThinking?: boolean }) {
+export function RowView({ row, sid, liveThinking, live }: { row: Row; sid: string; liveThinking?: boolean; live?: boolean }) {
   switch (row.kind) {
     case 'user':
       if (GOAL_TURN_RE.test(row.text)) return <GoalTurnDivider text={row.text} />;
@@ -547,7 +517,7 @@ export function RowView({ row, sid, liveThinking }: { row: Row; sid: string; liv
         </div>
       );
     case 'assistant_text':
-      return <div className="my-1.5"><Markdown text={row.text} /></div>;
+      return <div className="my-1.5"><Markdown text={row.text} streaming={live} /></div>;
     case 'reasoning':
       return <Reasoning row={row} live={liveThinking} />;
     case 'tool':

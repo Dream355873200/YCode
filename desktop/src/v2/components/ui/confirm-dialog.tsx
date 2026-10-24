@@ -41,9 +41,9 @@ function ConfirmDialog({
       <DialogContent className="max-w-100" showCloseButton={false}>
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
-          {description && <DialogDescription className="text-ui-sm">{description}</DialogDescription>}
+          {description && <DialogDescription className="text-ui-base">{description}</DialogDescription>}
         </DialogHeader>
-        {error && <div className="rounded-lg bg-destructive/10 px-2.5 py-1.5 text-ui-xs text-destructive">{error}</div>}
+        {error && <div className="rounded-lg bg-destructive/10 px-2.5 py-1.5 text-ui-sm text-destructive">{error}</div>}
         <DialogFooter>
           <Button variant="outline" disabled={busy} onClick={() => onOpenChange(false)}>取消</Button>
           <Button variant={tone === "destructive" ? "destructive" : "default"} disabled={busy}

@@ -47,7 +47,7 @@ function ThreadStatus({ t, unread }: { t: Thread; unread: boolean }) {
 function PendingPill({ kind }: { kind: 'ask' | 'approval' }) {
   const Icon = kind === 'ask' ? MessageCircleQuestionIcon : ShieldAlertIcon;
   return (
-    <span className="flex h-5 shrink-0 items-center gap-1 rounded-full bg-warning/15 px-1.5 text-ui-2xs font-medium text-warning">
+    <span className="flex h-5 shrink-0 items-center gap-1 rounded-full bg-warning/15 px-1.5 text-ui-xs font-medium text-warning">
       <Icon className="size-3" />{kind === 'ask' ? '等你回答' : '等你批准'}
     </span>
   );
@@ -92,7 +92,7 @@ function ThreadRow({ t, active, unread }: { t: Thread; active: boolean; unread: 
                 if (next) void updateThread(t.id, { title: next });
               }} />
             ) : (
-              <span className={cn('min-w-0 flex-1 truncate text-ui-sm', active || unread ? 'text-foreground' : 'text-foreground-subtle')}
+              <span className={cn('min-w-0 flex-1 truncate text-ui-base', active || unread ? 'text-foreground' : 'text-foreground-subtle')}
                 title={t.title}>
                 {t.title}
               </span>
@@ -102,7 +102,7 @@ function ThreadRow({ t, active, unread }: { t: Thread; active: boolean; unread: 
                 {t.pending
                   ? <span className={cn(menuOpen ? 'hidden' : 'group-hover/thread:hidden')}><PendingPill kind={t.pending} /></span>
                   : (
-                    <span className={cn('shrink-0 text-ui-2xs tabular-nums text-foreground-subtlest', menuOpen ? 'hidden' : 'group-hover/thread:hidden')}>
+                    <span className={cn('shrink-0 text-ui-xs tabular-nums text-foreground-subtlest', menuOpen ? 'hidden' : 'group-hover/thread:hidden')}>
                       {t.state === 'running' ? '' : relTime(t.updatedAt)}
                     </span>
                   )}
@@ -161,10 +161,10 @@ function TeamRow({ team, active }: { team: TeamSummary; active: boolean }) {
       {team.running > 0
         ? <Loader2Icon className="size-3.5 shrink-0 animate-spin text-brand" />
         : <UsersIcon className="size-3.5 shrink-0 text-foreground-subtle" />}
-      <span className={cn('min-w-0 flex-1 truncate text-ui-sm', active ? 'text-foreground' : 'text-foreground-subtle')}>
+      <span className={cn('min-w-0 flex-1 truncate text-ui-base', active ? 'text-foreground' : 'text-foreground-subtle')}>
         {team.name}
       </span>
-      <span className="shrink-0 text-ui-2xs tabular-nums text-foreground-subtlest">
+      <span className="shrink-0 text-ui-xs tabular-nums text-foreground-subtlest">
         {team.running > 0 ? `${team.running}/${team.members}` : `${team.members} 人`}
       </span>
     </div>
@@ -212,7 +212,7 @@ function ProjectGroup({ p, expanded, onToggle }: { p: Project; expanded: boolean
             if (next) void window.amc.projects.rename(p.dir, next).then(() => refreshProjects());
           }} />
         ) : (
-          <span className="min-w-0 flex-1 truncate text-ui-sm font-medium text-foreground" title={p.dir}>{p.name}</span>
+          <span className="min-w-0 flex-1 truncate text-ui-base font-medium text-foreground" title={p.dir}>{p.name}</span>
         )}
         {!expanded && running > 0 && <Loader2Icon className="size-3 shrink-0 animate-spin text-brand" />}
         {!expanded && attention && <span className="size-1.5 shrink-0 rounded-full bg-warning" />}
@@ -255,7 +255,7 @@ function ProjectGroup({ p, expanded, onToggle }: { p: Project; expanded: boolean
           ))}
           {live.length > PAGE && (
             <button type="button" onClick={() => setShowAll(!showAll)}
-              className="h-6.5 rounded-lg pl-12.5 text-left text-ui-xs text-foreground-subtlest hover:bg-hover hover:text-foreground-subtle">
+              className="h-6.5 rounded-lg pl-12.5 text-left text-ui-sm text-foreground-subtlest hover:bg-hover hover:text-foreground-subtle">
               {showAll ? '收起' : `显示全部 ${live.length} 个对话`}
             </button>
           )}
@@ -266,7 +266,7 @@ function ProjectGroup({ p, expanded, onToggle }: { p: Project; expanded: boolean
           {archived.length > 0 && (
             <>
               <button type="button" onClick={() => setShowArchived(!showArchived)}
-                className="flex h-6.5 items-center gap-1.5 rounded-lg pl-7 text-left text-ui-xs text-foreground-subtlest hover:bg-hover hover:text-foreground-subtle">
+                className="flex h-6.5 items-center gap-1.5 rounded-lg pl-7 text-left text-ui-sm text-foreground-subtlest hover:bg-hover hover:text-foreground-subtle">
                 <ArchiveIcon className="size-3" />
                 {showArchived ? '隐藏已归档' : `已归档 ${archived.length}`}
               </button>
@@ -292,7 +292,7 @@ function SidebarFooter() {
   return (
     <div className="m-2 mt-0 flex items-center gap-2.5 rounded-lg border border-border bg-card px-2.5 py-2">
       <EngineDot status={engineStatus.status} />
-      <span className="min-w-0 flex-1 truncate text-ui-sm text-foreground-subtle"
+      <span className="min-w-0 flex-1 truncate text-ui-base text-foreground-subtle"
         title={engineStatus.status === 'running' ? '引擎运行中' : `引擎：${engineStatus.status}`}>
         {engineStatus.model || engineStatus.status}
       </span>
@@ -335,29 +335,29 @@ export function Sidebar() {
       )}>
         <div className="drag flex h-12 shrink-0 items-center px-4">
           <button type="button" aria-label="收起侧栏" title="收起侧栏"
-            className="no-drag flex h-6 w-6 items-center justify-center rounded-md bg-primary text-ui-sm font-bold text-primary-foreground transition-colors hover:bg-primary/80"
+            className="no-drag flex h-6 w-6 items-center justify-center rounded-md bg-primary text-ui-base font-bold text-primary-foreground transition-colors hover:bg-primary/80"
             onClick={() => setSidebarOpen(false)}>
             Y
           </button>
         </div>
         <nav className="grid gap-px px-2">
           <button type="button" onClick={() => newThread()} disabled={!projects.length}
-            className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-ui-sm text-foreground hover:bg-hover disabled:opacity-50"
+            className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-ui-base text-foreground hover:bg-hover disabled:opacity-50"
             title="新对话（Ctrl+N）">
             <SquarePenIcon className="size-4 shrink-0 text-foreground-subtle" />
             <span className="min-w-0 flex-1 truncate text-left">新对话</span>
-            <span className="shrink-0 text-ui-2xs text-foreground-subtlest">Ctrl+N</span>
+            <span className="shrink-0 text-ui-xs text-foreground-subtlest">Ctrl+N</span>
           </button>
           <button type="button" onClick={() => setPaletteOpen(true)}
-            className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-ui-sm text-foreground-subtle hover:bg-hover hover:text-foreground"
+            className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-ui-base text-foreground-subtle hover:bg-hover hover:text-foreground"
             title="搜索对话与命令（Ctrl+K）">
             <SearchIcon className="size-4 shrink-0 text-foreground-subtle" />
             <span className="min-w-0 flex-1 truncate text-left">搜索</span>
-            <span className="shrink-0 text-ui-2xs text-foreground-subtlest">Ctrl+K</span>
+            <span className="shrink-0 text-ui-xs text-foreground-subtlest">Ctrl+K</span>
           </button>
         </nav>
 
-        <div className="mt-3 flex h-6 items-center gap-2 pl-4 pr-2 text-ui-2xs font-medium tracking-wider text-foreground-subtlest">
+        <div className="mt-3 flex h-6 items-center gap-2 pl-4 pr-2 text-ui-xs font-medium tracking-wider text-foreground-subtlest">
           <span className="flex-1">项目</span>
           <button type="button" title="添加项目" aria-label="添加项目"
             className="rounded p-1 text-foreground-subtle hover:bg-hover hover:text-foreground"
@@ -373,7 +373,7 @@ export function Sidebar() {
           ))}
           {projects.length === 0 && (
             <button type="button" onClick={() => setCreateDialogOpen(true)}
-              className="mt-1 flex w-full items-center gap-2 rounded-lg border border-dashed border-border px-3 py-3 text-ui-sm text-foreground-subtle hover:border-border-hover hover:text-foreground">
+              className="mt-1 flex w-full items-center gap-2 rounded-lg border border-dashed border-border px-3 py-3 text-ui-base text-foreground-subtle hover:border-border-hover hover:text-foreground">
               <PlusIcon className="size-4" />添加第一个项目
             </button>
           )}
@@ -391,14 +391,14 @@ export function Sidebar() {
             className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-border bg-card px-2.5 py-1.5 text-left transition-colors hover:bg-hover"
             onClick={() => setFileTreeOpen(false)}>
             <ArrowLeftIcon className="size-4 shrink-0 text-foreground-subtle" />
-            <span className="min-w-0 flex-1 truncate text-ui-sm text-foreground">
+            <span className="min-w-0 flex-1 truncate text-ui-base text-foreground">
               {project ? project.name : '返回对话列表'}
             </span>
           </button>
         </div>
         {project
           ? <FileTree />
-          : <div className="flex flex-1 items-center justify-center px-6 text-center text-ui-xs text-foreground-subtlest">先选择一个项目</div>}
+          : <div className="flex flex-1 items-center justify-center px-6 text-center text-ui-sm text-foreground-subtlest">先选择一个项目</div>}
         <SidebarFooter />
       </div>
 
@@ -424,7 +424,7 @@ export function Sidebar() {
               <button key={p.dir} type="button" title={p.name} aria-label={`切换到 ${p.name}`}
                 onClick={() => openProject(p.dir)}
                 className={cn(
-                  'relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border text-ui-2xs font-medium transition-colors',
+                  'relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border text-ui-xs font-medium transition-colors',
                   sameDir(project?.dir, p.dir)
                     ? 'border-brand bg-selected text-foreground'
                     : 'border-border bg-card text-foreground hover:bg-hover',

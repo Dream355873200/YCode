@@ -62,6 +62,7 @@ contextBridge.exposeInMainWorld('amc', {
   // 文件
   fs: {
     readFile: (p) => ipcRenderer.invoke('fs:readFile', p),
+    exists: (p) => ipcRenderer.invoke('fs:exists', p),
     writeFile: (p, content) => ipcRenderer.invoke('fs:writeFile', p, content),
     listDir: (p) => ipcRenderer.invoke('fs:listDir', p),
     readImage: (p) => ipcRenderer.invoke('fs:readImage', p),

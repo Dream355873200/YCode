@@ -3,7 +3,7 @@
 // 内容），Markdown 渲染。挂载即读（SidePane tab 切换 = 重新挂载 = 刷新）。
 import { useEffect, useState } from 'react';
 import { useApp } from '../app/appState';
-import { renderMD } from '../../lib/markdown';
+import { Markdown } from '../components/markdown/Markdown';
 
 const PLACEHOLDER = '（SPEC.md 尚未生成 — 与 AI 对话后创建）';
 
@@ -27,7 +27,7 @@ export default function SpecPanel() {
   if (!project) return null;
   return (
     <div className="min-h-0 flex-1 overflow-y-auto px-3 py-2">
-      <div className="v2-md" dangerouslySetInnerHTML={{ __html: renderMD(spec) }} />
+      <div className="text-ui-base text-foreground"><Markdown text={spec} /></div>
     </div>
   );
 }

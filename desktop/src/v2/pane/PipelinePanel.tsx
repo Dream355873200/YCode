@@ -55,10 +55,10 @@ function NodeCard({ n, x, y, onOpen }: { n: DagNode; x: number; y: number; onOpe
       <div className="flex h-full flex-col gap-0.5 py-1.5 pl-3 pr-2">
         <div className="flex items-center gap-1.5">
           <StatusIcon status={n.status} />
-          <span className="min-w-0 truncate text-ui-xs font-medium text-foreground">{n.name}</span>
+          <span className="min-w-0 truncate text-ui-sm font-medium text-foreground">{n.name}</span>
           <ChevronDownIcon className="ml-auto size-3 shrink-0 rotate-[-90deg] text-foreground-subtlest opacity-0 transition-opacity group-hover:opacity-100" />
         </div>
-        <div className="line-clamp-2 text-ui-2xs leading-snug text-foreground-subtlest">
+        <div className="line-clamp-2 text-ui-xs leading-snug text-foreground-subtlest">
           {n.activity || (n.injects.length ? `接收 ${n.injects.join('、')} 的产出` : '') || '等待运行 · 点击查看详情'}
         </div>
       </div>
@@ -153,8 +153,8 @@ export function PipelinePanel() {
           <div className="flex size-11 items-center justify-center rounded-2xl border border-border bg-surface">
             <WorkflowIcon className="size-5 text-foreground-subtlest" />
           </div>
-          <div className="text-ui-sm font-medium text-foreground">还没有流水线运行</div>
-          <div className="text-ui-xs leading-relaxed text-foreground-subtlest">
+          <div className="text-ui-base font-medium text-foreground">还没有流水线运行</div>
+          <div className="text-ui-sm leading-relaxed text-foreground-subtlest">
             Agent 用 create_pipeline 编排 DAG 时<br />节点拓扑与实时状态会出现在这里
           </div>
         </div>
@@ -163,7 +163,7 @@ export function PipelinePanel() {
     // 无实时数据但有历史：直接列出过往运行（点击回看 DAG 与节点产出）
     return (
       <div className="flex h-full flex-col overflow-hidden">
-        <div className="shrink-0 border-b border-border/50 px-3 py-2 text-ui-xs font-medium text-foreground">历史运行</div>
+        <div className="shrink-0 border-b border-border/50 px-3 py-2 text-ui-sm font-medium text-foreground">历史运行</div>
         <div className="min-h-0 flex-1 overflow-y-auto p-2">
           <div className="grid gap-1.5">
             {history.map((h) => {
@@ -173,15 +173,15 @@ export function PipelinePanel() {
                 <button key={h.id} type="button"
                   className="rounded-xl border border-border bg-card px-3 py-2 text-left transition-colors hover:border-brand/50 hover:bg-hover"
                   onClick={() => openRun(h.id)}>
-                  <div className="flex items-center gap-1.5 text-ui-xs">
+                  <div className="flex items-center gap-1.5 text-ui-sm">
                     <HistoryIcon className="size-3 shrink-0 text-foreground-subtlest" />
                     <span className="font-medium text-foreground">{new Date(h.started_at).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false })}</span>
-                    <span className="ml-auto shrink-0 text-ui-2xs text-foreground-subtlest">
+                    <span className="ml-auto shrink-0 text-ui-xs text-foreground-subtlest">
                       {fail > 0 ? `${fail} 失败` : '已完成'} · {h.nodes.length} 节点
                     </span>
                   </div>
-                  <div className="mt-1 truncate text-ui-2xs text-foreground-subtlest">{h.nodes.join(' · ')}</div>
-                  <div className="mt-0.5 text-ui-2xs text-foreground-subtlest">{ok}/{h.nodes.length} 完成 · 点击查看 DAG 与节点产出</div>
+                  <div className="mt-1 truncate text-ui-xs text-foreground-subtlest">{h.nodes.join(' · ')}</div>
+                  <div className="mt-0.5 text-ui-xs text-foreground-subtlest">{ok}/{h.nodes.length} 完成 · 点击查看 DAG 与节点产出</div>
                 </button>
               );
             })}
@@ -209,10 +209,10 @@ export function PipelinePanel() {
       <div className="shrink-0 border-b border-border/50 px-3 py-2">
         <div className="flex items-center gap-1.5">
           <WorkflowIcon className="size-3.5 shrink-0 text-foreground-subtlest" />
-          <span className="truncate text-ui-xs font-medium text-foreground">
+          <span className="truncate text-ui-sm font-medium text-foreground">
             {viewSnap ? '历史运行' : running > 0 ? '流水线运行中' : hasError ? '有节点失败' : '流水线'}
           </span>
-          <span className="ml-auto shrink-0 text-ui-2xs text-foreground-subtlest">{done}/{viewNodes.length}</span>
+          <span className="ml-auto shrink-0 text-ui-xs text-foreground-subtlest">{done}/{viewNodes.length}</span>
         </div>
         <div className="mt-1.5 flex items-center gap-2">
           <span className="h-1 min-w-0 flex-1 overflow-hidden rounded-full bg-neutral-500/20">
@@ -222,7 +222,7 @@ export function PipelinePanel() {
           {!viewSnap && history.length > 0 && (
             <select
               aria-label="历史运行"
-              className="shrink-0 rounded-md border border-border bg-input px-1 py-0.5 text-ui-2xs text-foreground-subtle outline-none"
+              className="shrink-0 rounded-md border border-border bg-input px-1 py-0.5 text-ui-xs text-foreground-subtle outline-none"
               defaultValue=""
               onChange={(e) => {
                 if (e.target.value) openRun(e.target.value);
@@ -238,14 +238,14 @@ export function PipelinePanel() {
           )}
           {viewSnap && (
             <button type="button"
-              className="flex shrink-0 items-center gap-0.5 rounded-md border border-border px-1 py-0.5 text-ui-2xs text-foreground-subtle hover:bg-hover hover:text-foreground"
+              className="flex shrink-0 items-center gap-0.5 rounded-md border border-border px-1 py-0.5 text-ui-xs text-foreground-subtle hover:bg-hover hover:text-foreground"
               onClick={() => setViewSnap(null)}>
               <XIcon className="size-2.5" /> 退出回看
             </button>
           )}
         </div>
         {(viewSnap ? true : !!goal) && (
-          <div className="mt-1 line-clamp-1 text-ui-2xs text-foreground-subtlest">
+          <div className="mt-1 line-clamp-1 text-ui-xs text-foreground-subtlest">
             {viewSnap
               ? `${new Date(viewStarted!).toLocaleString('zh-CN', { hour12: false })}${viewFinished ? ` · ${new Date(viewFinished).toLocaleTimeString('zh-CN', { hour12: false })} 完成` : ''} · 点节点查看运行过程`
               : goal}

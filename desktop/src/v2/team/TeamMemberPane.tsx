@@ -50,13 +50,13 @@ export function TeamMemberPane({ team, member }: { team: string; member: string 
       <div className="shrink-0 border-b border-border/50 px-3 py-2">
         <div className="flex items-center gap-1.5">
           <span className={live.status === 'running' ? 'size-2 animate-pulse rounded-full bg-brand' : 'size-2 rounded-full bg-foreground-subtlest'} />
-          <span className="text-ui-sm font-medium text-foreground">{member === 'leader' ? '队长' : member}</span>
-          <span className="ml-auto truncate text-ui-xs text-foreground-subtlest">{live.activity || (live.status === 'running' ? '工作中' : '空闲')}</span>
+          <span className="text-ui-base font-medium text-foreground">{member === 'leader' ? '队长' : member}</span>
+          <span className="ml-auto truncate text-ui-sm text-foreground-subtlest">{live.activity || (live.status === 'running' ? '工作中' : '空闲')}</span>
         </div>
-        {info?.role && <div className="mt-1 line-clamp-2 text-ui-xs text-foreground-subtle" title={info.role}>{info.role}</div>}
+        {info?.role && <div className="mt-1 line-clamp-2 text-ui-sm text-foreground-subtle" title={info.role}>{info.role}</div>}
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
-        {rows.length === 0 && <div className="py-8 text-center text-ui-xs text-foreground-subtlest">还没有会话历史</div>}
+        {rows.length === 0 && <div className="py-8 text-center text-ui-sm text-foreground-subtlest">还没有会话历史</div>}
         {rows.map((r) => ((r as { kind: string }).kind === 'readgroup'
           ? <ReadGroup key={r.id} group={r as ReadGroupUnit} />
           : <RowView key={(r as Row).id} row={r as Row} sid={info?.sessionId ?? ''} />))}
@@ -65,7 +65,7 @@ export function TeamMemberPane({ team, member }: { team: string; member: string 
         <textarea value={draft} onChange={(e) => setDraft(e.target.value)} rows={1}
           onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); void steer(); } }}
           placeholder={`对 ${member === 'leader' ? '队长' : member} 说…`}
-          className="min-h-0 flex-1 resize-none rounded-lg border border-input-border bg-input px-2 py-1.5 text-ui-sm text-foreground outline-none placeholder:text-foreground-subtlest focus:border-input-border-focused" />
+          className="min-h-0 flex-1 resize-none rounded-lg border border-input-border bg-input px-2 py-1.5 text-ui-base text-foreground outline-none placeholder:text-foreground-subtlest focus:border-input-border-focused" />
         <button type="button" aria-label="发送" disabled={!draft.trim()} onClick={() => void steer()}
           className="flex size-8 items-center justify-center rounded-lg bg-brand text-foreground-inverse disabled:opacity-40">
           <SendIcon className="size-3.5" />

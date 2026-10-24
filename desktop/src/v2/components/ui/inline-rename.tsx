@@ -29,7 +29,7 @@ function InlineRename({ value, onDone, className }: {
       }}
       onBlur={() => finish(v.trim() && v.trim() !== value ? v.trim() : null)}
       className={cn(
-        "no-drag h-6 min-w-0 flex-1 rounded-md border border-input-border-focused bg-input px-1.5 text-ui-sm text-foreground outline-none",
+        "no-drag h-6 min-w-0 flex-1 rounded-md border border-input-border-focused bg-input px-1.5 text-ui-base text-foreground outline-none",
         className,
       )} />
   );

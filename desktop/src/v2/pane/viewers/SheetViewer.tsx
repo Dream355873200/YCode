@@ -42,14 +42,14 @@ export default function SheetViewer({ b64, file }: { b64: string; file: string }
     }
   }, [b64]);
 
-  if (error) return <div className="p-3 text-ui-xs text-destructive">{error}</div>;
+  if (error) return <div className="p-3 text-ui-sm text-destructive">{error}</div>;
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {names.length > 1 && (
         <div className="flex shrink-0 gap-1 overflow-x-auto border-b border-border/50 px-2 py-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {names.map((n, i) => (
             <button key={n} type="button"
-              className={`shrink-0 rounded-md px-2 py-0.5 text-ui-2xs ${i === active ? 'bg-selected text-foreground' : 'text-foreground-subtle hover:bg-hover'}`}
+              className={`shrink-0 rounded-md px-2 py-0.5 text-ui-xs ${i === active ? 'bg-selected text-foreground' : 'text-foreground-subtle hover:bg-hover'}`}
               onClick={() => pick(i)}>
               {n}
             </button>
@@ -57,8 +57,8 @@ export default function SheetViewer({ b64, file }: { b64: string; file: string }
         </div>
       )}
       <div className="min-h-0 flex-1 overflow-auto p-2">
-        {!grid ? <div className="text-ui-xs text-foreground-subtlest">解析中…</div> : (
-          <table className="border-collapse text-ui-2xs">
+        {!grid ? <div className="text-ui-sm text-foreground-subtlest">解析中…</div> : (
+          <table className="border-collapse text-ui-xs">
             <tbody>
               {grid.rows.map((row, r) => (
                 <tr key={r} className={r === 0 ? 'bg-selected/60 font-medium' : 'hover:bg-hover/40'}>
@@ -72,7 +72,7 @@ export default function SheetViewer({ b64, file }: { b64: string; file: string }
           </table>
         )}
         {grid && grid.total > MAX_ROWS && (
-          <div className="p-2 text-ui-2xs text-foreground-subtlest">仅预览前 {MAX_ROWS} 行（共 {grid.total} 行）——{file}</div>
+          <div className="p-2 text-ui-xs text-foreground-subtlest">仅预览前 {MAX_ROWS} 行（共 {grid.total} 行）——{file}</div>
         )}
       </div>
     </div>

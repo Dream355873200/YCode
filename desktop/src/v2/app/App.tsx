@@ -43,20 +43,20 @@ function Welcome() {
       <span className="flex size-14 items-center justify-center rounded-2xl bg-primary text-ui-xl font-bold text-primary-foreground">Y</span>
       <div className="text-center">
         <div className="text-ui-xl font-semibold text-foreground">{greeting()}，开始第一个项目</div>
-        <div className="mt-1 text-ui-sm text-foreground-subtlest">项目就是一个文件夹；每个项目里可以开多段对话、组建智能体团队</div>
+        <div className="mt-1 text-ui-base text-foreground-subtlest">项目就是一个文件夹；每个项目里可以开多段对话、组建智能体团队</div>
       </div>
       <div className="grid w-full max-w-md grid-cols-2 gap-3">
         <button type="button" onClick={() => setCreateDialogOpen(true)}
           className="flex flex-col items-start gap-2 rounded-2xl border border-border bg-card p-4 text-left transition-colors hover:border-brand/50 hover:bg-hover">
           <FolderOpenIcon className="size-5 text-brand" />
-          <span className="text-ui-sm font-medium text-foreground">打开文件夹</span>
-          <span className="text-ui-xs text-foreground-subtlest">在已有的代码或资料目录里开工</span>
+          <span className="text-ui-base font-medium text-foreground">打开文件夹</span>
+          <span className="text-ui-sm text-foreground-subtlest">在已有的代码或资料目录里开工</span>
         </button>
         <button type="button" onClick={() => setCreateDialogOpen(true)}
           className="flex flex-col items-start gap-2 rounded-2xl border border-border bg-card p-4 text-left transition-colors hover:border-brand/50 hover:bg-hover">
           <LayoutTemplateIcon className="size-5 text-brand" />
-          <span className="text-ui-sm font-medium text-foreground">用模板新建</span>
-          <span className="text-ui-xs text-foreground-subtlest">按智能体模板生成工程，例如 Flutter 应用</span>
+          <span className="text-ui-base font-medium text-foreground">用模板新建</span>
+          <span className="text-ui-sm text-foreground-subtlest">按智能体模板生成工程，例如 Flutter 应用</span>
         </button>
       </div>
     </div>
@@ -74,7 +74,7 @@ function DraftHero({ dir }: { dir: string }) {
         <AgentAvatar icon={agent?.icon} size="lg" />
         <div className="mt-3 text-ui-xl font-semibold text-foreground">{agent?.name ?? '智能体'}</div>
         {agent?.description && (
-          <div className="mb-6 mt-1 max-w-md text-center text-ui-sm leading-relaxed text-foreground-subtlest">{agent.description}</div>
+          <div className="mb-6 mt-1 max-w-md text-center text-ui-base leading-relaxed text-foreground-subtlest">{agent.description}</div>
         )}
         <div className="w-full"><Composer sid={null} variant="hero" seed={seed} /></div>
         {!!agent?.starters?.length && (
@@ -82,14 +82,14 @@ function DraftHero({ dir }: { dir: string }) {
             {agent.starters.map((s) => (
               <button key={s.label} type="button" onClick={() => setSeed((x) => ({ text: s.prompt, tick: x.tick + 1 }))}
                 title={s.prompt}
-                className="rounded-full border border-border bg-card px-3.5 py-1.5 text-ui-sm text-foreground-subtle transition-colors hover:border-border-hover hover:bg-hover hover:text-foreground">
+                className="rounded-full border border-border bg-card px-3.5 py-1.5 text-ui-base text-foreground-subtle transition-colors hover:border-border-hover hover:bg-hover hover:text-foreground">
                 {s.label}
               </button>
             ))}
           </div>
         )}
         <button type="button" onClick={() => setTeamDialogDir(dir)}
-          className="mt-6 flex items-center gap-1.5 text-ui-xs text-foreground-subtlest transition-colors hover:text-foreground-subtle">
+          className="mt-6 flex items-center gap-1.5 text-ui-sm text-foreground-subtlest transition-colors hover:text-foreground-subtle">
           <UsersIcon className="size-3.5" />
           这件事需要几个智能体配合？组建一个团队
         </button>
@@ -119,7 +119,7 @@ function ThreadView({ sid, dir }: { sid: string; dir: string }) {
       {model && <StatusPanel sid={sid} dir={dir} model={model} />}
       <Timeline rows={session.rows} sid={sid} columnClassName={offset} />
       <div className="shrink-0 px-4 pb-3">
-        <div className={cn('mx-auto max-w-3xl transition-transform duration-300', offset)}>
+        <div className={cn('mx-auto w-full @min-[864px]/conversation:w-[calc(100%_-_6rem)] @min-[864px]/conversation:max-w-4xl @min-[1280px]/conversation:w-[calc(100%_-_24rem)] @min-[1280px]/conversation:max-w-6xl transition-transform duration-300', offset)}>
           <QueuePanel sid={sid} />
           {pendingAsk ? <QuestionPanel row={pendingAsk} sid={sid} /> : <Composer sid={sid} />}
         </div>

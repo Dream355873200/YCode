@@ -71,9 +71,9 @@ export function useFileText(path: string | undefined): { text: string; loaded: b
 export function FormField({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
     <label className="block space-y-1.5">
-      <span className="text-ui-xs font-medium text-foreground-subtle">{label}</span>
+      <span className="text-ui-sm font-medium text-foreground-subtle">{label}</span>
       {children}
-      {hint && <span className="block text-ui-2xs text-foreground-subtlest">{hint}</span>}
+      {hint && <span className="block text-ui-xs text-foreground-subtlest">{hint}</span>}
     </label>
   );
 }
@@ -85,7 +85,7 @@ export function ToggleChips({ options, value, onChange, empty = '无可选项' }
   onChange(v: string[]): void;
   empty?: string;
 }) {
-  if (!options.length) return <div className="text-ui-xs text-foreground-subtlest">{empty}</div>;
+  if (!options.length) return <div className="text-ui-sm text-foreground-subtlest">{empty}</div>;
   return (
     <div className="flex flex-wrap gap-1.5">
       {options.map((o) => {
@@ -94,7 +94,7 @@ export function ToggleChips({ options, value, onChange, empty = '无可选项' }
           <button key={o.id} type="button" title={o.title} aria-pressed={on}
             onClick={() => onChange(on ? value.filter((x) => x !== o.id) : [...value, o.id])}
             className={cn(
-              'rounded-full border px-2.5 py-1 text-ui-xs transition-colors',
+              'rounded-full border px-2.5 py-1 text-ui-sm transition-colors',
               on ? 'border-brand/50 bg-brand/15 text-brand' : 'border-border bg-surface text-foreground-subtle hover:bg-hover',
             )}>
             {o.label}

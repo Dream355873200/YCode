@@ -7,7 +7,7 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { EyeIcon, PencilIcon, RefreshCwIcon, SaveIcon } from 'lucide-react';
 import { highlightLines, langOf } from '../../lib/codediff.js';
-import { renderMD } from '../../lib/markdown.js';
+import { Markdown } from '../components/markdown/Markdown';
 import { useApp } from '../app/appState';
 import { Button } from '../components/ui/button';
 import { cn } from '../components/lib/utils';
@@ -98,21 +98,21 @@ export default function FileView({ file }: { file: string }) {
     <div className="flex min-h-0 flex-1 flex-col" onKeyDown={onKey}>
       {/* 工具条 */}
       <div className="flex h-8 shrink-0 items-center gap-1 border-b border-border/50 px-2">
-        <span className="min-w-0 flex-1 truncate text-ui-2xs text-foreground-subtlest">{file}</span>
+        <span className="min-w-0 flex-1 truncate text-ui-xs text-foreground-subtlest">{file}</span>
         {md && !editing && (
-          <Button variant="ghost" size="sm" className="h-5 px-1.5 text-ui-2xs text-foreground-subtle hover:text-foreground"
+          <Button variant="ghost" size="sm" className="h-5 px-1.5 text-ui-xs text-foreground-subtle hover:text-foreground"
             onClick={() => setMdPreview((v) => !v)}>
             {mdPreview ? <><PencilIcon className="size-3" /> 源码</> : <><EyeIcon className="size-3" /> 预览</>}
           </Button>
         )}
         {!image && !rich && !editing && (
-          <Button variant="ghost" size="sm" className="h-5 px-1.5 text-ui-2xs text-foreground-subtle hover:text-foreground"
+          <Button variant="ghost" size="sm" className="h-5 px-1.5 text-ui-xs text-foreground-subtle hover:text-foreground"
             onClick={() => { setDraft(code ?? ''); setEditing(true); }}>
             <PencilIcon className="size-3" /> 编辑
           </Button>
         )}
         {!image && !rich && editing && (
-          <Button variant="ghost" size="sm" className={cn('h-5 px-1.5 text-ui-2xs', dirty ? 'text-brand hover:text-brand' : 'text-foreground-subtlest')}
+          <Button variant="ghost" size="sm" className={cn('h-5 px-1.5 text-ui-xs', dirty ? 'text-brand hover:text-brand' : 'text-foreground-subtlest')}
             onClick={() => save()} disabled={!dirty}>
             <SaveIcon className="size-3" />保存{dirty && <span className="size-1.5 rounded-full bg-current" />}
           </Button>
@@ -123,39 +123,40 @@ export default function FileView({ file }: { file: string }) {
           <RefreshCwIcon />
         </Button>
       </div>
-      {saved && <div className="shrink-0 px-3 py-1 text-ui-2xs text-success">已保存 · 已通知 AI 重读此文件</div>}
-      {error && <div className="shrink-0 px-3 py-1 text-ui-2xs text-destructive">{error}</div>}
+      {saved && <div className="shrink-0 px-3 py-1 text-ui-xs text-success">已保存 · 已通知 AI 重读此文件</div>}
+      {error && <div className="shrink-0 px-3 py-1 text-ui-xs text-destructive">{error}</div>}
 
       {/* 内容区 */}
       <div className="flex min-h-0 flex-1 flex-col overflow-auto">
         {image ? (
           img
             ? <div className="flex h-full items-center justify-center p-3"><img src={img} alt={fileBasename(file)} className="max-h-full max-w-full object-contain" /></div>
-            : <div className="p-4 text-ui-xs text-foreground-subtlest">加载中…</div>
+            : <div className="p-4 text-ui-sm text-foreground-subtlest">加载中…</div>
         ) : pdf ? (
-          b64 ? <Suspense fallback={<div className="p-4 text-ui-xs text-foreground-subtlest">加载查看器…</div>}><PdfViewer b64={b64} /></Suspense>
-            : <div className="p-4 text-ui-xs text-foreground-subtlest">加载中…</div>
+          b64 ? <Suspense fallback={<div className="p-4 text-ui-sm text-foreground-subtlest">加载查看器…</div>}><PdfViewer b64={b64} /></Suspense>
+            : <div className="p-4 text-ui-sm text-foreground-subtlest">加载中…</div>
         ) : sheet ? (
-          b64 ? <Suspense fallback={<div className="p-4 text-ui-xs text-foreground-subtlest">加载查看器…</div>}><SheetViewer b64={b64} file={file} /></Suspense>
-            : <div className="p-4 text-ui-xs text-foreground-subtlest">加载中…</div>
+          b64 ? <Suspense fallback={<div className="p-4 text-ui-sm text-foreground-subtlest">加载查看器…</div>}><SheetViewer b64={b64} file={file} /></Suspense>
+            : <div className="p-4 text-ui-sm text-foreground-subtlest">加载中…</div>
         ) : docx ? (
-          b64 ? <Suspense fallback={<div className="p-4 text-ui-xs text-foreground-subtlest">加载查看器…</div>}><DocxViewer b64={b64} /></Suspense>
-            : <div className="p-4 text-ui-xs text-foreground-subtlest">加载中…</div>
+          b64 ? <Suspense fallback={<div className="p-4 text-ui-sm text-foreground-subtlest">加载查看器…</div>}><DocxViewer b64={b64} /></Suspense>
+            : <div className="p-4 text-ui-sm text-foreground-subtlest">加载中…</div>
         ) : pptx ? (
-          b64 ? <Suspense fallback={<div className="p-4 text-ui-xs text-foreground-subtlest">加载查看器…</div>}><PptxViewer b64={b64} /></Suspense>
-            : <div className="p-4 text-ui-xs text-foreground-subtlest">加载中…</div>
+          b64 ? <Suspense fallback={<div className="p-4 text-ui-sm text-foreground-subtlest">加载查看器…</div>}><PptxViewer b64={b64} /></Suspense>
+            : <div className="p-4 text-ui-sm text-foreground-subtlest">加载中…</div>
         ) : editing ? (
           <textarea value={draft} spellCheck={false} autoFocus
             onChange={(e) => { setDraft(e.target.value); setDirty(true); }}
-            className="h-full min-h-0 w-full resize-none bg-input p-3 font-mono text-ui-xs leading-5 text-foreground outline-none" />
+            className="h-full min-h-0 w-full resize-none bg-input p-3 font-mono text-ui-sm leading-5 text-foreground outline-none" />
         ) : md && mdPreview ? (
-          <div className="max-w-none p-3 text-ui-sm text-foreground [&_a]:text-brand [&_code]:rounded [&_code]:bg-input [&_code]:px-1 [&_h1]:mb-2 [&_h1]:mt-3 [&_h1]:text-ui-lg [&_h1]:font-semibold [&_h2]:mb-2 [&_h2]:mt-3 [&_h2]:text-ui-base [&_h2]:font-semibold [&_h3]:font-semibold [&_h3]:mt-2 [&_li]:ml-4 [&_li]:list-disc [&_p]:my-1.5 [&_pre]:my-2 [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:bg-input [&_pre]:p-2 [&_table]:w-full"
-            dangerouslySetInnerHTML={{ __html: renderMD(code ?? '') }} />
+          <div className="min-h-0 flex-1 overflow-y-auto p-3 text-ui-base text-foreground">
+            <Markdown text={code ?? ''} />
+          </div>
         ) : (
-          <div className="min-h-full py-2 font-mono text-ui-xs leading-5">
+          <div className="min-h-full py-2 font-mono text-ui-sm leading-5">
             {hl.map((h, i) => (
               <div key={i} className="flex hover:bg-hover/50">
-                <span className="w-10 shrink-0 select-none pr-2 text-right text-ui-2xs text-foreground-subtlest">{i + 1}</span>
+                <span className="w-10 shrink-0 select-none pr-2 text-right text-ui-xs text-foreground-subtlest">{i + 1}</span>
                 <span className="min-w-0 flex-1 whitespace-pre-wrap break-all pr-3 text-foreground"
                   dangerouslySetInnerHTML={{ __html: h || '&nbsp;' }} />
               </div>

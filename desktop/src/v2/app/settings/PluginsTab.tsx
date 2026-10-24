@@ -42,7 +42,7 @@ function PluginToggle({ id, disabled }: { id: string; disabled?: boolean }) {
           setBusy(false);
         }
       }}
-      className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-1.5 py-0.5 text-ui-2xs transition-colors disabled:opacity-50 ${
+      className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-1.5 py-0.5 text-ui-xs transition-colors disabled:opacity-50 ${
         disabled
           ? 'border-border text-foreground-subtle hover:bg-hover hover:text-foreground'
           : 'border-success/50 bg-success/10 text-success hover:bg-success/20'
@@ -90,11 +90,11 @@ function PluginFields({ initial, isNew, onDone, onCancel }: {
       </FormField>
       <FormField label="领域规范" hint={`每轮作为项目上下文注入；留空 = 不声明规范${form.rulesFile ? `（文件 ${form.rulesFile}）` : ''}`}>
         <Textarea value={form.rules ?? ''} onChange={(e) => set('rules', e.target.value)}
-          className="max-h-[28rem] min-h-24 font-mono text-ui-xs" placeholder="# 规范&#10;- 约束一&#10;- 约束二" />
+          className="max-h-[28rem] min-h-24 font-mono text-ui-sm" placeholder="# 规范&#10;- 约束一&#10;- 约束二" />
       </FormField>
       <FormField label="MCP 服务器（JSON 数组）" hint={`stdio 写 command/args/env，远程写 url/headers，二选一；server 名全局唯一。例：${MCP_EXAMPLE}`}>
         <Textarea value={form.mcpServers} onChange={(e) => set('mcpServers', e.target.value)}
-          spellCheck={false} className="max-h-80 font-mono text-ui-xs" />
+          spellCheck={false} className="max-h-80 font-mono text-ui-sm" />
       </FormField>
     </EditorFrame>
   );
@@ -157,7 +157,7 @@ function PluginDetail({ id }: { id: string }) {
                   });
                   void run(r.ok ? [{ write: r.value }] : { error: r.error });
                 }}
-                className={cn('flex items-center gap-1.5 rounded-full border py-0.5 pl-0.5 pr-2.5 text-ui-sm transition-colors disabled:opacity-50',
+                className={cn('flex items-center gap-1.5 rounded-full border py-0.5 pl-0.5 pr-2.5 text-ui-base transition-colors disabled:opacity-50',
                   on ? 'border-brand/60 bg-brand/10 text-foreground' : 'border-border text-foreground-subtle hover:bg-hover')}>
                 <AgentAvatar icon={m.icon} size="sm" className="rounded-full" />
                 {m.name}
@@ -167,8 +167,8 @@ function PluginDetail({ id }: { id: string }) {
         </div>
       </CardSection>
       <DetailSection title="清单">
-        <InfoRow label="id"><span className="font-mono text-ui-xs">{plugin.id}</span></InfoRow>
-        <InfoRow label="目录"><span className="break-all font-mono text-ui-xs">{plugin.dir}</span></InfoRow>
+        <InfoRow label="id"><span className="font-mono text-ui-sm">{plugin.id}</span></InfoRow>
+        <InfoRow label="目录"><span className="break-all font-mono text-ui-sm">{plugin.dir}</span></InfoRow>
       </DetailSection>
       {provides === 0 && !isUser && (
         <CardSection title="提供的能力" empty="清单没有声明任何能力" />
@@ -267,7 +267,7 @@ export function PluginsTab() {
                     {(p.agentDefs?.length ?? 0) > 0 && <Chip>子代理 ×{p.agentDefs.length}</Chip>}
                     {(p.mcpServers?.length ?? 0) > 0 && <Chip>MCP ×{p.mcpServers!.length}</Chip>}
                     {mcpErr > 0 && (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-destructive/10 px-2 py-0.5 text-ui-2xs text-destructive">
+                      <span className="inline-flex items-center gap-1 rounded-full bg-destructive/10 px-2 py-0.5 text-ui-xs text-destructive">
                         <CircleAlertIcon className="size-3" />MCP 失败 {mcpErr}
                       </span>
                     )}

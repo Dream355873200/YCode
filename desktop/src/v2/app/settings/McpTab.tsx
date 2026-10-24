@@ -21,22 +21,22 @@ function McpDetail({ name }: { name: string }) {
       desc={st?.server ? `服务端：${st.server}` : undefined}
       actions={<McpStatusBadge status={st} />}>
       {st?.status === 'error' && st.error && (
-        <div className="break-all rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-ui-xs text-destructive">
+        <div className="break-all rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-ui-sm text-destructive">
           {st.error}
         </div>
       )}
       <DetailSection title="声明">
         <InfoRow label="传输">{d.url ? 'HTTP' : 'stdio'}</InfoRow>
         {d.url
-          ? <InfoRow label="URL"><span className="break-all font-mono text-ui-xs">{d.url}</span></InfoRow>
-          : <InfoRow label="命令"><span className="break-all font-mono text-ui-xs">{mcpSummary(d)}</span></InfoRow>}
-        {d.env && <InfoRow label="环境变量"><span className="font-mono text-ui-xs">{keys(d.env)}</span></InfoRow>}
-        {d.headers && <InfoRow label="请求头"><span className="font-mono text-ui-xs">{keys(d.headers)}</span></InfoRow>}
+          ? <InfoRow label="URL"><span className="break-all font-mono text-ui-sm">{d.url}</span></InfoRow>
+          : <InfoRow label="命令"><span className="break-all font-mono text-ui-sm">{mcpSummary(d)}</span></InfoRow>}
+        {d.env && <InfoRow label="环境变量"><span className="font-mono text-ui-sm">{keys(d.env)}</span></InfoRow>}
+        {d.headers && <InfoRow label="请求头"><span className="font-mono text-ui-sm">{keys(d.headers)}</span></InfoRow>}
       </DetailSection>
       <DetailSection title={`工具（${st?.tools.length ?? 0}）`}>
         {st?.tools.length
           ? <div className="flex flex-wrap gap-1">{st.tools.map((t) => <ToolPill key={t} name={t} />)}</div>
-          : <span className="text-ui-sm text-foreground-subtlest">{st?.status === 'connected' ? '服务端未提供工具' : '连接成功后列出'}</span>}
+          : <span className="text-ui-base text-foreground-subtlest">{st?.status === 'connected' ? '服务端未提供工具' : '连接成功后列出'}</span>}
       </DetailSection>
     </DetailFrame>
   );
@@ -89,7 +89,7 @@ export function McpTab() {
           </div>
         ))
       )}
-      <p className="text-ui-xs text-foreground-subtlest">
+      <p className="text-ui-sm text-foreground-subtlest">
         MCP 声明在插件编辑里修改，保存即重连；连接失败不影响引擎启动，其余工具照常可用。
       </p>
     </div>

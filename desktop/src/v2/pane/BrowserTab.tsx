@@ -100,7 +100,7 @@ export default function BrowserTab({ inst }: { inst: BrowserInst }) {
           <RotateCwIcon />
         </Button>
         <input
-          className="h-6 min-w-0 flex-1 rounded-md border border-border/60 bg-input px-2 text-ui-xs text-foreground outline-none placeholder:text-foreground-subtlest focus:border-ring"
+          className="h-6 min-w-0 flex-1 rounded-md border border-border/60 bg-input px-2 text-ui-sm text-foreground outline-none placeholder:text-foreground-subtlest focus:border-ring"
           placeholder="输入网址，Enter 导航"
           value={urlInput}
           onChange={(e) => setUrlInput(e.target.value)}
@@ -112,7 +112,7 @@ export default function BrowserTab({ inst }: { inst: BrowserInst }) {
           <ZoomOutIcon />
         </Button>
         <button type="button" title="适应宽度：按桌面版式渲染并缩放进面板"
-          className={cn('h-6 shrink-0 rounded-md px-1.5 text-ui-2xs',
+          className={cn('h-6 shrink-0 rounded-md px-1.5 text-ui-xs',
             inst.fit ? 'bg-brand/15 text-brand' : 'text-foreground-subtle hover:bg-hover hover:text-foreground')}
           onClick={() => amc?.browser?.viewport?.(inst.id, !inst.fit, inst.vw || 1280)}>
           {inst.fit ? `${inst.vw || 1280}` : '1:1'}
@@ -132,7 +132,7 @@ export default function BrowserTab({ inst }: { inst: BrowserInst }) {
           onClick={() => amc?.browser?.devtools?.(inst.id)}>
           <SquareTerminalIcon />
         </Button>
-        {inst.suspended && <span className="shrink-0 text-ui-2xs text-foreground-subtlest">已挂起 · 操作自动恢复</span>}
+        {inst.suspended && <span className="shrink-0 text-ui-xs text-foreground-subtlest">已挂起 · 操作自动恢复</span>}
       </div>
       {/* 浏览区：主进程 WebContentsView 盖在此矩形上 */}
       <div ref={hostRef} className="relative min-h-0 flex-1 bg-panel" />
