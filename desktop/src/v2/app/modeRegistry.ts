@@ -64,10 +64,17 @@ export interface ProjectField {
   options?: Array<{ value: string; label: string }>;
 }
 
+/** 开场建议（空对话里的一键起手：label 是按钮文字，prompt 填进输入框）。 */
+export interface Starter { label: string; prompt: string }
+
+/** 智能体（引擎 mode）。界面统一叫「智能体」，代码与清单沿用 mode。 */
 export interface ModeDecl {
   id: string;
   name: string;
   description?: string;
+  /** 图标键（见 agentIcon.tsx；未知键回落默认图标）。 */
+  icon?: string;
+  starters?: Starter[];
   prompts?: string;
   plugins: string[];
   projectFields: ProjectField[];
@@ -75,6 +82,8 @@ export interface ModeDecl {
   scaffold?: string;
   /** bundled = 应用内置；user = 用户资产目录（设置页可编辑）。 */
   origin?: 'bundled' | 'user';
+  /** 用户资产覆盖了同 id 的内置智能体（可恢复默认）。 */
+  overrides?: boolean;
   /** 模式包目录绝对路径。 */
   dir?: string;
   resolved: ModeResolved;

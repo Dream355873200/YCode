@@ -6,41 +6,43 @@
 import { useEffect, useRef, useState, type ComponentType } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  BoxesIcon, ClipboardListIcon, FileTextIcon, GitBranchIcon, GlobeIcon,
-  ListChecksIcon, PlusIcon, UsersIcon, WorkflowIcon, XIcon,
+  BoxesIcon, ClipboardListIcon, FileDiffIcon, FileTextIcon, GlobeIcon, ListChecksIcon, PlusIcon, UserIcon,
+  WorkflowIcon, XIcon,
 } from 'lucide-react';
 import { useApp, type PaneTabState } from '../app/appState';
 import { useCurrentMode } from '../app/modeRegistry';
 import { cn } from '../components/lib/utils';
-import { GitPanel } from './GitPanel';
+import { ReviewPanel } from './ReviewPanel';
 import { TasksPanel } from './TasksPanel';
 import { PlanPanel } from './PlanPanel';
 import SpecPanel from './SpecPanel';
 import TestReportPanel from './TestReportPanel';
 import DevicePanel from './DevicePanel';
-import FileView, { fileBasename } from './FileViewer';
+import FileView from './FileViewer';
 import BrowserTab from './BrowserTab';
 import { useBrowserInsts } from './browserStore';
-import { TeamPanel } from './TeamPanel';
 import { PipelinePanel } from './PipelinePanel';
 import { NodeTracePane, parseNodeTraceTabId } from './NodeTracePane';
 import { SubAgentTracePane, parseSubAgentTraceTabId } from './SubAgentTracePane';
+import { PlanDocPane, parsePlanDocTabId } from './PlanDocPane';
+import { TeamMemberPane } from '../team/TeamMemberPane';
+import { parseMemberTabId } from '../team/teamApi';
 
-// mode 面板组件注册表：plugin.json 只声明 id/label（纯数据，引擎/壳都不
+// 插件面板组件注册表：plugin.json 只声明 id/label（纯数据，引擎/壳都不
 // import 组件），id → 组件的绑定只存在于这份表——新增面板 = 写组件
 // + 在此注册一行，插件声明即可点亮。
-const MODE_PANELS: Record<string, ComponentType> = {
-  spec: SpecPanel,
-  'test-report': TestReportPanel,
-  device: DevicePanel,
+const MODE_PANELS: Record<string, { component: ComponentType; desc: string }> = {
+  spec: { component: SpecPanel, desc: '产品规格：范围与验收标准' },
+  'test-report': { component: TestReportPanel, desc: '真机测试的步骤、截图与结论' },
+  device: { component: DevicePanel, desc: '真机投屏与设备状态' },
 };
 
 const MIN_W = 320, MAX_W = 760, DEFAULT_W = 336;
 
-type Card = { id: string; kind: PaneTabState['kind']; label: string; icon: typeof GitBranchIcon };
-const CARD_ICONS: Partial<Record<PaneTabState['kind'], typeof GitBranchIcon>> = {
-  git: GitBranchIcon, tasks: ListChecksIcon, plan: ClipboardListIcon,
-  browser: GlobeIcon, file: FileTextIcon, team: UsersIcon, pipeline: WorkflowIcon,
+type Card = { id: string; kind: PaneTabState['kind']; label: string; desc: string; icon: typeof FileDiffIcon };
+const KIND_ICONS: Partial<Record<PaneTabState['kind'], typeof FileDiffIcon>> = {
+  git: FileDiffIcon, tasks: ListChecksIcon, plan: ClipboardListIcon, planDoc: ClipboardListIcon,
+  browser: GlobeIcon, file: FileTextIcon, pipeline: WorkflowIcon, teamMember: UserIcon, mode: BoxesIcon,
 };
 
 export function SidePane({ open }: { open: boolean }) {
@@ -104,17 +106,16 @@ export function SidePane({ open }: { open: boolean }) {
     return () => clearTimeout(t);
   }, [open]);
 
-  // ---------- 可添加的标签类型（「+」菜单与空态卡片共用） ----------
+  // ---------- 可添加的标签类型（「+」菜单与空态启动器共用） ----------
   const cards: Card[] = [
-    { id: 'browser', kind: 'browser', label: '浏览器', icon: GlobeIcon },
-    { id: 'git', kind: 'git', label: 'Git', icon: GitBranchIcon },
-    { id: 'tasks', kind: 'tasks', label: '任务', icon: ListChecksIcon },
-    { id: 'plan', kind: 'plan', label: '计划', icon: ClipboardListIcon },
-    { id: 'team', kind: 'team', label: '团队', icon: UsersIcon },
-    { id: 'pipeline', kind: 'pipeline', label: '流水线', icon: WorkflowIcon },
+    { id: 'git', kind: 'git', label: '变更', desc: '逐文件审查改动，撤销或提交', icon: FileDiffIcon },
+    { id: 'browser', kind: 'browser', label: '浏览器', desc: '内置浏览器，智能体也能操作它', icon: GlobeIcon },
+    { id: 'tasks', kind: 'tasks', label: '任务', desc: '本对话的任务清单', icon: ListChecksIcon },
+    { id: 'plan', kind: 'plan', label: '计划', desc: '规划模式下的计划文档', icon: ClipboardListIcon },
+    { id: 'pipeline', kind: 'pipeline', label: '流水线', desc: '多节点并行执行的运行图与历史', icon: WorkflowIcon },
     ...(mode?.resolved.sidePanels || [])
       .filter((p) => p.id !== 'browser' && MODE_PANELS[p.id])
-      .map((p) => ({ id: `mode:${p.id}`, kind: 'mode' as const, label: p.label, icon: BoxesIcon })),
+      .map((p) => ({ id: `mode:${p.id}`, kind: 'mode' as const, label: p.label, desc: MODE_PANELS[p.id]!.desc, icon: BoxesIcon })),
   ];
 
   const openCard = (c: Card) => {
@@ -159,13 +160,14 @@ export function SidePane({ open }: { open: boolean }) {
 
   const fileOf = activeTab?.kind === 'file' ? activeTab.id.slice(5) : null;
   const instOf = activeTab?.kind === 'browser' ? insts.find((i) => i.id === activeTab.id.slice(8)) : null;
-  const ModePanel = activeTab?.kind === 'mode' ? MODE_PANELS[activeTab.id.slice(5)] : null;
+  const ModePanel = activeTab?.kind === 'mode' ? MODE_PANELS[activeTab.id.slice(5)]?.component ?? null : null;
   const nodeTrace = activeTab?.kind === 'pipelineNode' ? parseNodeTraceTabId(activeTab.id) : null;
   const subTrace = activeTab?.kind === 'subagentTrace' ? parseSubAgentTraceTabId(activeTab.id) : null;
-  const BuiltinPanel = activeTab?.kind === 'git' ? GitPanel
+  const planDoc = activeTab?.kind === 'planDoc' ? parsePlanDocTabId(activeTab.id) : null;
+  const member = activeTab?.kind === 'teamMember' ? parseMemberTabId(activeTab.id) : null;
+  const BuiltinPanel = activeTab?.kind === 'git' ? ReviewPanel
     : activeTab?.kind === 'tasks' ? TasksPanel
     : activeTab?.kind === 'plan' ? PlanPanel
-    : activeTab?.kind === 'team' ? TeamPanel
     : activeTab?.kind === 'pipeline' ? PipelinePanel
     : null;
 
@@ -199,7 +201,7 @@ export function SidePane({ open }: { open: boolean }) {
           {/* 面板头：动态 tab 条 + 添加钮（无收起钮——收起走标题栏开合钮） */}
           <div className="flex h-10 shrink-0 items-center gap-0.5 overflow-x-auto border-b border-border/50 px-1.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {paneTabs.map((t) => {
-              const Icon = CARD_ICONS[t.kind];
+              const Icon = KIND_ICONS[t.kind];
               const active = paneActive === t.id;
               // 浏览器 tab 的 label 跟随实例标题/地址实时变化
               const label = t.kind === 'browser'
@@ -218,7 +220,7 @@ export function SidePane({ open }: { open: boolean }) {
                     <span className="max-w-32 truncate">{label}</span>
                   </button>
                   <button type="button" aria-label={`关闭 ${label}`}
-                    className="rounded p-0.5 opacity-0 hover:text-destructive group-hover:opacity-100"
+                    className={cn('rounded p-0.5 hover:text-destructive', active ? 'opacity-100' : 'opacity-0 group-hover:opacity-100')}
                     onClick={(e) => { e.stopPropagation(); closeTab(t); }}>
                     <XIcon className="size-3" />
                   </button>
@@ -236,11 +238,11 @@ export function SidePane({ open }: { open: boolean }) {
           {/* 「+」菜单：portal 到 body，避开 tab 条 overflow 裁剪 */}
           {menuPos && createPortal(
             <div ref={menuRef}
-              className="fixed z-50 w-40 rounded-lg border border-border bg-popover p-1 shadow-md"
+              className="fixed z-50 w-44 rounded-xl border border-border bg-popover p-1 shadow-md"
               style={{ left: menuPos.x, top: menuPos.y }}>
               {available.map((c) => (
                 <button key={c.id} type="button"
-                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-ui-xs text-foreground hover:bg-hover"
+                  className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-ui-sm text-foreground hover:bg-hover"
                   onClick={() => { setMenuPos(null); openCard(c); }}>
                   <c.icon className="size-3.5 text-foreground-subtle" />
                   {c.label}
@@ -256,9 +258,11 @@ export function SidePane({ open }: { open: boolean }) {
               : instOf ? <BrowserTab key={instOf.id} inst={instOf} />
               : nodeTrace ? <NodeTracePane key={activeTab!.id} runId={nodeTrace.runId} node={nodeTrace.node} />
               : subTrace ? <SubAgentTracePane key={activeTab!.id} sessionID={subTrace.sessionID} toolUseID={subTrace.toolUseID} />
+              : planDoc ? <PlanDocPane key={activeTab!.id} toolUseId={planDoc} />
+              : member ? <TeamMemberPane key={activeTab!.id} team={member.team} member={member.member} />
               : BuiltinPanel ? <BuiltinPanel />
               : ModePanel ? <ModePanel />
-              : <EmptyCards cards={cards} onPick={openCard} />}
+              : <Launcher cards={cards} onPick={openCard} />}
           </div>
         </div>
       )}
@@ -266,23 +270,24 @@ export function SidePane({ open }: { open: boolean }) {
   );
 }
 
-/** 空态：卡片引导「选择要在侧边面板中打开的标签」（ZCode 式）。 */
-function EmptyCards({ cards, onPick }: { cards: Card[]; onPick: (c: Card) => void }) {
+/** 空态启动器：每类标签一行（图标块 · 名称 · 一句话用途）。 */
+function Launcher({ cards, onPick }: { cards: Card[]; onPick: (c: Card) => void }) {
   return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6">
-      <div className="text-center text-ui-sm font-medium text-foreground">选择要在侧边面板中打开的标签</div>
-      <div className="grid w-full max-w-60 grid-cols-2 gap-2">
+    <div className="flex-1 overflow-y-auto p-3">
+      <div className="px-1 pb-2 text-ui-xs font-medium text-foreground-subtle">打开一个面板</div>
+      <div className="grid gap-1">
         {cards.map((c) => (
-          <button key={c.id} type="button"
-            className="flex flex-col items-center gap-1.5 rounded-xl border border-border bg-card px-2 py-3 text-ui-xs text-foreground-subtle transition-colors hover:border-brand/50 hover:bg-hover hover:text-foreground"
-            onClick={() => onPick(c)}>
-            <c.icon className="size-4" />
-            {c.label}
+          <button key={c.id} type="button" onClick={() => onPick(c)}
+            className="group flex items-center gap-3 rounded-xl px-2 py-2 text-left transition-colors hover:bg-hover">
+            <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-surface text-foreground-subtle group-hover:text-brand">
+              <c.icon className="size-4.5" />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-ui-sm text-foreground">{c.label}</span>
+              <span className="block truncate text-ui-xs text-foreground-subtlest">{c.desc}</span>
+            </span>
           </button>
         ))}
-      </div>
-      <div className="text-center text-ui-2xs text-foreground-subtlest">
-        文件树里点开的文件、Agent 打开的网页<br />也会作为标签出现在这里
       </div>
     </div>
   );

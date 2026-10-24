@@ -54,6 +54,10 @@ interface ConversationStore {
   sendNow(sid: string, itemId: string): Promise<void>;
   /** Composer 消费草稿回填（editQueued 的落地）。 */
   consumeDraftRestore(sid: string): string | null;
+  /** 往时间线追加一条通知（目标验收结果等界面侧事件）。 */
+  note(sid: string, text: string, tone?: 'info' | 'error' | 'stopped'): void;
+  /** 原地更新的状态行（key 相同则替换；text 空 = 移除）。 */
+  progress(sid: string, key: string, text: string): void;
 }
 
 const emptySession = (): SessionState => ({ rows: [], busy: false, runStartedAt: null, resuming: false, usage: null, queue: [] });
@@ -61,6 +65,8 @@ const emptySession = (): SessionState => ({ rows: [], busy: false, runStartedAt:
 /** 会话级非响应式机器（splitter 状态 / 恢复轮询 timer）。 */
 const splitters = new Map<string, ThinkTagSplitter>();
 const resumeTimers = new Map<string, ReturnType<typeof setInterval>>();
+/** 本窗口正在直播 SSE 的会话：切回这类会话不走历史重放轮询（会覆盖直播中的行）。 */
+const liveStreams = new Set<string>();
 /** 后台子 agent 等待轮询（主 agent 空闲 + 有后台子 agent 在跑时启用）。 */
 const waitTimers = new Map<string, ReturnType<typeof setInterval>>();
 const lastActiveSid = { current: '' };
@@ -253,9 +259,11 @@ export const useConversation = create<ConversationStore>((set, get) => {
     patch(set, sid, (s) => ({ ...s, busy: true, runStartedAt: Date.now() }));
     syncWait(sid);
     splitters.set(sid, new ThinkTagSplitter());
+    liveStreams.add(sid);
     try {
       await engine.chat({ message: '', sessionId: sid, resumeQueue: true });
     } catch { /* 流断：onSseError 路径负责收尾 */ }
+    finally { liveStreams.delete(sid); }
   };
 
   /** 流断恢复轮询：引擎侧任务还在跑（应用重启 / SSE 断开）就持续对账。 */
@@ -342,12 +350,14 @@ export const useConversation = create<ConversationStore>((set, get) => {
           }
         } catch { /* 引擎不可达（启动窗口期）：空会话起步 */ }
       }
-      // 会话仍在引擎侧跑（应用重启过的场景）→ 轮询跟踪
+      // 会话仍在引擎侧跑（应用重启过的场景）→ 轮询跟踪；本窗口正直播的
+      // 会话交给 SSE，不重放
       try {
         const r = await engine.get('/sessions');
         const running = ((r.body as Array<{ id: string; state: string }> | undefined) || [])
           .some((x) => x.id === sid && x.state === 'running');
-        if (running) startResume(sid); else { stopResume(sid); void checkWake(sid); }
+        if (running) { if (!liveStreams.has(sid)) startResume(sid); }
+        else { stopResume(sid); void checkWake(sid); }
       } catch { /* 状态不可得 → 只回放历史 */ }
       // 排队消息对账
       void refreshQueue(sid, patch, set);
@@ -375,10 +385,13 @@ export const useConversation = create<ConversationStore>((set, get) => {
         runStartedAt: Date.now(),
       }));
       splitters.set(sid, new ThinkTagSplitter()); // 新 run：标签状态复位
+      liveStreams.add(sid);
       try {
         await engine.chat({ message, sessionId: sid });
         // chat resolve = 本地 SSE 正常走完（onSseDone 已补 done 帧）
+        liveStreams.delete(sid);
       } catch (e) {
+        liveStreams.delete(sid);
         // 流断 ≠ 任务死：查引擎侧状态决定轮询恢复或就地报错
         try {
           const r = await engine.get('/sessions');
@@ -489,6 +502,17 @@ export const useConversation = create<ConversationStore>((set, get) => {
       draftRestore = null;
       void nonce;
       return text;
+    },
+
+    note(sid, text, tone = 'info') {
+      patch(set, sid, (s) => ({ ...s, rows: pushNotice(s.rows, text, tone) }));
+    },
+
+    progress(sid, key, text) {
+      patch(set, sid, (s) => ({
+        ...s,
+        rows: applyFrame(s.rows, { type: 'progress', session_id: sid, status_key: key, text } as unknown as Envelope),
+      }));
     },
 
     async approve(sid, requestId, allow, input) {

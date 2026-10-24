@@ -1,18 +1,31 @@
-// v2 应用壳：融合式顶栏（Header 即标题栏，窗控内联右端）+ 三帧工作区
-// （会话侧栏 + 会话帧 + Side Pane）。空会话 = 欢迎态（时段问候 +
-// 居中大输入卡 + 快捷 chips）；首条消息后切换为时间线 + 底部 composer。
+// v2 应用壳：侧栏（项目 → 对话 / 团队）+ 顶栏 + 主区 + 右栏。
+// 主区随选中项切换：
+//   - 没有项目：欢迎页（添加项目）
+//   - 草稿对话：智能体身份 + 大输入框 + 智能体声明的开场建议（发出第一条消息才建对话）
+//   - 对话：时间线 + 状态面板（右上角胶囊）+ 输入框
+//   - 团队：群聊（成员时间线在右栏）
 import { useEffect, useMemo, useState } from 'react';
+import { FolderOpenIcon, LayoutTemplateIcon, UsersIcon } from 'lucide-react';
 import { AppProvider, useApp } from './appState';
+import { AgentAvatar } from './agentIcon';
 import { Sidebar } from './Sidebar';
 import { TitleBar } from './TitleBar';
 import { NewProjectDialog } from './NewProjectDialog';
 import { SettingsPage } from './SettingsPage';
+import { CommandPalette } from './CommandPalette';
 import { SidePane } from '../pane/SidePane';
 import { Timeline } from '../conversation/Timeline';
 import { Composer } from '../conversation/Composer';
 import { QueuePanel } from '../conversation/QueuePanel';
 import { QuestionPanel } from '../conversation/QuestionPanel';
+import { StatusPanel } from '../conversation/status/StatusPanel';
+import {
+  STATUS_PANEL_OFFSET_CLASS, statusPanelLayout, useStatusPanelModel, useStatusPanelUi,
+} from '../conversation/status/useStatusPanel';
 import { useConversation, useSession } from '../conversation/store';
+import { TeamView } from '../team/TeamView';
+import { CreateTeamDialog } from '../team/TeamDialogs';
+import { cn } from '../components/lib/utils';
 
 const greeting = (): string => {
   const h = new Date().getHours();
@@ -23,44 +36,78 @@ const greeting = (): string => {
   return '晚上好';
 };
 
-/** 快捷开始 chips：填充草稿，不直接发送（内容用户可见可改）。 */
-const CHIPS: Array<{ icon: string; label: string; seed: string }> = [
-  { icon: '📱', label: '从想法建 App', seed: '我想做一个 App：' },
-  { icon: '✨', label: '加一个新功能', seed: '给当前 App 加一个新功能：' },
-  { icon: '🐛', label: '修复问题', seed: '当前 App 有一个问题需要修复：' },
-  { icon: '🧪', label: '设备测试', seed: '把 App 部署到手机跑一遍测试，并给我一份测试报告' },
-];
-
-function Hero({ sid }: { sid: string }) {
-  const [seed, setSeed] = useState('');
+function Welcome() {
+  const { setCreateDialogOpen } = useApp();
   return (
-    <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-6 pb-16">
-      <div className="text-ui-xl font-semibold text-foreground">{greeting()}</div>
-      <div className="mb-6 mt-1 text-ui-sm text-foreground-subtlest">描述想法，AI 自动开发、自动上真机测试</div>
-      <Composer sid={sid} variant="hero" seed={seed} />
-      <div className="mt-4 flex flex-wrap justify-center gap-2">
-        {CHIPS.map((c) => (
-          <button key={c.label} type="button" onClick={() => setSeed(`${c.seed} `)}
-            className="flex items-center gap-1.5 rounded-full border border-border bg-card px-3.5 py-1.5 text-ui-sm text-foreground-subtle transition-colors hover:bg-hover hover:text-foreground">
-            <span>{c.icon}</span>{c.label}
-          </button>
-        ))}
+    <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-6 px-6 pb-16">
+      <span className="flex size-14 items-center justify-center rounded-2xl bg-primary text-ui-xl font-bold text-primary-foreground">Y</span>
+      <div className="text-center">
+        <div className="text-ui-xl font-semibold text-foreground">{greeting()}，开始第一个项目</div>
+        <div className="mt-1 text-ui-sm text-foreground-subtlest">项目就是一个文件夹；每个项目里可以开多段对话、组建智能体团队</div>
+      </div>
+      <div className="grid w-full max-w-md grid-cols-2 gap-3">
+        <button type="button" onClick={() => setCreateDialogOpen(true)}
+          className="flex flex-col items-start gap-2 rounded-2xl border border-border bg-card p-4 text-left transition-colors hover:border-brand/50 hover:bg-hover">
+          <FolderOpenIcon className="size-5 text-brand" />
+          <span className="text-ui-sm font-medium text-foreground">打开文件夹</span>
+          <span className="text-ui-xs text-foreground-subtlest">在已有的代码或资料目录里开工</span>
+        </button>
+        <button type="button" onClick={() => setCreateDialogOpen(true)}
+          className="flex flex-col items-start gap-2 rounded-2xl border border-border bg-card p-4 text-left transition-colors hover:border-brand/50 hover:bg-hover">
+          <LayoutTemplateIcon className="size-5 text-brand" />
+          <span className="text-ui-sm font-medium text-foreground">用模板新建</span>
+          <span className="text-ui-xs text-foreground-subtlest">按智能体模板生成工程，例如 Flutter 应用</span>
+        </button>
       </div>
     </div>
   );
 }
 
-function SessionFrame() {
-  const { project, sid } = useApp();
-  const session = useSession(sid || '');
+/** 草稿对话：智能体身份 + 输入框 + 开场建议 + 组建团队入口。 */
+function DraftHero({ dir }: { dir: string }) {
+  const { modes, projectMode, setTeamDialogDir } = useApp();
+  const agent = modes.find((m) => m.id === projectMode);
+  const [seed, setSeed] = useState({ text: '', tick: 0 });
+  return (
+    <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-6 pb-16">
+      <div className="flex w-full max-w-2xl flex-col items-center">
+        <AgentAvatar icon={agent?.icon} size="lg" />
+        <div className="mt-3 text-ui-xl font-semibold text-foreground">{agent?.name ?? '智能体'}</div>
+        {agent?.description && (
+          <div className="mb-6 mt-1 max-w-md text-center text-ui-sm leading-relaxed text-foreground-subtlest">{agent.description}</div>
+        )}
+        <div className="w-full"><Composer sid={null} variant="hero" seed={seed} /></div>
+        {!!agent?.starters?.length && (
+          <div className="mt-4 flex flex-wrap justify-center gap-2">
+            {agent.starters.map((s) => (
+              <button key={s.label} type="button" onClick={() => setSeed((x) => ({ text: s.prompt, tick: x.tick + 1 }))}
+                title={s.prompt}
+                className="rounded-full border border-border bg-card px-3.5 py-1.5 text-ui-sm text-foreground-subtle transition-colors hover:border-border-hover hover:bg-hover hover:text-foreground">
+                {s.label}
+              </button>
+            ))}
+          </div>
+        )}
+        <button type="button" onClick={() => setTeamDialogDir(dir)}
+          className="mt-6 flex items-center gap-1.5 text-ui-xs text-foreground-subtlest transition-colors hover:text-foreground-subtle">
+          <UsersIcon className="size-3.5" />
+          这件事需要几个智能体配合？组建一个团队
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** 对话：时间线 + 状态面板 + 输入区（状态面板并排展开时整列左移让位）。 */
+function ThreadView({ sid, dir }: { sid: string; dir: string }) {
+  const session = useSession(sid);
   const restore = useConversation((s) => s.restore);
+  useEffect(() => { restore(sid); }, [sid, restore]);
+  const model = useStatusPanelModel(sid);
+  const variant = useStatusPanelUi((s) => s.variant);
+  const offset = statusPanelLayout(!!model?.hasContent, variant) === 'none' ? undefined : STATUS_PANEL_OFFSET_CLASS;
 
-  useEffect(() => {
-    if (sid) restore(sid);
-  }, [sid, restore]);
-
-  // 待回答的提问：阻塞式接管 composer 槽位（对齐 ZCode——问题出现期间
-  // 不能自由输入，答完自动恢复输入框）
+  // 待回答的提问：阻塞式接管输入区（答完自动恢复输入框）
   const pendingAsk = useMemo(
     () => session.rows.findLast((r): r is Extract<typeof session.rows[number], { kind: 'confirm' | 'ask' }> =>
       (r.kind === 'confirm' || r.kind === 'ask') && !r.resolved),
@@ -68,39 +115,29 @@ function SessionFrame() {
   );
 
   return (
-    <main className="relative flex min-w-0 flex-1 flex-col bg-background">
-      {!sid || !project
-        ? (
-          <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 text-foreground-subtlest">
-            <div className="text-ui-xl font-semibold text-foreground-subtle">从想法开始</div>
-            <div className="text-ui-sm">选择左侧项目继续，或创建一个新项目</div>
-            <CreateButton />
-          </div>
-        )
-        : session.rows.length === 0
-          ? <Hero sid={sid} />
-          : (
-            <>
-              <Timeline rows={session.rows} sid={sid} />
-              <div className="shrink-0 px-4 pb-3">
-                <QueuePanel sid={sid} />
-                {pendingAsk
-                  ? <QuestionPanel row={pendingAsk} sid={sid} />
-                  : <Composer sid={sid} />}
-              </div>
-            </>
-          )}
-    </main>
+    <>
+      {model && <StatusPanel sid={sid} dir={dir} model={model} />}
+      <Timeline rows={session.rows} sid={sid} columnClassName={offset} />
+      <div className="shrink-0 px-4 pb-3">
+        <div className={cn('mx-auto max-w-3xl transition-transform duration-300', offset)}>
+          <QueuePanel sid={sid} />
+          {pendingAsk ? <QuestionPanel row={pendingAsk} sid={sid} /> : <Composer sid={sid} />}
+        </div>
+      </div>
+    </>
   );
 }
 
-function CreateButton() {
-  const { setCreateDialogOpen } = useApp();
+function SessionFrame() {
+  const { projects, selection, project } = useApp();
   return (
-    <button type="button" onClick={() => setCreateDialogOpen(true)}
-      className="mt-2 rounded-lg bg-primary px-4 py-2 text-ui-sm text-primary-foreground">
-      ＋ 新建项目
-    </button>
+    <main className="@container/conversation relative flex min-w-0 flex-1 flex-col bg-background">
+      {!projects.length ? <Welcome />
+        : !selection || !project ? <div className="flex-1" />
+          : selection.kind === 'team' ? <TeamView key={`${selection.dir}:${selection.name}`} dir={selection.dir} name={selection.name} />
+            : selection.kind === 'draft' ? <DraftHero key={selection.dir} dir={selection.dir} />
+              : <ThreadView key={selection.id} sid={selection.id} dir={selection.dir} />}
+    </main>
   );
 }
 
@@ -114,33 +151,33 @@ export function App() {
 }
 
 function Shell() {
-  const { setCreateDialogOpen, sidePaneOpen } = useApp();
-  // Ctrl+N 新建项目
+  const { newThread, setPaletteOpen, paletteOpen, sidePaneOpen, setSidebarOpen, sidebarOpen } = useApp();
+  // 全局快捷键：Ctrl+N 新对话 · Ctrl+K 命令面板 · Ctrl+B 侧栏
   useEffect(() => {
     const h = (e: KeyboardEvent): void => {
-      if (e.ctrlKey && e.key.toLowerCase() === 'n') {
-        e.preventDefault();
-        setCreateDialogOpen(true);
-      }
+      if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+      const k = e.key.toLowerCase();
+      if (k === 'n' && !e.shiftKey) { e.preventDefault(); newThread(); }
+      else if (k === 'k') { e.preventDefault(); setPaletteOpen(!paletteOpen); }
+      else if (k === 'b') { e.preventDefault(); setSidebarOpen(!sidebarOpen); }
     };
     window.addEventListener('keydown', h);
     return () => window.removeEventListener('keydown', h);
-  }, [setCreateDialogOpen]);
+  }, [newThread, setPaletteOpen, paletteOpen, setSidebarOpen, sidebarOpen]);
 
   return (
     <div className="flex h-full bg-background text-foreground">
       <Sidebar />
-      {/* Header 以下才是工作区：Header 横跨主列，窗控在其右端 */}
       <div className="flex min-w-0 flex-1 flex-col">
         <TitleBar />
         <div className="flex min-h-0 flex-1">
           <SessionFrame />
-          {/* Side Pane（tab 化：Git 辅助对话 / 任务 / 计划；标题栏右端钮开合）。
-              常驻挂载收 open 做宽度动画，内容在组件内部按 open 延迟挂卸 */}
           <SidePane open={sidePaneOpen} />
         </div>
       </div>
       <NewProjectDialog />
+      <CreateTeamDialog />
+      <CommandPalette />
       <SettingsPage />
     </div>
   );

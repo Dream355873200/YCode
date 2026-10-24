@@ -75,6 +75,7 @@ func main() {
 	// 解析后注入 ctx.WorkDir——Bash 的 cmd.Dir、Read/Write/Edit 的相对路径、
 	// 领域工具的项目根全部按会话扎根；模式决定会话可见的能力（见 catalog.go）。
 	sessMap = newSessionMap()
+	pauseActiveGoals() // 上个进程里在推进的目标：续跑驱动已随进程消失，转为暂停
 
 	// 任务存储按会话隔离（task 跟随 session）：落盘到各项目的
 	// .yume/tasks/，闲置 10 分钟回收内存分区（数据保留在磁盘）。
@@ -146,6 +147,7 @@ func main() {
 		goagent.WithHTTPRoutes(subagentTraceRoutes()), // 子代理轨迹（只读工作过程时间线）
 		goagent.WithHTTPRoutes(teamsRoutes()),         // 团队端点（创建/列表/详情/群聊/插话/实时事件）
 		goagent.WithHTTPRoutes(threadsRoutes()),       // 对话注册表（列表/创建/改名/切智能体/权限/归档/删除）+ 模型辅助
+		goagent.WithHTTPRoutes(goalRoutes()),          // 对话目标（设定/暂停/继续/验收/清除）
 	}
 	// 工具集装配：注册表内全部工具集进程内装一次（会话可见性由工具
 	// 过滤器按模式裁剪——reload 后新模式引用任意工具集即生效）。options

@@ -1,83 +1,75 @@
-// TitleBar — 融合式顶栏（无边框窗口）：不再是独立标题条，而是工作区 Header。
-// 侧栏顶到窗口上沿与之同排，右端内联窗控（对齐 ZCode 布局：h-12、整条 drag、
-// 窗控 no-drag）。左段：logo + 当前项目名 + 模式切换 + 目录路径。
-import { useCallback, useState } from 'react';
-import { BoxesIcon, CheckIcon, ChevronDownIcon, PanelLeftIcon, PanelRightIcon } from 'lucide-react';
+// TitleBar — 融合式顶栏（无边框窗口）：工作区 Header，右端内联窗控。
+// 左段：项目 / 对话标题（点击改名）；右段：变更徽标（+/−，点开右栏变更面板）
+// + 侧栏 / 右栏开合 + 窗控。整条可拖拽，交互元素 no-drag。
+import { useState } from 'react';
+import { ChevronRightIcon, FileDiffIcon, Loader2Icon, PanelLeftIcon, PanelRightIcon, UsersIcon } from 'lucide-react';
 import { useApp } from './appState';
-import { useCurrentMode, useModes } from './modeRegistry';
+import { useWorkspace } from './workspace';
 import { WindowControls } from './WindowControls';
 import { Button } from '../components/ui/button';
+import { InlineRename } from '../components/ui/inline-rename';
 import { cn } from '../components/lib/utils';
-import { useDismiss } from '../components/lib/useDismiss';
+import { useGitChanges } from '../pane/gitChanges';
 
-/** 项目模式切换：改会话绑定，引擎下一轮按新模式裁剪工具/提示词/技能（不重启）。 */
-function ModeSwitcher() {
-  const { projectMode, setProjectMode } = useApp();
-  const modes = useModes();
-  const current = useCurrentMode();
-  const [open, setOpen] = useState(false);
-  const close = useCallback(() => setOpen(false), []);
-  const ref = useDismiss(open, close);
-  if (!modes.length) return null;
+function ChangesBadge() {
+  const { project, openPaneTab } = useApp();
+  const changes = useGitChanges(project?.dir);
+  if (!changes?.ok || changes.files.length === 0) return null;
   return (
-    <div ref={ref} className="no-drag relative shrink-0">
-      <button type="button" title="切换项目模式"
-        className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-ui-xs text-foreground-subtle transition-colors hover:bg-hover hover:text-foreground"
-        onClick={() => setOpen(!open)}>
-        <BoxesIcon className="size-3.5" />
-        <span>{current?.name || projectMode}</span>
-        <ChevronDownIcon className="size-3 opacity-60" />
-      </button>
-      {open && (
-        <div className="absolute left-0 top-full z-30 mt-1.5 w-72 rounded-xl border border-border bg-popover p-1 shadow-lg">
-          {modes.map((m) => (
-            <button key={m.id} type="button"
-              className={cn(
-                'flex w-full items-start gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors',
-                m.id === projectMode ? 'bg-selected' : 'hover:bg-hover',
-              )}
-              onClick={() => { setOpen(false); setProjectMode(m.id).catch(() => {}); }}>
-              <span className="min-w-0 flex-1">
-                <span className="block text-ui-sm text-foreground">{m.name}</span>
-                {m.description && <span className="block text-ui-xs text-foreground-subtlest">{m.description}</span>}
-              </span>
-              {m.id === projectMode && <CheckIcon className="mt-0.5 size-4 shrink-0 text-brand" />}
-            </button>
-          ))}
-          <div className="mt-1 border-t border-border/50 px-2.5 pb-1 pt-1.5 text-ui-2xs text-foreground-subtlest">
-            只改当前项目：右栏面板立即切换，工具 / 提示词 / 技能从下一轮对话起按新模式装配，对话历史保留。
-          </div>
-        </div>
-      )}
-    </div>
+    <button type="button" title={`${changes.files.length} 个文件有改动，点击审查`}
+      className="flex h-7 items-center gap-1.5 rounded-lg border border-border px-2 text-ui-xs tabular-nums transition-colors hover:border-border-hover hover:bg-hover"
+      onClick={() => openPaneTab({ id: 'git', kind: 'git', label: '变更' })}>
+      <FileDiffIcon className="size-3.5 text-foreground-subtle" />
+      <span className="text-success">+{changes.added}</span>
+      <span className="text-destructive">-{changes.deleted}</span>
+    </button>
   );
 }
 
 export function TitleBar() {
-  const { project, sidebarOpen, setSidebarOpen, sidePaneOpen, setSidePaneOpen } = useApp();
+  const { project, thread, selection, sidebarOpen, setSidebarOpen, sidePaneOpen, setSidePaneOpen } = useApp();
+  const updateThread = useWorkspace((s) => s.updateThread);
+  const [renaming, setRenaming] = useState(false);
+  const title = selection?.kind === 'thread' ? thread?.title ?? ''
+    : selection?.kind === 'team' ? selection.name
+      : selection?.kind === 'draft' ? '新对话' : '';
   return (
     <header className="drag flex h-12 shrink-0 items-center justify-between gap-2 border-b border-border/50 bg-background pr-1.5">
-      {/* 左段：ZCode 式联动——侧栏收起时 logo 移入标题栏（点击展开）；展开时只留标题 */}
-      <div className="flex min-w-0 items-center gap-2.5 px-4">
+      <div className="flex min-w-0 items-center gap-1.5 px-4">
         {!sidebarOpen && (
           <button type="button" aria-label="展开侧栏" title="展开侧栏"
-            className="no-drag flex h-6 w-6 shrink-0 animate-in fade-in items-center justify-center rounded-md bg-primary text-ui-sm font-bold text-primary-foreground transition-colors hover:bg-primary/80"
+            className="no-drag mr-1 flex h-6 w-6 shrink-0 animate-in fade-in items-center justify-center rounded-md bg-primary text-ui-sm font-bold text-primary-foreground transition-colors hover:bg-primary/80"
             onClick={() => setSidebarOpen(true)}>
             Y
           </button>
         )}
         {project ? (
           <>
-            <span className="truncate text-ui-sm font-medium text-foreground">{project.name}</span>
-            <ModeSwitcher />
-            <span className="hidden min-w-0 truncate text-ui-xs text-foreground-subtlest md:block">{project.dir}</span>
+            <span className="max-w-48 shrink-0 truncate text-ui-sm text-foreground-subtle" title={project.dir}>{project.name}</span>
+            <ChevronRightIcon className="size-3.5 shrink-0 text-foreground-subtlest" />
+            {selection?.kind === 'team' && <UsersIcon className="size-3.5 shrink-0 text-foreground-subtle" />}
+            {renaming && thread ? (
+              <InlineRename value={thread.title} className="max-w-96" onDone={(next) => {
+                setRenaming(false);
+                if (next) void updateThread(thread.id, { title: next });
+              }} />
+            ) : (
+              <button type="button" disabled={!thread}
+                title={thread ? '点击重命名' : undefined}
+                className={cn('no-drag min-w-0 truncate rounded-md px-1 py-0.5 text-ui-sm font-medium text-foreground',
+                  thread && 'hover:bg-hover')}
+                onClick={() => setRenaming(true)}>
+                {title}
+              </button>
+            )}
+            {thread?.state === 'running' && <Loader2Icon className="size-3.5 shrink-0 animate-spin text-brand" />}
           </>
         ) : (
           <span className="text-ui-sm font-medium text-foreground-subtle">YCode</span>
         )}
       </div>
-      {/* 右端钮簇：整组 no-drag——头部是拖拽区，不豁免点击全被窗口拖拽吞掉 */}
       <div className="no-drag flex shrink-0 items-center gap-1">
+        <ChangesBadge />
         <Button type="button" variant="ghost" size="icon-md" aria-label="收起 / 展开侧栏"
           className={sidebarOpen ? 'text-foreground-subtle hover:bg-hover hover:text-foreground' : 'text-foreground hover:bg-hover'}
           onClick={() => setSidebarOpen(!sidebarOpen)}>

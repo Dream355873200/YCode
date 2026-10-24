@@ -12,11 +12,12 @@ contextBridge.exposeInMainWorld('amc', {
   engine: {
     get: (apiPath) => ipcRenderer.invoke('engine:get', apiPath),
     post: (apiPath, body) => ipcRenderer.invoke('engine:post', apiPath, body),
+    del: (apiPath) => ipcRenderer.invoke('engine:delete', apiPath),
     chat: (payload) => ipcRenderer.invoke('engine:chat', payload),
     restart: () => ipcRenderer.invoke('engine:restart'),
+    ensure: () => ipcRenderer.invoke('engine:ensure'),
     status: () => ipcRenderer.invoke('engine:status'),
     listModels: () => ipcRenderer.invoke('engine:listModels'),
-    bindProject: (sessionId, dir, mode) => ipcRenderer.invoke('engine:bindProject', sessionId, dir, mode),
     onStatus: (cb) => {
       const h = (_e, s) => cb(s);
       ipcRenderer.on('engine:status', h);
@@ -28,9 +29,19 @@ contextBridge.exposeInMainWorld('amc', {
     onSseDone: (cb) => { const h = (_e, x) => cb(x); ipcRenderer.on('sse:done', h); return () => ipcRenderer.removeListener('sse:done', h); },
     onSseError: (cb) => { const h = (_e, x) => cb(x); ipcRenderer.on('sse:error', h); return () => ipcRenderer.removeListener('sse:error', h); },
   },
-  // Git 面板（右栏）：分支/变更/最近提交
+  // 变更审查（右栏「变更」面板）：状态 / 逐文件 +− / diff / 撤销 / 提交
   git: {
     status: (dir) => ipcRenderer.invoke('git:status', dir),
+    numstat: (dir) => ipcRenderer.invoke('git:numstat', dir),
+    diff: (dir, file, untracked) => ipcRenderer.invoke('git:diff', dir, file, untracked),
+    diffAll: (dir) => ipcRenderer.invoke('git:diffAll', dir),
+    restore: (dir, file, untracked) => ipcRenderer.invoke('git:restore', dir, file, untracked),
+    commit: (dir, message) => ipcRenderer.invoke('git:commit', dir, message),
+    init: (dir) => ipcRenderer.invoke('git:init', dir),
+    branches: (dir) => ipcRenderer.invoke('git:branches', dir),
+    checkout: (dir, name) => ipcRenderer.invoke('git:checkout', dir, name),
+    createBranch: (dir, name) => ipcRenderer.invoke('git:createBranch', dir, name),
+    push: (dir) => ipcRenderer.invoke('git:push', dir),
   },
   // 配置
   config: {
@@ -43,6 +54,8 @@ contextBridge.exposeInMainWorld('amc', {
     create: (p) => ipcRenderer.invoke('projects:create', p),
     setMode: (dir, mode) => ipcRenderer.invoke('projects:setMode', dir, mode),
     remove: (dir) => ipcRenderer.invoke('projects:remove', dir),
+    rename: (dir, name) => ipcRenderer.invoke('projects:rename', dir, name),
+    reveal: (dir) => ipcRenderer.invoke('projects:reveal', dir),
     pickDir: () => ipcRenderer.invoke('projects:pickDir'),
     filetree: (dir) => ipcRenderer.invoke('projects:filetree', dir),
   },

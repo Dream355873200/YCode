@@ -1,12 +1,15 @@
 // amobileCreater 桌面壳主进程装配：
 // 窗口管理 · 各子系统模块接线 · IPC 注册
-const { app, BrowserWindow, ipcMain, dialog, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, Menu, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
 const { loadConfig, saveConfig, loadRegistry, saveRegistry } = require('./lib/config');
 const engine = require('./lib/engine');
-const { projectStats, filetree, gitStatus } = require('./lib/tools');
+const {
+  projectStats, filetree, gitStatus, gitNumstat, gitDiff, gitDiffAll, gitRestore, gitCommit, gitInit,
+  gitBranches, gitCheckout, gitCreateBranch, gitPush,
+} = require('./lib/tools');
 const devices = require('./lib/devices');
 const flutter = require('./lib/flutter');
 const { scaffolds } = require('./lib/scaffolds');
@@ -57,6 +60,7 @@ ipcMain.handle('engine:get', (_e, apiPath) =>
   engine.httpJSON('GET', engine.state.addr.replace('http://', ''), apiPath)
     .catch((err) => (engine.isConnRefused(err) ? { unreachable: true, status: 0 } : Promise.reject(err))));
 ipcMain.handle('engine:post', (_e, apiPath, body) => engine.httpJSON('POST', engine.state.addr.replace('http://', ''), apiPath, body));
+ipcMain.handle('engine:delete', (_e, apiPath) => engine.httpJSON('DELETE', engine.state.addr.replace('http://', ''), apiPath));
 ipcMain.handle('engine:chat', (_e, payload) => engine.streamChat(payload).then(() => ({ ok: true })).catch((err) => ({ ok: false, error: String(err) })));
 ipcMain.handle('engine:restart', async () => {
   engine.kill();
@@ -80,14 +84,9 @@ ipcMain.handle('engine:listModels', async () => {
     return [];
   }
 });
-// 打开项目：登记 session→{项目目录, 模式} 绑定（引擎按会话扎根项目目录、
-// 按会话模式裁剪能力，不重启）。多项目、多模式并行互不干扰。
-ipcMain.handle('engine:bindProject', async (_e, sessionId, dir, mode) => {
-  const ok = engine.bindSession(sessionId, dir, mode);
-  // 引擎可能还没起（如开机首次进项目）：顺手拉起，不等它就绪（非阻塞路径）
-  if (engine.state.status !== 'running') engine.ensure(loadConfig());
-  return { ok, restarted: false };
-});
+// 对话与会话绑定由引擎维护（/threads；引擎是 session-map.json 的唯一写入方），
+// 壳只负责在需要时把引擎拉起来。
+ipcMain.handle('engine:ensure', () => (engine.state.status === 'running' ? true : engine.ensure(loadConfig(), browserctl.env())));
 
 // ---------- IPC：窗口控制（v2 自绘标题栏） ----------
 ipcMain.handle('win:minimize', () => { if (win) win.minimize(); });
@@ -213,8 +212,29 @@ ipcMain.handle('projects:remove', (_e, dir) => {
   saveRegistry(reg);
   return { ok: true };
 });
+ipcMain.handle('projects:rename', (_e, dir, name) => {
+  const reg = loadRegistry();
+  const p = reg.projects.find((x) => x.dir === dir);
+  const next = String(name || '').trim();
+  if (!p || !next) return { ok: false, error: '项目未注册或名称为空' };
+  p.name = next;
+  saveRegistry(reg);
+  return { ok: true };
+});
+// 在系统文件管理器里打开项目目录
+ipcMain.handle('projects:reveal', (_e, dir) => shell.openPath(dir).then((err) => ({ ok: !err, error: err || undefined })));
 ipcMain.handle('projects:filetree', (_e, dir) => filetree(dir));
 ipcMain.handle('git:status', (_e, dir) => gitStatus(dir));
+ipcMain.handle('git:numstat', (_e, dir) => gitNumstat(dir));
+ipcMain.handle('git:diff', (_e, dir, file, untracked) => gitDiff(dir, file, !!untracked));
+ipcMain.handle('git:diffAll', (_e, dir) => gitDiffAll(dir));
+ipcMain.handle('git:restore', (_e, dir, file, untracked) => gitRestore(dir, file, !!untracked));
+ipcMain.handle('git:commit', (_e, dir, message) => gitCommit(dir, message));
+ipcMain.handle('git:init', (_e, dir) => gitInit(dir));
+ipcMain.handle('git:branches', (_e, dir) => gitBranches(dir));
+ipcMain.handle('git:checkout', (_e, dir, name) => gitCheckout(dir, name));
+ipcMain.handle('git:createBranch', (_e, dir, name) => gitCreateBranch(dir, name));
+ipcMain.handle('git:push', (_e, dir) => gitPush(dir));
 
 // ---------- IPC：设备与投屏 ----------
 ipcMain.handle('devices:list', () => devices.listDevices());

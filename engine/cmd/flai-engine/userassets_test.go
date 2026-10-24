@@ -47,8 +47,11 @@ func TestUserAssets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if m := cat.Mode("code"); m == nil || m.Name != "我的 code" || m.Origin != originUser {
-		t.Fatalf("用户 code 模式应覆盖内置: %+v", m)
+	if m := cat.Mode("code"); m == nil || m.Name != "我的 code" || m.Origin != originUser || !m.Overrides {
+		t.Fatalf("用户 code 模式应覆盖内置（并标记 overrides）: %+v", m)
+	}
+	if m := cat.Mode("mine"); m == nil || m.Overrides {
+		t.Fatal("纯自建模式不应标记 overrides")
 	}
 	if m := cat.Mode("flutter"); m == nil || m.Origin != originBundled {
 		t.Fatal("内置 flutter 模式应照常可用")

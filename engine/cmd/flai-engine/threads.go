@@ -45,18 +45,19 @@ var engineAsk *goagent.AskUserHandler
 
 // threadView 对话列表项。
 type threadView struct {
-	ID          string `json:"id"`
-	Dir         string `json:"dir"`
-	Mode        string `json:"mode"`
-	Title       string `json:"title"`
-	TitleSource string `json:"titleSource,omitempty"`
-	CreatedAt   int64  `json:"createdAt"`
-	UpdatedAt   int64  `json:"updatedAt"`
-	State       string `json:"state"` // idle | running | interrupted
-	Turns       int    `json:"turns"`
-	Pending     string `json:"pending,omitempty"` // ask | approval
-	Permission  string `json:"permission,omitempty"`
-	Archived    bool   `json:"archived,omitempty"`
+	ID          string      `json:"id"`
+	Dir         string      `json:"dir"`
+	Mode        string      `json:"mode"`
+	Title       string      `json:"title"`
+	TitleSource string      `json:"titleSource,omitempty"`
+	CreatedAt   int64       `json:"createdAt"`
+	UpdatedAt   int64       `json:"updatedAt"`
+	State       string      `json:"state"` // idle | running | interrupted
+	Turns       int         `json:"turns"`
+	Pending     string      `json:"pending,omitempty"` // ask | approval
+	Permission  string      `json:"permission,omitempty"`
+	Archived    bool        `json:"archived,omitempty"`
+	Goal        *threadGoal `json:"goal,omitempty"`
 }
 
 // isThreadID 会话是否是用户可见的对话（团队成员会话、Git 辅助会话不是）。
@@ -240,7 +241,7 @@ func viewOf(id string, b sessionBinding, s *session.SessionSummary) threadView {
 	v := threadView{
 		ID: id, Dir: b.Dir, Mode: b.Mode, Title: b.Title, TitleSource: b.TitleSource,
 		CreatedAt: b.CreatedAt, UpdatedAt: b.CreatedAt, State: "idle",
-		Permission: b.Permission, Archived: b.Archived,
+		Permission: b.Permission, Archived: b.Archived, Goal: b.Goal,
 	}
 	if v.Mode == "" {
 		v.Mode = catalog().DefaultMode

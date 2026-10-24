@@ -1,318 +1,353 @@
-// Composer — 输入卡（对齐 ZCode ChatPromptEditor 壳层）：
-// 圆角卡面（border-input-border bg-input，focus-within 高亮边+提底）内含编辑器与
-// 底部工具行：leading 模式菜单（规划/自动编辑/手动审批/全部放行，引擎 /mode），
-// trailing 模型选择器（OpenAI 兼容 /models）+ 停止·发送簇。
-// busy 态：无草稿显示停止钮（secondary + 方块）；有草稿时发送 = 入队
-// （queue 车道，当前轮结束后独立成轮——队列面板显示待发消息）。
+// Composer — 输入卡：圆角卡面内含编辑器与底部工具行。
+//   leading：智能体（谁来做）· 权限（能做到哪一步，对话级）· 目标（持续推进直到验收达成）
+//   trailing：上下文用量环 · 模型与思考强度 · 停止 / 发送
+// 草稿对话（sid = null）发出第一条消息时才在引擎创建对话。
+// busy 时：无草稿显示停止钮；有草稿时发送 = 入队（当前轮结束后独立成轮）。
 import { useEffect, useRef, useState } from 'react';
 import {
-  ArrowUpIcon, BrainIcon, CheckIcon, ChevronDownIcon, ClipboardListIcon, PenLineIcon,
-  ShieldCheckIcon, SquareIcon, ZapIcon,
+  ArrowUpIcon, BrainIcon, ChevronDownIcon, ClipboardListIcon, GoalIcon, Loader2Icon, PenLineIcon,
+  ShieldCheckIcon, SlidersHorizontalIcon, SquareIcon, ZapIcon, type LucideIcon,
 } from 'lucide-react';
 import { useConversation } from './store';
 import ContextRing from './ContextRing';
-import { useApp } from '../app/appState';
+import { useApp, type Permission } from '../app/appState';
+import { AgentAvatar } from '../app/agentIcon';
+import { useWorkspace } from '../app/workspace';
 import { engine } from '../protocol';
 import { Button } from '../components/ui/button';
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuRadioGroup,
+  DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuTrigger,
+} from '../components/ui/dropdown-menu';
+import { Popover, PopoverContent, PopoverTrigger } from '../components/ui/popover';
 import { cn } from '../components/lib/utils';
-import { useDismiss } from '../components/lib/useDismiss';
 
-/** 权限模式（引擎 /mode 端点的字符串枚举）。 */
-const MODES: Array<{ id: string; label: string; desc: string; icon: typeof ZapIcon }> = [
-  { id: 'plan', label: '规划模式', desc: '只读调研，不改代码', icon: ClipboardListIcon },
-  { id: 'accept_edits', label: '自动编辑', desc: '改文件自动通过，危险操作询问', icon: PenLineIcon },
-  { id: 'default', label: '手动审批', desc: '每次写操作都需确认', icon: ShieldCheckIcon },
-  { id: 'bypass', label: '全部放行', desc: '无人值守，全自动执行', icon: ZapIcon },
+/** 权限档位（对话级，持久化在对话绑定里）。 */
+export const PERMISSIONS: Array<{ id: Permission; label: string; desc: string; icon: LucideIcon; tone?: string }> = [
+  { id: 'plan', label: '规划', desc: '只调研、出方案，不改任何文件', icon: ClipboardListIcon },
+  { id: 'default', label: '逐项审批', desc: '每次写文件或执行命令前都先问你', icon: ShieldCheckIcon },
+  { id: 'accept_edits', label: '自动编辑', desc: '改文件自动通过，危险操作才问你', icon: PenLineIcon },
+  { id: 'bypass', label: '完全放行', desc: '全部自动执行，适合无人值守', icon: ZapIcon, tone: 'text-warning' },
 ];
 
-/** 思考强度档位（引擎 /thinking；off = 关闭思考，空 = 跟随模型默认）。 */
-const EFFORTS: Array<{ id: string; label: string; desc: string }> = [
-  { id: 'off', label: '关闭思考', desc: '直接作答，最快' },
-  { id: 'low', label: '低', desc: '简单任务，省时省 token' },
-  { id: 'medium', label: '中', desc: '常规开发任务的平衡档' },
-  { id: 'high', label: '高', desc: '复杂架构/疑难问题，想得更深' },
+/** 思考强度（引擎 /thinking；'' = 跟随模型默认）。 */
+const EFFORTS: Array<{ id: string; label: string }> = [
+  { id: '', label: '默认' },
+  { id: 'off', label: '关' },
+  { id: 'low', label: '低' },
+  { id: 'medium', label: '中' },
+  { id: 'high', label: '高' },
 ];
 
-export function Composer({ sid, variant = 'docked', seed = '' }: {
-  sid: string;
+const chipCls = 'flex h-7 items-center gap-1.5 rounded-lg px-2 text-ui-xs text-foreground-subtle transition-colors hover:bg-hover hover:text-foreground data-[state=open]:bg-hover data-[state=open]:text-foreground';
+
+function AgentPicker() {
+  const { modes, projectMode, setProjectMode, openSettings } = useApp();
+  const agent = modes.find((m) => m.id === projectMode);
+  if (!modes.length) return null;
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button type="button" className={chipCls} title="换一个智能体（下一轮生效）">
+          <AgentAvatar icon={agent?.icon} size="sm" />
+          <span className="max-w-28 truncate text-foreground">{agent?.name ?? projectMode}</span>
+          <ChevronDownIcon className="size-3 opacity-60" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent side="top" align="start" className="w-76">
+        <DropdownMenuLabel>智能体</DropdownMenuLabel>
+        <DropdownMenuRadioGroup value={projectMode} onValueChange={(v) => void setProjectMode(v)}>
+          {modes.map((m) => (
+            <DropdownMenuRadioItem key={m.id} value={m.id} className="items-start py-2">
+              <AgentAvatar icon={m.icon} size="sm" className="mt-0.5" />
+              <span className="min-w-0 flex-1">
+                <span className="block text-ui-sm text-foreground">{m.name}</span>
+                {m.description && <span className="line-clamp-2 block text-ui-xs text-foreground-subtlest">{m.description}</span>}
+              </span>
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onSelect={() => openSettings('modes')}>
+          <SlidersHorizontalIcon />管理智能体与插件
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function PermissionPicker() {
+  const { permission, setPermission } = useApp();
+  const cur = PERMISSIONS.find((p) => p.id === permission) ?? PERMISSIONS[2]!;
+  const Icon = cur.icon;
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button type="button" className={chipCls} title="这段对话里智能体能做到哪一步">
+          <Icon className={cn('size-3.5', cur.tone)} />
+          <span>{cur.label}</span>
+          <ChevronDownIcon className="size-3 opacity-60" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent side="top" align="start" className="w-68">
+        <DropdownMenuLabel>权限（本对话）</DropdownMenuLabel>
+        <DropdownMenuRadioGroup value={permission} onValueChange={(v) => setPermission(v as Permission)}>
+          {PERMISSIONS.map((p) => {
+            const PIcon = p.icon;
+            return (
+              <DropdownMenuRadioItem key={p.id} value={p.id} className="items-start py-2">
+                <PIcon className={cn('mt-0.5', p.tone)} />
+                <span className="min-w-0 flex-1">
+                  <span className="block text-ui-sm text-foreground">{p.label}</span>
+                  <span className="block text-ui-xs text-foreground-subtlest">{p.desc}</span>
+                </span>
+              </DropdownMenuRadioItem>
+            );
+          })}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+/** 模型与思考强度（引擎全局，运行时切换不重启）。 */
+function ModelPicker({ disabled }: { disabled: boolean }) {
+  const { engineStatus } = useApp();
+  const [open, setOpen] = useState(false);
+  const [models, setModels] = useState<string[]>([]);
+  const [model, setModel] = useState(engineStatus.model);
+  const [effort, setEffort] = useState('');
+  const [switching, setSwitching] = useState(false);
+
+  useEffect(() => { if (engineStatus.model) setModel(engineStatus.model); }, [engineStatus.model]);
+  useEffect(() => {
+    engine.get('/model').then((r) => {
+      const m = (r.body as { model?: string } | undefined)?.model;
+      if (m) setModel(m);
+    }).catch(() => {});
+    engine.get('/thinking').then((r) => {
+      const e = (r.body as { effort?: string } | undefined)?.effort;
+      if (e !== undefined) setEffort(e);
+    }).catch(() => {});
+  }, [engineStatus.status]);
+  useEffect(() => {
+    if (!open || models.length) return;
+    window.amc.engine.listModels().then((list) => {
+      if (Array.isArray(list) && list.length) setModels(list as string[]);
+    }).catch(() => {});
+  }, [open, models.length]);
+
+  const pickModel = async (id: string): Promise<void> => {
+    if (disabled || switching || id === model) return;
+    setSwitching(true);
+    try {
+      await engine.post('/model', { model: id });
+      setModel(id);
+      const cfg = await window.amc.config.get() as Record<string, unknown>;
+      await window.amc.config.save({ ...cfg, engine: { ...(cfg.engine as object), model: id } });
+    } catch { /* 引擎不可达：保持原选择 */ } finally {
+      setSwitching(false);
+    }
+  };
+  const pickEffort = (id: string): void => {
+    setEffort(id);
+    engine.post('/thinking', { effort: id }).catch(() => {});
+  };
+  const effortLabel = EFFORTS.find((e) => e.id === effort)?.label ?? '默认';
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button type="button" className={cn(chipCls, 'max-w-56 text-foreground-subtlest')} title="模型与思考强度">
+          <BrainIcon className="size-3.5 shrink-0" />
+          <span className="truncate">{switching ? '切换中…' : (model || '模型')}</span>
+          {effort && <span className="shrink-0 text-foreground-subtlest">· {effortLabel}</span>}
+          <ChevronDownIcon className="size-3 shrink-0 opacity-60" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent side="top" align="end" className="w-72 p-2">
+        <div className="px-1 pb-1.5 text-ui-2xs font-medium text-foreground-subtlest">思考强度</div>
+        <div className="grid grid-cols-5 gap-0.5 rounded-lg border border-border bg-input p-0.5" role="radiogroup">
+          {EFFORTS.map((e) => (
+            <button key={e.id || 'default'} type="button" role="radio" aria-checked={e.id === effort}
+              onClick={() => pickEffort(e.id)}
+              className={cn('rounded-md py-1 text-ui-xs transition-colors',
+                e.id === effort ? 'bg-selected font-medium text-foreground' : 'text-foreground-subtle hover:bg-hover hover:text-foreground')}>
+              {e.label}
+            </button>
+          ))}
+        </div>
+        <div className="mt-2.5 px-1 pb-1 text-ui-2xs font-medium text-foreground-subtlest">模型</div>
+        <div className="max-h-60 overflow-y-auto">
+          {models.length === 0 && (
+            <div className="px-2 py-1.5 text-ui-xs text-foreground-subtlest">{model ? `当前：${model}` : '未获取到模型列表'}</div>
+          )}
+          {models.map((m) => (
+            <button key={m} type="button" disabled={disabled} onClick={() => void pickModel(m)}
+              className={cn('flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-ui-sm transition-colors disabled:opacity-50',
+                m === model ? 'bg-selected text-foreground' : 'text-foreground-subtle hover:bg-hover hover:text-foreground')}>
+              <span className="min-w-0 flex-1 truncate" title={m}>{m}</span>
+            </button>
+          ))}
+        </div>
+        {disabled && <div className="px-1 pt-1.5 text-ui-2xs text-foreground-subtlest">任务执行中，结束后可切换模型</div>}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+export function Composer({ sid, variant = 'docked', seed }: {
+  /** 对话 id；null = 草稿（首条消息时创建对话）。 */
+  sid: string | null;
   variant?: 'hero' | 'docked';
-  /** 外部注入草稿（快捷 chips 点击填充）。 */
-  seed?: string;
+  /** 外部注入草稿（开场建议点击填充；tick 递增即重新填充）。 */
+  seed?: { text: string; tick: number };
 }) {
   const send = useConversation((s) => s.send);
   const enqueue = useConversation((s) => s.enqueue);
   const interrupt = useConversation((s) => s.interrupt);
   const consumeDraftRestore = useConversation((s) => s.consumeDraftRestore);
-  const busy = useConversation((s) => s.sessions[sid]?.busy ?? false);
-  const { engineStatus, project, composerSeed } = useApp();
+  const busy = useConversation((s) => (sid ? s.sessions[sid]?.busy ?? false : false));
+  const { project, composerSeed, projectMode, permission, modes, thread } = useApp();
+  const startThread = useWorkspace((s) => s.startThread);
+  const startGoal = useWorkspace((s) => s.startGoal);
   const [draft, setDraft] = useState('');
   const [focused, setFocused] = useState(false);
+  const [goalMode, setGoalMode] = useState(false);
+  const [starting, setStarting] = useState(false);
+  const [error, setError] = useState('');
   const taRef = useRef<HTMLTextAreaElement>(null);
+  const hero = variant === 'hero';
+  const agent = modes.find((m) => m.id === projectMode);
+  const goalActive = thread?.goal?.status === 'active';
 
-  // 模式（引擎权威；挂载时拉取）
-  const [mode, setMode] = useState('accept_edits');
-  const [modeOpen, setModeOpen] = useState(false);
-  const modeRef = useDismiss(modeOpen, () => setModeOpen(false));
-  useEffect(() => {
-    engine.get('/mode').then((r) => {
-      const m = (r.body as { mode?: string } | undefined)?.mode;
-      if (m) setMode(m);
-    }).catch(() => { /* 引擎未起：保持初始值 */ });
-  }, []);
-
-  // 模型列表（OpenAI 兼容 /models；引擎 /model 为当前值，运行时切换不重启）
-  const [models, setModels] = useState<string[]>([]);
-  const [modelOpen, setModelOpen] = useState(false);
-  const [switchingModel, setSwitchingModel] = useState(false);
-  const modelRef = useDismiss(modelOpen, () => setModelOpen(false));
-  const [cfgModel, setCfgModel] = useState(engineStatus.model);
-  useEffect(() => {
-    if (engineStatus.model) setCfgModel(engineStatus.model);
-  }, [engineStatus.model]);
-  useEffect(() => {
-    engine.get('/model').then((r) => {
-      const m = (r.body as { model?: string } | undefined)?.model;
-      if (m) setCfgModel(m);
-    }).catch(() => { /* 引擎未起：保持初始值 */ });
-  }, []);
-  useEffect(() => {
-    if (!modelOpen || models.length) return;
-    window.amc.engine.listModels().then((list) => {
-      if (Array.isArray(list) && list.length) setModels(list as string[]);
-    }).catch(() => { /* 端点不可用：只显示当前模型 */ });
-  }, [modelOpen, models.length]);
-
-  // 切模型：POST /model 运行时生效（下一次请求即用新模型），同时写 config 持久化（下次启动沿用），不重启
-  const pickModel = async (id: string): Promise<void> => {
-    if (busy || switchingModel || id === cfgModel) { setModelOpen(false); return; }
-    setSwitchingModel(true);
-    try {
-      await engine.post('/model', { model: id });
-      setCfgModel(id);
-      setModelOpen(false);
-      const cfg = await window.amc.config.get() as Record<string, unknown>;
-      await window.amc.config.save({ ...cfg, engine: { ...(cfg.engine as object), model: id } });
-    } catch { /* 引擎不可达：保持原选择 */ }
-    finally {
-      setSwitchingModel(false);
-    }
+  const fill = (text: string, append = false): void => {
+    setDraft((d) => (append && d ? `${d}\n${text}` : text));
+    requestAnimationFrame(() => {
+      const ta = taRef.current;
+      if (!ta) return;
+      ta.focus();
+      ta.setSelectionRange(ta.value.length, ta.value.length);
+      ta.style.height = 'auto';
+      ta.style.height = `${Math.min(ta.scrollHeight, hero ? 220 : 160)}px`;
+    });
   };
 
-  // 思考强度（引擎 /thinking；下一轮生效）
-  const [effort, setEffort] = useState('');
-  const [effortOpen, setEffortOpen] = useState(false);
-  const effortRef = useDismiss(effortOpen, () => setEffortOpen(false));
+  const seedTick = seed?.tick ?? 0;
   useEffect(() => {
-    engine.get('/thinking').then((r) => {
-      const e = (r.body as { effort?: string } | undefined)?.effort;
-      if (e !== undefined) setEffort(e);
-    }).catch(() => { /* 引擎未起 */ });
-  }, []);
-  const pickEffort = (id: string): void => {
-    setEffort(id);
-    setEffortOpen(false);
-    engine.post('/thinking', { effort: id }).catch(() => { /* 引擎不可达：下轮拉取对账 */ });
-  };
-
-  useEffect(() => {
-    if (seed) {
-      setDraft(seed);
-      taRef.current?.focus();
-    }
-  }, [seed]);
-
-  // 外部注入（ZCode 式「选网页元素加入对话」）：追加到草稿并聚焦
-  const seedTick = composerSeed.tick;
-  useEffect(() => {
-    if (seedTick > 0) {
-      const text = composerSeed.text;
-      setDraft((d) => (d ? `${d}\n${text}` : text));
-      taRef.current?.focus();
-    }
+    if (seedTick > 0 && seed) fill(seed.text);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [seedTick]);
 
+  // 外部注入（「选网页元素加入对话」、变更面板「让智能体审查」等）：追加到草稿并聚焦
+  const injectTick = composerSeed.tick;
+  useEffect(() => {
+    if (injectTick > 0) fill(composerSeed.text, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [injectTick]);
+
   // 队列项「撤回编辑」：store 的草稿回填请求落到输入框
   useEffect(() => {
+    if (!sid) return;
     const text = consumeDraftRestore(sid);
-    if (text) {
-      setDraft(text);
-      taRef.current?.focus();
-    }
-  }, [sid, consumeDraftRestore, draft]); // draft 依赖：每次输入变化都尝试消费（store 只发一次）
+    if (text) fill(text);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sid, consumeDraftRestore, draft]);
 
-  const submit = (): void => {
+  const submit = async (): Promise<void> => {
     const text = draft.trim();
-    if (!text) return;
+    if (!text || starting) return;
+    setError('');
     setDraft('');
     if (taRef.current) taRef.current.style.height = 'auto';
+    const asGoal = goalMode;
+    setGoalMode(false);
+    if (!sid) {
+      if (!project) return;
+      setStarting(true);
+      try {
+        await startThread(project.dir, text, { mode: projectMode, permission, goal: asGoal });
+      } catch (e) {
+        setDraft(text);
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setStarting(false);
+      }
+      return;
+    }
+    if (asGoal && !busy) { void startGoal(sid, text); return; }
     if (busy) void enqueue(sid, text);
     else void send(sid, text);
   };
 
   const hasDraft = draft.trim().length > 0;
-  // ZCode 状态机：busy 且无草稿 → 停止钮；有草稿 → 发送键（入队）。
-  const showStop = busy && !hasDraft;
-  const hero = variant === 'hero';
-  const modeDef = MODES.find((m) => m.id === mode) ?? MODES[1]!;
-  const ModeIcon = modeDef.icon;
-
-  const applyMode = (id: string): void => {
-    setMode(id);
-    setModeOpen(false);
-    engine.post('/mode', { mode: id }).catch(() => { /* 引擎不可达：UI 保持所选，下轮拉取对账 */ });
-  };
+  const showStop = !!sid && busy && !hasDraft;
+  const placeholder = goalMode
+    ? '描述要达成的目标：智能体会持续推进，每轮结束自动验收，直到达成'
+    : busy
+      ? '任务执行中——发送将排队，当前任务结束后依次执行'
+      : agent ? `交给${agent.name}：描述你要完成的事` : '描述你要完成的事';
 
   return (
-    <div
-      className={
-        'relative z-10 rounded-2xl border border-input-border bg-input p-3 transition-colors'
-        + ' hover:border-input-border-hover'
-        + (focused ? ' border-input-border-focused bg-input-focused' : '')
-      }
-    >
-      <textarea
-        ref={taRef}
-        value={draft}
-        rows={hero ? 3 : 1}
-        onChange={(e) => {
-          setDraft(e.target.value);
-          e.target.style.height = 'auto';
-          e.target.style.height = `${Math.min(e.target.scrollHeight, hero ? 220 : 160)}px`;
-        }}
-        onFocus={() => setFocused(true)}
-        onBlur={() => setFocused(false)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-            e.preventDefault();
-            submit();
-          }
-        }}
-        placeholder={busy
-          ? '任务执行中——发送将排队，当前任务结束后依次执行'
-          : '描述你的想法，AI 帮你做成 App'}
-        className="block w-full resize-none bg-transparent px-1 pt-1.5 text-ui-base text-foreground outline-none placeholder:text-foreground-subtlest"
-        style={{ minHeight: hero ? 72 : undefined }}
-      />
-      {/* 工具行：leading 模式菜单 · trailing 模型选择器 + 停止/发送 */}
-      <div className="mt-2 flex items-end gap-3">
-        <div className="flex min-w-0 flex-1 items-center gap-1.5">
-          {hero && project && (
-            <span className="flex min-w-0 items-center gap-1.5 rounded-lg border border-border px-2.5 py-1 text-ui-xs text-foreground-subtle">
-              <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: project.color || 'var(--color-brand)' }} />
-              <span className="truncate">{project.name}</span>
-            </span>
-          )}
-          {/* 模式菜单（引擎 /mode；对进行中的 run 也立即生效） */}
-          <div ref={modeRef} className="relative shrink-0">
-            <button type="button"
-              className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-ui-xs text-foreground-subtle transition-colors hover:bg-hover hover:text-foreground"
-              onClick={() => setModeOpen(!modeOpen)}>
-              <ModeIcon className="size-3.5" />
-              <span>{modeDef.label}</span>
-              <ChevronDownIcon className="size-3 opacity-60" />
+    <div className="relative z-10">
+      <div className={cn(
+        'rounded-2xl border bg-input p-3 transition-colors',
+        goalMode ? 'border-brand/60' : 'border-input-border hover:border-input-border-hover',
+        focused && !goalMode && 'border-input-border-focused bg-input-focused',
+      )}>
+        <textarea
+          ref={taRef}
+          value={draft}
+          rows={hero ? 3 : 1}
+          onChange={(e) => {
+            setDraft(e.target.value);
+            e.target.style.height = 'auto';
+            e.target.style.height = `${Math.min(e.target.scrollHeight, hero ? 220 : 160)}px`;
+          }}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+              e.preventDefault();
+              void submit();
+            }
+          }}
+          placeholder={placeholder}
+          className="block w-full resize-none bg-transparent px-1 pt-1.5 text-ui-base text-foreground outline-none placeholder:text-foreground-subtlest"
+          style={{ minHeight: hero ? 72 : undefined }}
+        />
+        <div className="mt-2 flex items-center gap-2">
+          <div className="flex min-w-0 flex-1 items-center gap-0.5">
+            <AgentPicker />
+            <PermissionPicker />
+            <button type="button" onClick={() => setGoalMode(!goalMode)} aria-pressed={goalMode}
+              title={goalActive ? '本对话已有进行中的目标；开启后发送会替换它' : '以目标发送：每轮结束自动验收，未达成就继续推进'}
+              className={cn(chipCls, goalMode && 'bg-brand/12 text-brand hover:bg-brand/18 hover:text-brand')}>
+              <GoalIcon className="size-3.5" />
+              <span>{goalActive && !goalMode ? '目标进行中' : '目标'}</span>
             </button>
-            {modeOpen && (
-              <div className="absolute bottom-full left-0 z-30 mb-2 w-64 rounded-xl border border-border bg-popover p-1 shadow-lg">
-                {MODES.map((m) => {
-                  const Icon = m.icon;
-                  return (
-                    <button key={m.id} type="button"
-                      className={cn(
-                        'flex w-full items-start gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors',
-                        m.id === mode ? 'bg-selected' : 'hover:bg-hover',
-                      )}
-                      onClick={() => applyMode(m.id)}>
-                      <Icon className="mt-0.5 size-4 shrink-0 text-foreground-subtle" />
-                      <span className="min-w-0 flex-1">
-                        <span className="block text-ui-sm text-foreground">{m.label}</span>
-                        <span className="block text-ui-xs text-foreground-subtlest">{m.desc}</span>
-                      </span>
-                      {m.id === mode && <CheckIcon className="mt-0.5 size-4 shrink-0 text-brand" />}
-                    </button>
-                  );
-                })}
-              </div>
+          </div>
+          <div className="flex shrink-0 items-center gap-1">
+            {sid && <ContextRing sid={sid} />}
+            <ModelPicker disabled={busy} />
+            {showStop ? (
+              <Button type="button" variant="secondary" size="icon-md" aria-label="停止当前任务"
+                title="停止当前任务" onClick={() => void interrupt(sid!)}>
+                <SquareIcon className="size-4 fill-current" />
+              </Button>
+            ) : (
+              <Button type="button" size="icon-md" disabled={!hasDraft || starting}
+                aria-label={busy ? '加入队列' : '发送（Enter）'}
+                title={busy ? '加入队列（当前任务结束后执行）' : '发送（Enter）'}
+                className="rounded-lg bg-brand text-foreground-inverse hover:bg-brand/80"
+                onClick={() => void submit()}>
+                {starting ? <Loader2Icon className="size-4 animate-spin" /> : <ArrowUpIcon className="size-4" />}
+              </Button>
             )}
           </div>
-          {/* 思考强度菜单（引擎 /thinking；下一轮生效） */}
-          <div ref={effortRef} className="relative shrink-0">
-            <button type="button"
-              className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-ui-xs text-foreground-subtle transition-colors hover:bg-hover hover:text-foreground"
-              onClick={() => setEffortOpen(!effortOpen)}>
-              <BrainIcon className="size-3.5" />
-              <span>{EFFORTS.find((e) => e.id === effort)?.label ?? '思考'}</span>
-              <ChevronDownIcon className="size-3 opacity-60" />
-            </button>
-            {effortOpen && (
-              <div className="absolute bottom-full left-0 z-30 mb-2 w-64 rounded-xl border border-border bg-popover p-1 shadow-lg">
-                {EFFORTS.map((e) => (
-                  <button key={e.id} type="button"
-                    className={cn(
-                      'flex w-full items-start gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors',
-                      e.id === effort ? 'bg-selected' : 'hover:bg-hover',
-                    )}
-                    onClick={() => pickEffort(e.id)}>
-                    <span className="min-w-0 flex-1">
-                      <span className="block text-ui-sm text-foreground">{e.label}</span>
-                      <span className="block text-ui-xs text-foreground-subtlest">{e.desc}</span>
-                    </span>
-                    {e.id === effort && <CheckIcon className="mt-0.5 size-4 shrink-0 text-brand" />}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-        <div className="flex shrink-0 items-center gap-1.5">
-          {/* 上下文用量圆环（ZCode 式：模型选择器旁的小圈，悬停出明细面板） */}
-          <ContextRing sid={sid} />
-          {/* 模型选择器（OpenAI 兼容 /models；切换 = 写 config + 重启引擎） */}
-          <div ref={modelRef} className="relative">
-            <button type="button"
-              className="flex max-w-44 items-center gap-1.5 rounded-lg px-2 py-1 text-ui-xs text-foreground-subtlest transition-colors hover:bg-hover hover:text-foreground"
-              title="切换模型（保存并重启引擎）"
-              onClick={() => setModelOpen(!modelOpen)}>
-              <span className="truncate">{switchingModel ? '切换中…' : (cfgModel || '模型')}</span>
-              <ChevronDownIcon className="size-3 opacity-60" />
-            </button>
-            {modelOpen && (
-              <div className="absolute bottom-full right-0 z-30 mb-2 max-h-72 w-56 overflow-y-auto rounded-xl border border-border bg-popover p-1 shadow-lg">
-                {models.length === 0 && (
-                  <div className="px-2.5 py-2 text-ui-xs text-foreground-subtlest">
-                    {cfgModel ? `当前：${cfgModel}` : '未获取到模型列表'}
-                  </div>
-                )}
-                {models.map((m) => (
-                  <button key={m} type="button"
-                    className={cn(
-                      'flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-ui-sm transition-colors',
-                      m === cfgModel ? 'bg-selected text-foreground' : 'text-foreground-subtle hover:bg-hover hover:text-foreground',
-                    )}
-                    onClick={() => void pickModel(m)}>
-                    <span className="min-w-0 flex-1 truncate" title={m}>{m}</span>
-                    {m === cfgModel && <CheckIcon className="size-3.5 shrink-0 text-brand" />}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-          {showStop ? (
-            <Button type="button" variant="secondary" size="icon-md" aria-label="停止当前任务"
-              title="停止当前任务" onClick={() => void interrupt(sid)}>
-              <SquareIcon className="size-4 fill-current" />
-            </Button>
-          ) : (
-            <Button type="button" size="icon-md" disabled={!hasDraft}
-              aria-label={busy ? '加入队列' : '发送（Enter）'}
-              title={busy ? '加入队列（当前任务结束后执行）' : '发送（Enter）'}
-              className="rounded-lg bg-brand text-foreground-inverse hover:bg-brand/80"
-              onClick={submit}>
-              <ArrowUpIcon className="size-4" />
-            </Button>
-          )}
         </div>
       </div>
+      {error && <div className="mt-1.5 px-2 text-ui-xs text-destructive">{error}</div>}
     </div>
   );
 }

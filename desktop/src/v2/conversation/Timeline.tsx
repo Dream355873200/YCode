@@ -3,6 +3,7 @@
 // 贴底跟随状态机（scrollAnchor 纯函数）：following 时内容追加自动滚底，
 // 用户上滚脱离、滚回底部恢复、detached 显示「回到底部」浮标。
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { ArrowDownIcon, ChevronRightIcon, MessageCircleQuestionIcon } from 'lucide-react';
 import { pendingBackgroundAgents, type Row } from './projection/rows';
 import { foldTurns, type TurnUnit } from './projection/turns';
 import {
@@ -11,6 +12,7 @@ import {
 import { RowView, foldReads, ReadGroup } from './RowView';
 import { useConversation } from './store';
 import { Collapse } from '../components/ui/collapse';
+import { cn } from '../components/lib/utils';
 
 function TurnBlock({ unit, sid, live }: { unit: Extract<TurnUnit, { type: 'turn' }>; sid: string; live?: boolean }) {
   const { work, tail } = unit;
@@ -69,7 +71,7 @@ function TurnBlock({ unit, sid, live }: { unit: Extract<TurnUnit, { type: 'turn'
         <div className="mb-0.5">
           <button type="button" onClick={() => { if (!running && !aborted) setManual(!open); }}
             className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-ui-xs text-foreground-subtlest hover:bg-hover">
-            {!expanded && <span className={`inline-block transition-transform duration-200 ${open ? 'rotate-90' : ''}`}>▸</span>}
+            {!expanded && <ChevronRightIcon className={`size-3 transition-transform duration-200 ${open ? 'rotate-90' : ''}`} />}
             <span>工作过程</span>
             {running ? (
               <>
@@ -212,7 +214,12 @@ function fmtDur(sec: number): string {
 
 /** 时间线。memo：外壳（侧栏/右栏开合等 appState 变化）重渲染时，
  *  rows 引用不变就不重算整条对话。 */
-export const Timeline = memo(function Timeline({ rows, sid }: { rows: Row[]; sid: string }) {
+export const Timeline = memo(function Timeline({ rows, sid, columnClassName }: {
+  rows: Row[];
+  sid: string;
+  /** 内容列附加类（状态面板展开并排时整列左移让位）。 */
+  columnClassName?: string;
+}) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [anchor, setAnchor] = useState<AnchorState>(resetAnchor);
   const units = useMemo(() => foldTurns(rows), [rows]);
@@ -295,7 +302,7 @@ export const Timeline = memo(function Timeline({ rows, sid }: { rows: Row[]; sid
       {/* 左缘轮次轨：固定在视口左缘，不随内容滚动 */}
       <TurnRail turns={turns} containerRef={scrollRef} onJump={jumpToTurn} />
       <div ref={scrollRef} onScroll={onScroll} className="scroll-fine h-full overflow-y-auto">
-        <div className="mx-auto h-full max-w-3xl px-6 py-3">
+        <div className={cn('mx-auto h-full max-w-3xl px-6 py-3 transition-transform duration-300', columnClassName)}>
           {units.map((u, i) =>
             u.type === 'user'
               ? (
@@ -310,7 +317,7 @@ export const Timeline = memo(function Timeline({ rows, sid }: { rows: Row[]; sid
           {/* 工作计时 / 思考直播已并入工作段头部（TurnBlock）；这里只留询问中提示 */}
           {pendingAsk && (
             <div className="flex items-center gap-1.5 px-1 py-1 text-ui-xs text-foreground-subtlest">
-              <span>❓</span>
+              <MessageCircleQuestionIcon className="size-3.5 text-warning" />
               <span>正在询问</span>
             </div>
           )}
@@ -325,8 +332,8 @@ export const Timeline = memo(function Timeline({ rows, sid }: { rows: Row[]; sid
       </div>
       {showJumpBack(anchor, bottomDist(scrollRef.current)) && (
         <button type="button" onClick={jumpBack}
-          className="absolute bottom-12 left-1/2 -translate-x-1/2 rounded-full border border-border bg-card px-3 py-1 text-ui-xs text-foreground-subtle shadow-md hover:text-foreground">
-          ↓ 回到底部
+          className="absolute bottom-12 left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-full border border-border bg-card px-3 py-1 text-ui-xs text-foreground-subtle shadow-md hover:text-foreground">
+          <ArrowDownIcon className="size-3.5" />回到底部
         </button>
       )}
     </div>

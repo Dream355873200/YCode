@@ -37,9 +37,10 @@ type Mode struct {
 	ProjectFields []ProjectField `json:"projectFields"`      // 新建项目表单字段（桌面壳消费）
 	Scaffold      string         `json:"scaffold,omitempty"` // 脚手架 id（空 = 打开已有目录）
 
-	Origin   string    `json:"origin"`   // bundled | user（解析产物，非清单字段）
-	Dir      string    `json:"dir"`      // 模式包目录绝对路径（解析产物）
-	Resolved *ModeView `json:"resolved"` // 插件聚合后的能力视图（解析产物，非清单字段）
+	Origin    string    `json:"origin"`              // bundled | user（解析产物，非清单字段）
+	Overrides bool      `json:"overrides,omitempty"` // 用户资产覆盖了同 id 的内置模式（解析产物；可删用户副本恢复默认）
+	Dir       string    `json:"dir"`                 // 模式包目录绝对路径（解析产物）
+	Resolved  *ModeView `json:"resolved"`            // 插件聚合后的能力视图（解析产物，非清单字段）
 }
 
 // Starter 开场建议：空对话里的一键起手（label 是按钮文字，prompt 填进输入框）。
@@ -203,6 +204,9 @@ func loadModes() ([]*Mode, []LoadError) {
 				continue
 			}
 			m.Origin = root.Origin
+			if prev := byID[m.ID]; prev != nil && prev.Origin == originBundled && m.Origin == originUser {
+				m.Overrides = true
+			}
 			byID[m.ID] = m
 		}
 	}

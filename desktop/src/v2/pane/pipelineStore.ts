@@ -35,10 +35,12 @@ export interface NodeEvt {
 interface PipelineState {
   nodes: DagNode[];
   goal: string;
+  /** 发起这次流水线的会话（状态面板只在它自己的对话里展示）。 */
+  sessionId: string | null;
   startedAt: number | null;
   finishedAt: number | null;
   events: Record<string, NodeEvt[]>;
-  reset: (nodes: DagNode[], goal: string) => void;
+  reset: (nodes: DagNode[], goal: string, sessionId: string | null) => void;
   update: (name: string, patch: Partial<DagNode>) => void;
   pushEvent: (name: string, text: string) => void;
   finish: () => void;
@@ -49,10 +51,11 @@ const EVT_MAX = 200;
 const usePipelineStore = create<PipelineState>((set) => ({
   nodes: [],
   goal: '',
+  sessionId: null,
   startedAt: null,
   finishedAt: null,
   events: {},
-  reset: (nodes, goal) => set({ nodes, goal, startedAt: Date.now(), finishedAt: null, events: {} }),
+  reset: (nodes, goal, sessionId) => set({ nodes, goal, sessionId, startedAt: Date.now(), finishedAt: null, events: {} }),
   update: (name, patch) =>
     set((s) => ({ nodes: s.nodes.map((n) => (n.name === name ? { ...n, ...patch } : n)) })),
   pushEvent: (name, text) =>
@@ -115,7 +118,7 @@ export function initPipelineCapture(): void {
     const st = usePipelineStore.getState();
     if (frame.type === 'tool_start' && frame.tool_name === 'create_pipeline') {
       const parsed = parseSpec(frame.tool_input);
-      if (parsed) st.reset(parsed.nodes, parsed.goal);
+      if (parsed) st.reset(parsed.nodes, parsed.goal, frame.session_id || null);
       return;
     }
     if (frame.type === 'custom' && frame.name === 'goagent.pipeline_node') {
@@ -135,6 +138,11 @@ initPipelineCapture();
 
 export function usePipeline(): PipelineState {
   return usePipelineStore();
+}
+
+/** 只订阅流水线的某个切片（状态面板用，避免节点事件逐条触发整页重渲）。 */
+export function usePipelineSelector<T>(selector: (s: PipelineState) => T): T {
+  return usePipelineStore(selector);
 }
 
 // ---- 历史运行（GoAgent 落盘快照，引擎 /pipelines 端点） ----

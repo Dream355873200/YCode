@@ -4,7 +4,6 @@ const http = require('http');
 const { URL } = require('url');
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
 const { dialog, clipboard } = require('electron');
 // goagent 协议 TS 客户端：SSE 解析/统一信封/交互回传全部走 SDK，不再手写
 const { GoAgentClient } = require('goagent-client');
@@ -58,76 +57,11 @@ function probeEngine(addr) {
   return httpJSON('GET', addr, '/health').then((r) => r.status === 200).catch(() => false);
 }
 
-// sessionMapPath 会话绑定文件（引擎按会话解析项目目录与模式的真源）。
-// 引擎侧 WithSessionWorkDir / 会话级能力解析器读它——切项目只是换
-// session_id，切模式只是改绑定，引擎进程不重启（多项目、多模式并行）。
-function sessionMapPath() {
-  return path.join(os.homedir(), '.amobilecreater', 'session-map.json');
-}
-
-// bindSession 登记会话绑定 {dir, mode} 并即时写盘（引擎 mtime 缓存会自动重读）。
-// mode 省略时保留该会话已有的模式（旧格式字符串条目视为无模式 → 引擎取默认）。
-function bindSession(sessionId, projectDir, mode) {
-  if (!sessionId || !projectDir) return false;
-  const file = sessionMapPath();
-  let map = {};
-  try { map = JSON.parse(fs.readFileSync(file, 'utf8')) || {}; } catch { /* 首次/损坏：重建 */ }
-  migrateLegacySession(map, sessionId, projectDir);
-  const prev = map[sessionId];
-  const keepMode = prev && typeof prev === 'object' ? prev.mode : undefined;
-  const nextMode = mode || keepMode;
-  map[sessionId] = nextMode ? { dir: projectDir, mode: nextMode } : { dir: projectDir };
-  try {
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file, JSON.stringify(map, null, 2));
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-// ---------- 旧会话 ID 迁移 ----------
-// 旧规则 amc-<目录名>[-git] 会让不同位置的同名项目共用一段对话；新规则
-// amc-<目录名>-<路径哈希>[-git]（src/v2/app/sessionId.ts）。首次以新 ID 绑定
-// 时，若 session-map 记录的旧 ID 目录正是本项目，就把对话历史与任务文件
-// 改名过去并继承旧绑定——同名的其他项目从空白会话开始。改名失败则原样
-// 保留旧条目，下次绑定再试。
+// 会话绑定（session-map.json：会话 → 项目目录 / 智能体 / 对话元数据）由引擎
+// 维护（/threads 端点，引擎是唯一写入方），壳不再直接写这个文件。
 
 // 引擎工作目录：goagent 会话存储落在 <cwd>/.yume/sessions/<id>.jsonl。
 const ENGINE_CWD = process.cwd();
-const sessionsDir = () => path.join(ENGINE_CWD, '.yume', 'sessions');
-
-const sameDir = (a, b) => {
-  const norm = (d) => {
-    const s = String(d || '').replace(/\\/g, '/').replace(/\/+$/, '');
-    return /^[a-zA-Z]:/.test(s) ? s.toLowerCase() : s;
-  };
-  return norm(a) === norm(b);
-};
-
-// 与 goagent task.SessionStore 的文件名净化一致。
-const taskFileOf = (dir, sid) => path.join(dir, '.yume', 'tasks', `tasks-${sid.replace(/[^A-Za-z0-9._-]/g, '_')}.json`);
-
-// renameIfFree 源存在且目标不存在时改名；返回 false 表示改名失败。
-function renameIfFree(from, to) {
-  if (!fs.existsSync(from) || fs.existsSync(to)) return true;
-  try { fs.renameSync(from, to); return true; } catch { return false; }
-}
-
-function migrateLegacySession(map, sessionId, projectDir) {
-  const base = projectDir.split(/[\\/]/).filter(Boolean).pop();
-  const suffix = sessionId.endsWith('-git') ? '-git' : '';
-  if (!base || !sessionId.startsWith(`amc-${base}-`)) return;
-  const legacy = `amc-${base}${suffix}`;
-  const prev = map[legacy];
-  if (legacy === sessionId || map[sessionId] || !prev) return;
-  if (!sameDir(typeof prev === 'string' ? prev : prev.dir, projectDir)) return;
-  const dir = sessionsDir();
-  if (!renameIfFree(path.join(dir, `${legacy}.jsonl`), path.join(dir, `${sessionId}.jsonl`))) return;
-  renameIfFree(taskFileOf(projectDir, legacy), taskFileOf(projectDir, sessionId));
-  map[sessionId] = prev;
-  delete map[legacy];
-}
 
 async function ensure(cfg, extraEnv = {}) {
   // 引擎是单例常驻进程：多项目并行靠 session→项目映射（session-map.json），
@@ -301,5 +235,5 @@ function kill() {
 }
 
 module.exports = {
-  state, setWin, ensure, kill, streamChat, httpJSON, isConnRefused, bindSession,
+  state, setWin, ensure, kill, streamChat, httpJSON, isConnRefused,
 };

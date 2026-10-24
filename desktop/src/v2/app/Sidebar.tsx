@@ -1,14 +1,29 @@
-// Sidebar — 会话侧栏（ZCode 导航结构）：新建/搜索导航行 + 项目分组列表 +
-// 底部引擎状态卡；支持收起为窄轨（rail），Header 的开合钮控制。
-// 开合动画：容器常驻挂载做宽度过渡，全量内容与 rail 双层交叉渐隐
-// （隐藏层 visibility 延迟到过渡结束才生效，不挡焦点/点击）。
-import { useState } from 'react';
-import { ArrowLeftIcon, FolderTreeIcon, PlusIcon, Settings2Icon, SearchIcon } from 'lucide-react';
-import { useApp, sessionIdOf } from './appState';
-import { useConversation } from '../conversation/store';
+// Sidebar — 工作区侧栏：新对话 / 搜索 + 项目分组（组内对话与团队）+ 底部
+// 引擎状态与设置。对话行带状态（运行中 / 等你处理 / 未读），悬停出「…」
+// 菜单（重命名 / 归档 / 删除）；项目行悬停出「在此项目新建对话」与项目菜单。
+// 收起为窄轨（rail）；项目行内的文件树入口把侧栏切换为文件树视图。
+import { useMemo, useState } from 'react';
+import {
+  ArchiveIcon, ArchiveRestoreIcon, ArrowLeftIcon, ChevronRightIcon, EllipsisIcon, FolderOpenIcon,
+  FolderPlusIcon, FolderTreeIcon, Loader2Icon, MessageCircleQuestionIcon, PencilIcon, PlusIcon,
+  SearchIcon, Settings2Icon, ShieldAlertIcon, SquarePenIcon, Trash2Icon, UserRoundPlusIcon, UsersIcon,
+  XIcon,
+} from 'lucide-react';
+import { useApp } from './appState';
+import { isUnread, sameDir, threadsOf, useWorkspace, type Project, type TeamSummary, type Thread } from './workspace';
+import { normalizeDir } from './sessionId';
 import { Button } from '../components/ui/button';
+import { ConfirmDialog } from '../components/ui/confirm-dialog';
+import { InlineRename } from '../components/ui/inline-rename';
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
+} from '../components/ui/dropdown-menu';
 import { cn } from '../components/lib/utils';
+import { relTime } from '../lib/time';
 import FileTree from '../pane/FileTree';
+
+const COLLAPSE_KEY = 'ycode.collapsedProjects';
+const PAGE = 6;
 
 function EngineDot({ status }: { status: string }) {
   const cls = status === 'running'
@@ -19,177 +34,367 @@ function EngineDot({ status }: { status: string }) {
   return <span className={cn('inline-block h-2 w-2 shrink-0 rounded-full', cls)} />;
 }
 
+/** 对话状态图标：运行中 / 等你回答 / 等你审批 / 未读。 */
+function ThreadStatus({ t, unread }: { t: Thread; unread: boolean }) {
+  if (t.state === 'running') return <Loader2Icon className="size-3.5 shrink-0 animate-spin text-brand" />;
+  if (t.pending === 'ask') return <MessageCircleQuestionIcon className="size-3.5 shrink-0 text-warning" />;
+  if (t.pending === 'approval') return <ShieldAlertIcon className="size-3.5 shrink-0 text-warning" />;
+  if (unread) return <span className="mx-[4px] size-1.5 shrink-0 rounded-full bg-brand" />;
+  return <span className="size-3.5 shrink-0" />;
+}
+
+function ThreadRow({ t, active, unread }: { t: Thread; active: boolean; unread: boolean }) {
+  const select = useWorkspace((s) => s.select);
+  const updateThread = useWorkspace((s) => s.updateThread);
+  const deleteThread = useWorkspace((s) => s.deleteThread);
+  const [editing, setEditing] = useState(false);
+  const [confirm, setConfirm] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  return (
+    <>
+      <div role="button" tabIndex={0}
+        onClick={() => select({ kind: 'thread', id: t.id, dir: t.dir })}
+        onDoubleClick={() => setEditing(true)}
+        onKeyDown={(e) => { if (e.key === 'Enter') select({ kind: 'thread', id: t.id, dir: t.dir }); if (e.key === 'F2') setEditing(true); }}
+        className={cn(
+          'group/thread flex h-7.5 w-full cursor-pointer items-center gap-2 rounded-lg pl-7 pr-1.5 text-left transition-colors',
+          active ? 'bg-selected' : 'hover:bg-hover',
+          t.archived && 'opacity-60',
+        )}>
+        <ThreadStatus t={t} unread={unread} />
+        {editing ? (
+          <InlineRename value={t.title} onDone={(next) => {
+            setEditing(false);
+            if (next) void updateThread(t.id, { title: next });
+          }} />
+        ) : (
+          <span className={cn('min-w-0 flex-1 truncate text-ui-sm', active || unread ? 'text-foreground' : 'text-foreground-subtle')}
+            title={t.title}>
+            {t.title}
+          </span>
+        )}
+        {!editing && (
+          <>
+            <span className={cn('shrink-0 text-ui-2xs tabular-nums text-foreground-subtlest', menuOpen ? 'hidden' : 'group-hover/thread:hidden')}>
+              {t.state === 'running' ? '' : relTime(t.updatedAt)}
+            </span>
+            <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+              <DropdownMenuTrigger asChild>
+                <button type="button" aria-label="对话操作" onClick={(e) => e.stopPropagation()}
+                  className={cn('shrink-0 rounded p-0.5 text-foreground-subtle hover:bg-hover hover:text-foreground',
+                    menuOpen ? 'flex' : 'hidden group-hover/thread:flex')}>
+                  <EllipsisIcon className="size-3.5" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                <DropdownMenuItem onSelect={() => setEditing(true)}><PencilIcon />重命名</DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => void updateThread(t.id, { archived: !t.archived })}>
+                  {t.archived ? <><ArchiveRestoreIcon />取消归档</> : <><ArchiveIcon />归档</>}
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem tone="destructive" onSelect={() => setConfirm(true)}><Trash2Icon />删除</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </>
+        )}
+      </div>
+      <ConfirmDialog open={confirm} onOpenChange={setConfirm}
+        title={`删除对话「${t.title}」？`}
+        description="对话历史、任务清单与子代理轨迹会一并删除，无法恢复。"
+        confirmLabel="删除"
+        onConfirm={async () => { await deleteThread(t.id); }} />
+    </>
+  );
+}
+
+function TeamRow({ team, active }: { team: TeamSummary; active: boolean }) {
+  const select = useWorkspace((s) => s.select);
+  return (
+    <div role="button" tabIndex={0}
+      onClick={() => select({ kind: 'team', dir: team.dir, name: team.name })}
+      onKeyDown={(e) => { if (e.key === 'Enter') select({ kind: 'team', dir: team.dir, name: team.name }); }}
+      className={cn(
+        'group/thread flex h-7.5 w-full cursor-pointer items-center gap-2 rounded-lg pl-7 pr-1.5 text-left transition-colors',
+        active ? 'bg-selected' : 'hover:bg-hover',
+      )}
+      title={team.goal}>
+      {team.running > 0
+        ? <Loader2Icon className="size-3.5 shrink-0 animate-spin text-brand" />
+        : <UsersIcon className="size-3.5 shrink-0 text-foreground-subtle" />}
+      <span className={cn('min-w-0 flex-1 truncate text-ui-sm', active ? 'text-foreground' : 'text-foreground-subtle')}>
+        {team.name}
+      </span>
+      <span className="shrink-0 text-ui-2xs tabular-nums text-foreground-subtlest">
+        {team.running > 0 ? `${team.running}/${team.members}` : `${team.members} 人`}
+      </span>
+    </div>
+  );
+}
+
+function ProjectGroup({ p, expanded, onToggle }: { p: Project; expanded: boolean; onToggle(): void }) {
+  const { project, selection, newThread, setFileTreeOpen, fileTreeOpen, setTeamDialogDir, refreshProjects } = useApp();
+  const threads = useWorkspace((s) => s.threads);
+  const teams = useWorkspace((s) => s.teams[normalizeDir(p.dir)]);
+  const seen = useWorkspace((s) => s.seen);
+  const openProject = useWorkspace((s) => s.openProject);
+  const [showAll, setShowAll] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [confirmRemove, setConfirmRemove] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  const all = useMemo(() => threadsOf(threads, p.dir), [threads, p.dir]);
+  const live = all.filter((t) => !t.archived);
+  const archived = all.filter((t) => t.archived);
+  const shown = showAll ? live : live.slice(0, PAGE);
+  const activeId = selection?.kind === 'thread' ? selection.id : null;
+  const isActive = sameDir(project?.dir, p.dir);
+  const running = all.filter((t) => t.state === 'running').length + (teams ?? []).reduce((n, t) => n + (t.running > 0 ? 1 : 0), 0);
+  const attention = all.some((t) => !!t.pending);
+
+  return (
+    <div className="mb-1">
+      <div role="button" tabIndex={0}
+        onClick={() => { if (!expanded) onToggle(); openProject(p.dir); }}
+        onKeyDown={(e) => { if (e.key === 'Enter') openProject(p.dir); }}
+        className={cn(
+          'group/project flex h-8 w-full cursor-pointer items-center gap-1.5 rounded-lg px-1.5 text-left transition-colors hover:bg-hover',
+          isActive && selection?.kind === 'draft' && 'bg-selected',
+        )}>
+        <button type="button" aria-label={expanded ? '收起' : '展开'}
+          onClick={(e) => { e.stopPropagation(); onToggle(); }}
+          className="flex size-5 shrink-0 items-center justify-center rounded text-foreground-subtlest hover:text-foreground">
+          <ChevronRightIcon className={cn('size-3.5 transition-transform duration-150', expanded && 'rotate-90')} />
+        </button>
+        {renaming ? (
+          <InlineRename value={p.name} onDone={(next) => {
+            setRenaming(false);
+            if (next) void window.amc.projects.rename(p.dir, next).then(() => refreshProjects());
+          }} />
+        ) : (
+          <span className="min-w-0 flex-1 truncate text-ui-sm font-medium text-foreground" title={p.dir}>{p.name}</span>
+        )}
+        {!expanded && running > 0 && <Loader2Icon className="size-3 shrink-0 animate-spin text-brand" />}
+        {!expanded && attention && <span className="size-1.5 shrink-0 rounded-full bg-warning" />}
+        {/* 悬停操作：新对话 / 文件树 / 项目菜单 */}
+        <span className={cn('shrink-0 items-center gap-0.5', menuOpen ? 'flex' : 'hidden group-hover/project:flex')}>
+          <button type="button" title="在此项目新建对话" aria-label="在此项目新建对话"
+            className="rounded p-0.5 text-foreground-subtle hover:bg-hover hover:text-foreground"
+            onClick={(e) => { e.stopPropagation(); newThread(p.dir); }}>
+            <SquarePenIcon className="size-3.5" />
+          </button>
+          <button type="button" title="文件" aria-label={`打开 ${p.name} 的文件树`}
+            className={cn('rounded p-0.5 hover:bg-hover', isActive && fileTreeOpen ? 'text-brand' : 'text-foreground-subtle hover:text-foreground')}
+            onClick={(e) => { e.stopPropagation(); openProject(p.dir); setFileTreeOpen(true); }}>
+            <FolderTreeIcon className="size-3.5" />
+          </button>
+          <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+            <DropdownMenuTrigger asChild>
+              <button type="button" aria-label="项目操作" onClick={(e) => e.stopPropagation()}
+                className="rounded p-0.5 text-foreground-subtle hover:bg-hover hover:text-foreground">
+                <EllipsisIcon className="size-3.5" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+              <DropdownMenuItem onSelect={() => newThread(p.dir)}><SquarePenIcon />新对话</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => setTeamDialogDir(p.dir)}><UserRoundPlusIcon />新建团队</DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onSelect={() => void window.amc.projects.reveal(p.dir)}><FolderOpenIcon />在文件管理器中打开</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => setRenaming(true)}><PencilIcon />重命名项目</DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem tone="destructive" onSelect={() => setConfirmRemove(true)}><XIcon />从列表移除</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </span>
+      </div>
+
+      {expanded && (
+        <div className="mt-0.5 grid gap-px">
+          {shown.map((t) => (
+            <ThreadRow key={t.id} t={t} active={t.id === activeId} unread={isUnread(t, seen, activeId)} />
+          ))}
+          {live.length > PAGE && (
+            <button type="button" onClick={() => setShowAll(!showAll)}
+              className="h-6.5 rounded-lg pl-12.5 text-left text-ui-xs text-foreground-subtlest hover:bg-hover hover:text-foreground-subtle">
+              {showAll ? '收起' : `显示全部 ${live.length} 个对话`}
+            </button>
+          )}
+          {(teams ?? []).map((team) => (
+            <TeamRow key={team.name} team={team}
+              active={selection?.kind === 'team' && selection.name === team.name && sameDir(selection.dir, p.dir)} />
+          ))}
+          {archived.length > 0 && (
+            <>
+              <button type="button" onClick={() => setShowArchived(!showArchived)}
+                className="flex h-6.5 items-center gap-1.5 rounded-lg pl-7 text-left text-ui-xs text-foreground-subtlest hover:bg-hover hover:text-foreground-subtle">
+                <ArchiveIcon className="size-3" />
+                {showArchived ? '隐藏已归档' : `已归档 ${archived.length}`}
+              </button>
+              {showArchived && archived.map((t) => (
+                <ThreadRow key={t.id} t={t} active={t.id === activeId} unread={false} />
+              ))}
+            </>
+          )}
+        </div>
+      )}
+
+      <ConfirmDialog open={confirmRemove} onOpenChange={setConfirmRemove}
+        title={`从列表移除「${p.name}」？`}
+        description="只是不在 YCode 里显示，项目文件夹与对话历史都保留；之后可重新添加。"
+        confirmLabel="移除"
+        onConfirm={async () => { await window.amc.projects.remove(p.dir); await refreshProjects(); }} />
+    </div>
+  );
+}
+
+function SidebarFooter() {
+  const { engineStatus, openSettings } = useApp();
+  return (
+    <div className="m-2 mt-0 flex items-center gap-2.5 rounded-lg border border-border bg-card px-2.5 py-2">
+      <EngineDot status={engineStatus.status} />
+      <span className="min-w-0 flex-1 truncate text-ui-sm text-foreground-subtle"
+        title={engineStatus.status === 'running' ? '引擎运行中' : `引擎：${engineStatus.status}`}>
+        {engineStatus.model || engineStatus.status}
+      </span>
+      <Button type="button" variant="ghost" size="icon-sm" aria-label="设置"
+        className="text-foreground-subtle hover:bg-hover hover:text-foreground"
+        onClick={() => openSettings()}>
+        <Settings2Icon />
+      </Button>
+    </div>
+  );
+}
+
 export function Sidebar() {
-  const { projects, project, openProject, engineStatus, setCreateDialogOpen, setSettingsOpen, sidebarOpen, setSidebarOpen, fileTreeOpen, setFileTreeOpen } = useApp();
-  const sessions = useConversation((s) => s.sessions);
-  const [filter, setFilter] = useState('');
-
-  const shown = projects.filter((p) =>
-    !filter.trim()
-    || p.name.toLowerCase().includes(filter.trim().toLowerCase()));
-
-  // 收起态快捷会话项：直接遍历项目列表（全量来自引擎，冷会话也显示），
-  // 每项渲染成圆角方框（项目名首字母 + 运行中角标），点击只切会话不展开侧栏
-  const railItems = projects.map((p) => {
-    const sid = sessionIdOf(p);
-    return { p, running: !!(sid && sessions[sid]?.busy) };
+  const {
+    projects, project, newThread, setCreateDialogOpen, setPaletteOpen,
+    sidebarOpen, setSidebarOpen, fileTreeOpen, setFileTreeOpen, engineStatus,
+  } = useApp();
+  const threads = useWorkspace((s) => s.threads);
+  const openProject = useWorkspace((s) => s.openProject);
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>(() => {
+    try { return JSON.parse(localStorage.getItem(COLLAPSE_KEY) || '{}'); } catch { return {}; }
   });
+  const toggle = (dir: string): void => {
+    setCollapsed((c) => {
+      const next = { ...c, [normalizeDir(dir)]: !c[normalizeDir(dir)] };
+      try { localStorage.setItem(COLLAPSE_KEY, JSON.stringify(next)); } catch { /* 忽略 */ }
+      return next;
+    });
+  };
 
   return (
     <aside className={cn(
       'relative shrink-0 overflow-hidden border-r border-border bg-sidebar transition-[width] duration-200 ease-out',
-      sidebarOpen ? 'w-66' : 'w-12',
+      sidebarOpen ? 'w-68' : 'w-12',
     )}>
-      {/* 全量内容层（项目列表）：固定 w-66 防回流，随开合/文件树模式交叉渐隐 */}
+      {/* 工作区层（项目 → 对话 / 团队） */}
       <div aria-hidden={!sidebarOpen || fileTreeOpen} className={cn(
-        'absolute inset-y-0 left-0 flex w-66 flex-col transition-[opacity,visibility] duration-200',
+        'absolute inset-y-0 left-0 flex w-68 flex-col transition-[opacity,visibility] duration-200',
         sidebarOpen && !fileTreeOpen ? 'visible opacity-100' : 'invisible pointer-events-none opacity-0',
       )}>
-      {/* 顶部 logo 行（ZCode 式：点 logo 收起侧栏；高度对齐 Header h-12） */}
-      <div className="flex h-12 shrink-0 items-center px-4">
-        <button type="button" aria-label="收起侧栏" title="收起侧栏"
-          className="flex h-6 w-6 items-center justify-center rounded-md bg-primary text-ui-sm font-bold text-primary-foreground transition-colors hover:bg-primary/80"
-          onClick={() => setSidebarOpen(false)}>
-          Y
-        </button>
-      </div>
-      {/* 导航行：主操作 + 搜索（ZCode 式：icon + 文案 + 快捷键标注右对齐） */}
-      <nav className="px-2">
-        <button type="button" onClick={() => setCreateDialogOpen(true)}
-          className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-ui-sm text-foreground hover:bg-hover"
-          title="新建项目（Ctrl+N）">
-          <PlusIcon className="size-4 shrink-0 text-foreground-subtle" />
-          <span className="min-w-0 flex-1 truncate text-left">新建项目</span>
-          <span className="shrink-0 text-ui-2xs text-foreground-subtlest">Ctrl+N</span>
-        </button>
-        <div className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-ui-sm">
-          <SearchIcon className="size-4 shrink-0 text-foreground-subtle" />
-          <input id="project-search" value={filter} onChange={(e) => setFilter(e.target.value)}
-            placeholder="搜索项目"
-            className="min-w-0 flex-1 bg-transparent text-ui-sm text-foreground outline-none placeholder:text-foreground-subtlest" />
-          <span className="shrink-0 text-ui-2xs text-foreground-subtlest">Ctrl+K</span>
+        <div className="drag flex h-12 shrink-0 items-center px-4">
+          <button type="button" aria-label="收起侧栏" title="收起侧栏"
+            className="no-drag flex h-6 w-6 items-center justify-center rounded-md bg-primary text-ui-sm font-bold text-primary-foreground transition-colors hover:bg-primary/80"
+            onClick={() => setSidebarOpen(false)}>
+            Y
+          </button>
         </div>
-      </nav>
+        <nav className="grid gap-px px-2">
+          <button type="button" onClick={() => newThread()} disabled={!projects.length}
+            className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-ui-sm text-foreground hover:bg-hover disabled:opacity-50"
+            title="新对话（Ctrl+N）">
+            <SquarePenIcon className="size-4 shrink-0 text-foreground-subtle" />
+            <span className="min-w-0 flex-1 truncate text-left">新对话</span>
+            <span className="shrink-0 text-ui-2xs text-foreground-subtlest">Ctrl+N</span>
+          </button>
+          <button type="button" onClick={() => setPaletteOpen(true)}
+            className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-ui-sm text-foreground-subtle hover:bg-hover hover:text-foreground"
+            title="搜索对话与命令（Ctrl+K）">
+            <SearchIcon className="size-4 shrink-0 text-foreground-subtle" />
+            <span className="min-w-0 flex-1 truncate text-left">搜索</span>
+            <span className="shrink-0 text-ui-2xs text-foreground-subtlest">Ctrl+K</span>
+          </button>
+        </nav>
 
-      {/* 项目分组 */}
-      <div className="mt-3 flex items-center gap-2 px-5 text-ui-2xs font-medium uppercase tracking-wider text-foreground-subtlest">
-        项目
-        <span className="text-ui-2xs normal-case tracking-normal">{projects.length}</span>
+        <div className="mt-3 flex h-6 items-center gap-2 pl-4 pr-2 text-ui-2xs font-medium tracking-wider text-foreground-subtlest">
+          <span className="flex-1">项目</span>
+          <button type="button" title="添加项目" aria-label="添加项目"
+            className="rounded p-1 text-foreground-subtle hover:bg-hover hover:text-foreground"
+            onClick={() => setCreateDialogOpen(true)}>
+            <FolderPlusIcon className="size-3.5" />
+          </button>
+        </div>
+        <nav className="mt-0.5 min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+          {projects.map((p) => (
+            <ProjectGroup key={p.dir} p={p}
+              expanded={!collapsed[normalizeDir(p.dir)]}
+              onToggle={() => toggle(p.dir)} />
+          ))}
+          {projects.length === 0 && (
+            <button type="button" onClick={() => setCreateDialogOpen(true)}
+              className="mt-1 flex w-full items-center gap-2 rounded-lg border border-dashed border-border px-3 py-3 text-ui-sm text-foreground-subtle hover:border-border-hover hover:text-foreground">
+              <PlusIcon className="size-4" />添加第一个项目
+            </button>
+          )}
+        </nav>
+        <SidebarFooter />
       </div>
-      <nav className="mt-1 min-h-0 flex-1 overflow-y-auto px-2 pb-2">
-        {shown.map((p) => {
-          const active = project?.dir === p.dir;
-          const sid = sessionIdOf(p);
-          const running = !!(sid && sessions[sid]?.busy);
-          return (
-            <div key={p.dir} role="button" tabIndex={0}
-              onKeyDown={(e) => { if (e.key === 'Enter') openProject(p); }}
-              onClick={() => openProject(p)}
-              className={cn(
-                'group mb-0.5 flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left transition-colors',
-                active ? 'bg-selected' : 'hover:bg-hover',
-              )}>
-              <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: p.color || 'var(--color-brand)' }} />
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-ui-sm font-medium text-foreground">{p.name}</span>
-                {p.idea && <span className="block truncate text-ui-xs text-foreground-subtlest">{p.idea}</span>}
-              </span>
-              {/* 文件树入口：卡片内右侧（悬停显示；当前项目且树开着时常显） */}
-              <button type="button" title={`打开 ${p.name} 的文件树`} aria-label={`打开 ${p.name} 的文件树`}
-                className={cn(
-                  'shrink-0 rounded p-1 transition-opacity',
-                  active && fileTreeOpen ? 'text-brand opacity-100' : 'text-foreground-subtle opacity-0 hover:text-foreground group-hover:opacity-100',
-                )}
-                onClick={(e) => { e.stopPropagation(); openProject(p); setFileTreeOpen(true); }}>
-                <FolderTreeIcon className="size-3.5" />
-              </button>
-              {running && <span className="inline-block h-2.5 w-2.5 shrink-0 animate-pulse rounded-full bg-brand" />}
-            </div>
-          );
-        })}
-        {shown.length === 0 && (
-          <div className="px-2.5 py-6 text-center text-ui-xs text-foreground-subtlest">
-            {filter ? '没有匹配的项目' : '还没有项目——点上方「新建项目」'}
-          </div>
-        )}
-      </nav>
 
-      {/* 底部：引擎状态卡 + 设置 */}
-      <div className="m-2 mt-0 flex items-center gap-2.5 rounded-lg border border-border bg-card px-2.5 py-2">
-        <EngineDot status={engineStatus.status} />
-        <span className="min-w-0 flex-1 truncate text-ui-sm text-foreground-subtle">
-          {engineStatus.model || engineStatus.status}
-        </span>
-        <Button type="button" variant="ghost" size="icon-sm" aria-label="设置"
-          className="text-foreground-subtle hover:bg-hover hover:text-foreground"
-          onClick={() => setSettingsOpen(true)}>
-          <Settings2Icon />
-        </Button>
-      </div>
-      </div>
-      {/* 文件树层：会话侧栏动画切换成工作目录文件树；顶部「返回任务列表」卡片 */}
+      {/* 文件树层：侧栏切换成当前项目的文件树；顶部返回卡片 */}
       <div aria-hidden={!sidebarOpen || !fileTreeOpen} className={cn(
-        'absolute inset-y-0 left-0 flex w-66 flex-col transition-[opacity,visibility] duration-200',
+        'absolute inset-y-0 left-0 flex w-68 flex-col transition-[opacity,visibility] duration-200',
         sidebarOpen && fileTreeOpen ? 'visible opacity-100' : 'invisible pointer-events-none opacity-0',
       )}>
-        <div className="flex h-12 shrink-0 items-center px-4">
-          <button type="button" aria-label="返回任务列表"
-            className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-border bg-card px-2.5 py-2 text-left transition-colors hover:bg-hover"
+        <div className="flex h-12 shrink-0 items-center px-3">
+          <button type="button" aria-label="返回对话列表"
+            className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-border bg-card px-2.5 py-1.5 text-left transition-colors hover:bg-hover"
             onClick={() => setFileTreeOpen(false)}>
             <ArrowLeftIcon className="size-4 shrink-0 text-foreground-subtle" />
             <span className="min-w-0 flex-1 truncate text-ui-sm text-foreground">
-              {project ? `返回 ${project.name}` : '返回任务列表'}
+              {project ? project.name : '返回对话列表'}
             </span>
           </button>
         </div>
         {project
           ? <FileTree />
-          : (
-            <div className="flex flex-1 items-center justify-center px-6 text-center text-ui-xs text-foreground-subtlest">
-              先选择一个项目，再查看它的文件
-            </div>
-          )}
-        {/* 底部：引擎状态卡（与项目层一致） */}
-        <div className="m-2 mt-0 flex items-center gap-2.5 rounded-lg border border-border bg-card px-2.5 py-2">
-          <EngineDot status={engineStatus.status} />
-          <span className="min-w-0 flex-1 truncate text-ui-sm text-foreground-subtle">
-            {engineStatus.model || engineStatus.status}
-          </span>
-          <Button type="button" variant="ghost" size="icon-sm" aria-label="设置"
-            className="text-foreground-subtle hover:bg-hover hover:text-foreground"
-            onClick={() => setSettingsOpen(true)}>
-            <Settings2Icon />
-          </Button>
-        </div>
+          : <div className="flex flex-1 items-center justify-center px-6 text-center text-ui-xs text-foreground-subtlest">先选择一个项目</div>}
+        <SidebarFooter />
       </div>
-      {/* 窄轨层：与全量内容交叉渐隐 */}
+
+      {/* 窄轨层 */}
       <div aria-hidden={sidebarOpen} className={cn(
         'absolute inset-y-0 left-0 flex w-12 flex-col items-center gap-1 py-2 transition-[opacity,visibility] duration-200',
         sidebarOpen ? 'invisible pointer-events-none opacity-0' : 'visible opacity-100',
       )}>
-        <Button variant="ghost" size="icon-md" aria-label="新建项目（Ctrl+N）"
+        <Button variant="ghost" size="icon-md" aria-label="新对话（Ctrl+N）" title="新对话（Ctrl+N）"
           className="text-foreground-subtle hover:bg-hover hover:text-foreground"
-          onClick={() => setCreateDialogOpen(true)}>
-          <PlusIcon />
+          onClick={() => newThread()}>
+          <SquarePenIcon />
         </Button>
-        {/* 会话快捷项：圆角方框，点击只切会话（侧栏保持收起） */}
-        {railItems.length > 0 && (
-          <div className="mt-1 flex min-h-0 flex-col items-center gap-1 overflow-y-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            {railItems.map(({ p, running }) => (
+        <Button variant="ghost" size="icon-md" aria-label="搜索（Ctrl+K）" title="搜索（Ctrl+K）"
+          className="text-foreground-subtle hover:bg-hover hover:text-foreground"
+          onClick={() => setPaletteOpen(true)}>
+          <SearchIcon />
+        </Button>
+        <div className="mt-1 flex min-h-0 flex-col items-center gap-1 overflow-y-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {projects.map((p) => {
+            const running = threads.some((t) => sameDir(t.dir, p.dir) && t.state === 'running');
+            return (
               <button key={p.dir} type="button" title={p.name} aria-label={`切换到 ${p.name}`}
-                onClick={() => openProject(p)}
+                onClick={() => openProject(p.dir)}
                 className={cn(
                   'relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border text-ui-2xs font-medium transition-colors',
-                  project?.dir === p.dir
+                  sameDir(project?.dir, p.dir)
                     ? 'border-brand bg-selected text-foreground'
                     : 'border-border bg-card text-foreground hover:bg-hover',
                 )}>
-                {p.name.trim().slice(0, 1).toUpperCase() || '·'}
+                {p.name.trim().slice(0, 1).toUpperCase() || 'P'}
                 {running && <span className="absolute -right-0.5 -top-0.5 h-2 w-2 animate-pulse rounded-full bg-brand" />}
               </button>
-            ))}
-          </div>
-        )}
+            );
+          })}
+        </div>
         <div className="mt-auto pb-1">
           <EngineDot status={engineStatus.status} />
         </div>

@@ -23,13 +23,14 @@ import (
 
 // sessionBinding 一个会话的绑定（对话元数据也存在这里）。
 type sessionBinding struct {
-	Dir         string `json:"dir"`
-	Mode        string `json:"mode,omitempty"`
-	Title       string `json:"title,omitempty"`
-	TitleSource string `json:"titleSource,omitempty"` // auto（首条消息截取）| ai（模型生成）| user（手动改名，永不覆盖）
-	CreatedAt   int64  `json:"createdAt,omitempty"`   // Unix 毫秒
-	Permission  string `json:"permission,omitempty"`  // plan | default | accept_edits | bypass；空 = 全局默认
-	Archived    bool   `json:"archived,omitempty"`
+	Dir         string      `json:"dir"`
+	Mode        string      `json:"mode,omitempty"`
+	Title       string      `json:"title,omitempty"`
+	TitleSource string      `json:"titleSource,omitempty"` // auto（首条消息截取）| ai（模型生成）| user（手动改名，永不覆盖）
+	CreatedAt   int64       `json:"createdAt,omitempty"`   // Unix 毫秒
+	Permission  string      `json:"permission,omitempty"`  // plan | default | accept_edits | bypass；空 = 全局默认
+	Archived    bool        `json:"archived,omitempty"`
+	Goal        *threadGoal `json:"goal,omitempty"` // 对话目标（见 goals.go）
 }
 
 // sessionMap 会话绑定表（带 mtime 缓存的文件读取 + 串行写入）。
