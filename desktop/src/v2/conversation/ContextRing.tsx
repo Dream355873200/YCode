@@ -77,19 +77,26 @@ export default function ContextRing({ sid }: { sid: string }) {
     return { segments: raw.map((s) => ({ ...s, percent: s.tokens / total })), estTotal: total };
   }, [rows]);
 
-  // 已用 token：优先引擎实时 usage（精确）；无帧（恢复会话/新会话未跑完一轮）
-  // 时用本地估算兜底，标记 ≈——保证打开有消息的会话立刻可见，不再等一轮。
-  const isEstimated = !usage?.input_tokens;
-  const used = usage?.input_tokens || estTotal;
+  // 已用 token：优先引擎实时 usage（精确）。注意 input_tokens 只含未命中增量
+  // （vendored 客户端注释明示），占用 = 输入 + 输出 + 缓存读 + 缓存写；
+  // 无帧（恢复会话/新会话未跑完一轮）时用本地估算兜底，标记 ≈。
+  const inTok = usage?.input_tokens ?? 0;
+  const outTok = usage?.output_tokens ?? 0;
+  const cacheRead = usage?.cache_read_input_tokens ?? 0;
+  const cacheWrite = usage?.cache_creation_input_tokens ?? 0;
+  const isEstimated = !inTok && !cacheRead && !cacheWrite;
+  const used = isEstimated ? estTotal : inTok + outTok + cacheRead + cacheWrite;
   const percent = ctx > 0 ? Math.min(Math.max(used / ctx, 0), 1) : 0;
-  const hitRate = !isEstimated && usage?.cache_read_input_tokens
-    ? usage.cache_read_input_tokens / used
-    : null;
+  // 命中率 = 缓存读 / 完整 prompt（输入增量 + 缓存读 + 缓存写）
+  const promptTotal = inTok + cacheRead + cacheWrite;
+  const hitRate = !isEstimated && promptTotal > 0 ? cacheRead / promptTotal : null;
   // ZCode：生产面板只展示明显有收益的缓存命中（≥78%）
   const hitLabel = hitRate != null && hitRate >= CACHE_HIT_RATE_DISPLAY_THRESHOLD
     ? fmtPct(hitRate)
     : null;
   const usedLabel = `${isEstimated ? '≈' : ''}${fmtK(used)}`;
+  // 分类估算按 used 等比缩放（估算只有占比意义），明细显示 token 量
+  const scaledSegments = segments.map((s) => ({ ...s, tokens: Math.round(s.tokens * (used / (estTotal || 1))) }));
 
   const ring = (() => {
     const circumference = 2 * Math.PI * ICON_RADIUS;
@@ -130,22 +137,24 @@ export default function ContextRing({ sid }: { sid: string }) {
                 {usedLabel}/{fmtK(ctx)} ({fmtPct(percent)})
               </span>
             </div>
-            {/* 分类分段进度条（对齐 ZCode Progress segments） */}
+            {/* 分类分段进度条：总宽 = 上下文占用比例，段宽按估算占比分配 */}
             <div className="flex h-2 w-full overflow-hidden rounded-full bg-input">
-              {segments.map((s, i) => (
-                <div key={s.source} className="h-full"
-                  style={{ width: `${s.percent * 100}%`, background: TONE_COLORS[Math.min(i, TONE_COLORS.length - 1)] }} />
-              ))}
+              <div className="flex h-full" style={{ width: `${percent * 100}%` }}>
+                {scaledSegments.map((s, i) => (
+                  <div key={s.source} className="h-full"
+                    style={{ width: `${s.tokens / (used || 1) * 100}%`, background: TONE_COLORS[Math.min(i, TONE_COLORS.length - 1)] }} />
+                ))}
+              </div>
             </div>
           </div>
           <div className="space-y-1.5 bg-menu p-3 pt-0">
-            {segments.map((s, i) => (
+            {scaledSegments.map((s, i) => (
               <div key={s.source} className="flex min-w-0 items-center gap-2 text-ui-base">
                 <span aria-hidden="true" className="size-2 shrink-0 rounded-sm border border-border"
                   style={{ background: TONE_COLORS[Math.min(i, TONE_COLORS.length - 1)] }} />
                 <span className="min-w-0 truncate text-foreground-subtle">{s.label}</span>
                 <span className="ml-auto min-w-10 shrink-0 text-right font-mono text-ui-base text-foreground">
-                  {fmtPct(s.percent)}
+                  {fmtK(s.tokens)}
                 </span>
               </div>
             ))}
