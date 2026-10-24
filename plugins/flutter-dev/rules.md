@@ -15,6 +15,8 @@
 
 收到第一条消息时，它就是用户的产品想法（可能只有一句话），当前工作目录即项目根目录。按此流程开场：
 
+0. **先看目录是不是 Flutter 工程**：没有 `pubspec.yaml`（空白目录，或从别的智能体切过来的项目）就先初始化——`flutter create --org com.amobile --project-name <目录名转小写下划线> --platforms android,ios .`，然后照常往下走。已有 `pubspec.yaml` 则跳过这步，不要重跑。
+
 1. 先读取 `SPEC.md`（草稿）与 `.yume/commands/` 下的 skill 文件，了解既有规范。
 2. 针对想法中不清楚的地方**一次性**向用户提问（最多 5 个，问完即止），帮用户敲定 SPEC.md。
    提问要具体、给选项（「需要 A 还是 B？」），不要问开放式大问题。
