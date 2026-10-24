@@ -130,7 +130,7 @@ declare global {
       fs: {
         readFile(p: string): Promise<unknown>;
         exists(p: string): Promise<{ ok: boolean; error?: string }>;
-        videoArtifacts(dir: string): Promise<{ ok: boolean; videos: Array<{ path: string; name: string; mtimeMs: number; size: number }>; error?: string }>;
+        videoArtifacts(dir: string): Promise<{ ok: boolean; videos: Array<{ path: string; name: string; mtimeMs: number; size: number }>; thumbs: Array<{ id: string; path: string; mtimeMs: number }>; error?: string }>;
         writeFile(p: string, content: string): Promise<unknown>;
         listDir(p: string): Promise<unknown>;
         readImage(p: string): Promise<unknown>;

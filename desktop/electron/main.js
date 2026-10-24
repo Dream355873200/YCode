@@ -112,7 +112,7 @@ ipcMain.handle('fs:listDir', (_e, p) => {
     return { ok: true, files: names.map((n) => path.join(p, n)) };
   } catch { return { ok: true, files: [] }; }
 });
-// 视频面板：扫描工程 out/ 下的渲染产物（按修改时间新→旧；跳过隐藏目录）
+// 视频面板：扫描工程 out/ 下的渲染产物 + 场景缩略图（按修改时间新→旧；跳过隐藏目录）
 ipcMain.handle('fs:videoArtifacts', (_e, dir) => {
   try {
     const found = [];
@@ -128,8 +128,17 @@ ipcMain.handle('fs:videoArtifacts', (_e, dir) => {
       const st = fs.statSync(p);
       return { path: p, name: path.basename(p), mtimeMs: st.mtimeMs, size: st.size };
     }).sort((a, b) => b.mtimeMs - a.mtimeMs);
-    return { ok: true, videos };
-  } catch (e) { return { ok: false, error: e.message, videos: [] }; }
+    const thumbs = [];
+    try {
+      for (const f of fs.readdirSync(path.join(dir, 'out', 'thumbs'))) {
+        if (!f.endsWith('.jpg')) continue;
+        const p = path.join(dir, 'out', 'thumbs', f);
+        const st = fs.statSync(p);
+        thumbs.push({ id: f.replace(/\.jpg$/, ''), path: p, mtimeMs: st.mtimeMs });
+      }
+    } catch { /* thumbs 目录还没有 */ }
+    return { ok: true, videos, thumbs };
+  } catch (e) { return { ok: false, error: e.message, videos: [], thumbs: [] }; }
 });
 // 读图片为 dataURL（报告页签的截图证据）
 ipcMain.handle('fs:readImage', (_e, p) => {

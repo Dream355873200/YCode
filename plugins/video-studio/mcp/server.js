@@ -282,6 +282,38 @@ ${manifestSummary(dir)}`;
 ${manifestSummary(dir)}`;
   });
 
+def("render_thumbs",
+  "为每个场景渲染一张缩略图到 out/thumbs/<场景id>.jpg。改完 manifest 或场景后跑一次（很便宜，每场景一帧小图），右栏「视频预览」面板的分镜条会跟着更新。",
+  { type: "object", properties: { dir: DIR }, required: ["dir"] },
+  async (a) => {
+    const dir = resolveDir(a);
+    const m = readManifest(dir);
+    return serial(async () => {
+      const bundleDir = path.join(dir, "out", ".vsbundle");
+      fs.rmSync(bundleDir, { recursive: true, force: true });
+      const b = await remotion(dir, ["bundle", "src/index.ts", bundleDir]);
+      if (b.code !== 0) throw new Error(`打包失败：${(b.err || b.out).slice(-800)}`);
+      const thumbsDir = path.join(dir, "out", "thumbs");
+      fs.mkdirSync(thumbsDir, { recursive: true });
+      const valid = new Set(m.scenes.map((s) => s.id));
+      try {
+        for (const f of fs.readdirSync(thumbsDir)) {
+          if (f.endsWith(".jpg") && !valid.has(f.replace(/\.jpg$/, ""))) fs.rmSync(path.join(thumbsDir, f), { force: true });
+        }
+      } catch { /* 清理失败无妨 */ }
+      for (const sc of m.scenes) {
+        const at = sc.from + Math.floor(sc.duration * 0.45); // 入场完成后
+        const out = path.join(thumbsDir, `${sc.id}.jpg`);
+        const r = await remotion(dir, ["still", bundleDir, "Film", out,
+          "--frame", String(at), "--image-format=jpeg", "--jpeg-quality=75", "--scale=0.22"]);
+        if (r.code !== 0 || !fs.existsSync(out)) {
+          throw new Error(`场景 ${sc.id} 缩略图渲染失败：${(r.err || r.out).slice(-500)}`);
+        }
+      }
+      return `已生成 ${m.scenes.length} 张场景缩略图（out/thumbs/），右栏分镜条已更新。`;
+    });
+  });
+
 // ---------- MCP stdio 循环
 
 def("check_project",
