@@ -30,6 +30,21 @@ describe('buildModeManifest', () => {
     expect(buildModeManifest({ ...base, prompts: 'nope' }, modeCtx).ok).toBe(false);
     expect(buildModeManifest({ ...base, projectFields: '{' }, modeCtx).ok).toBe(false);
     expect(buildModeManifest({ ...base, projectFields: '[{"id":"k","label":"K","type":"choice"}]' }, modeCtx).ok).toBe(false);
+    expect(buildModeManifest({ ...base, icon: 'Code!' }, modeCtx).ok).toBe(false);
+    expect(buildModeManifest({ ...base, starters: [{ label: '只有按钮', prompt: '' }] }, modeCtx).ok).toBe(false);
+    expect(buildModeManifest({ ...base, starters: Array.from({ length: 7 }, (_, i) => ({ label: `s${i}`, prompt: 'p' })) }, modeCtx).ok).toBe(false);
+  });
+
+  it('keeps icon and starters, dropping blank starter rows', () => {
+    const r = buildModeManifest({
+      ...modeFormFrom(), id: 'review', name: '审查', icon: 'search',
+      starters: [{ label: ' 审查改动 ', prompt: '审查当前改动' }, { label: '', prompt: '' }],
+    }, modeCtx);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const m = JSON.parse(r.value.content);
+    expect(m.icon).toBe('search');
+    expect(m.starters).toEqual([{ label: '审查改动', prompt: '审查当前改动' }]);
   });
 });
 

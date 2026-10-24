@@ -2,10 +2,10 @@
 // 引擎状态与设置。对话行带状态（运行中 / 等你处理 / 未读），悬停出「…」
 // 菜单（重命名 / 归档 / 删除）；项目行悬停出「在此项目新建对话」与项目菜单。
 // 收起为窄轨（rail）；项目行内的文件树入口把侧栏切换为文件树视图。
-import { useMemo, useState } from 'react';
+import { Fragment, useMemo, useState, type ReactNode } from 'react';
 import {
-  ArchiveIcon, ArchiveRestoreIcon, ArrowLeftIcon, ChevronRightIcon, EllipsisIcon, FolderOpenIcon,
-  FolderPlusIcon, FolderTreeIcon, Loader2Icon, MessageCircleQuestionIcon, PencilIcon, PlusIcon,
+  ArchiveIcon, ArchiveRestoreIcon, ArrowLeftIcon, ChevronRightIcon, CopyIcon, EllipsisIcon, FolderOpenIcon,
+  FolderPlusIcon, FolderTreeIcon, GoalIcon, Loader2Icon, MessageCircleQuestionIcon, PencilIcon, PlusIcon,
   SearchIcon, Settings2Icon, ShieldAlertIcon, SquarePenIcon, Trash2Icon, UserRoundPlusIcon, UsersIcon,
   XIcon,
 } from 'lucide-react';
@@ -14,6 +14,7 @@ import { isUnread, sameDir, threadsOf, useWorkspace, type Project, type TeamSumm
 import { normalizeDir } from './sessionId';
 import { Button } from '../components/ui/button';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
+import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from '../components/ui/context-menu';
 import { InlineRename } from '../components/ui/inline-rename';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
@@ -34,13 +35,22 @@ function EngineDot({ status }: { status: string }) {
   return <span className={cn('inline-block h-2 w-2 shrink-0 rounded-full', cls)} />;
 }
 
-/** 对话状态图标：运行中 / 等你回答 / 等你审批 / 未读。 */
+/** 对话状态槽：运行中 / 未读（等你处理用右侧胶囊表达）。 */
 function ThreadStatus({ t, unread }: { t: Thread; unread: boolean }) {
   if (t.state === 'running') return <Loader2Icon className="size-3.5 shrink-0 animate-spin text-brand" />;
-  if (t.pending === 'ask') return <MessageCircleQuestionIcon className="size-3.5 shrink-0 text-warning" />;
-  if (t.pending === 'approval') return <ShieldAlertIcon className="size-3.5 shrink-0 text-warning" />;
+  if (t.goal?.status === 'active') return <GoalIcon className="size-3.5 shrink-0 text-brand" />;
   if (unread) return <span className="mx-[4px] size-1.5 shrink-0 rounded-full bg-brand" />;
   return <span className="size-3.5 shrink-0" />;
+}
+
+/** 等你处理：提问 / 审批的胶囊（替换右侧时间）。 */
+function PendingPill({ kind }: { kind: 'ask' | 'approval' }) {
+  const Icon = kind === 'ask' ? MessageCircleQuestionIcon : ShieldAlertIcon;
+  return (
+    <span className="flex h-5 shrink-0 items-center gap-1 rounded-full bg-warning/15 px-1.5 text-ui-2xs font-medium text-warning">
+      <Icon className="size-3" />{kind === 'ask' ? '等你回答' : '等你批准'}
+    </span>
+  );
 }
 
 function ThreadRow({ t, active, unread }: { t: Thread; active: boolean; unread: boolean }) {
@@ -50,59 +60,89 @@ function ThreadRow({ t, active, unread }: { t: Thread; active: boolean; unread: 
   const [editing, setEditing] = useState(false);
   const [confirm, setConfirm] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const open = (): void => select({ kind: 'thread', id: t.id, dir: t.dir });
+  // 「…」菜单与右键菜单共用一份动作
+  const actions: Array<{ key: string; icon: ReactNode; label: string; run(): void; tone?: 'destructive'; sep?: boolean }> = [
+    { key: 'rename', icon: <PencilIcon />, label: '重命名', run: () => setEditing(true) },
+    {
+      key: 'archive', icon: t.archived ? <ArchiveRestoreIcon /> : <ArchiveIcon />, label: t.archived ? '取消归档' : '归档',
+      run: () => void updateThread(t.id, { archived: !t.archived }),
+    },
+    { key: 'reveal', icon: <FolderOpenIcon />, label: '打开项目文件夹', run: () => void window.amc.projects.reveal(t.dir), sep: true },
+    { key: 'copy', icon: <CopyIcon />, label: '复制对话 ID', run: () => void navigator.clipboard.writeText(t.id) },
+    { key: 'delete', icon: <Trash2Icon />, label: '删除', run: () => setConfirm(true), tone: 'destructive', sep: true },
+  ];
   return (
     <>
-      <div role="button" tabIndex={0}
-        onClick={() => select({ kind: 'thread', id: t.id, dir: t.dir })}
-        onDoubleClick={() => setEditing(true)}
-        onKeyDown={(e) => { if (e.key === 'Enter') select({ kind: 'thread', id: t.id, dir: t.dir }); if (e.key === 'F2') setEditing(true); }}
-        className={cn(
-          'group/thread flex h-7.5 w-full cursor-pointer items-center gap-2 rounded-lg pl-7 pr-1.5 text-left transition-colors',
-          active ? 'bg-selected' : 'hover:bg-hover',
-          t.archived && 'opacity-60',
-        )}>
-        <ThreadStatus t={t} unread={unread} />
-        {editing ? (
-          <InlineRename value={t.title} onDone={(next) => {
-            setEditing(false);
-            if (next) void updateThread(t.id, { title: next });
-          }} />
-        ) : (
-          <span className={cn('min-w-0 flex-1 truncate text-ui-sm', active || unread ? 'text-foreground' : 'text-foreground-subtle')}
-            title={t.title}>
-            {t.title}
-          </span>
-        )}
-        {!editing && (
-          <>
-            <span className={cn('shrink-0 text-ui-2xs tabular-nums text-foreground-subtlest', menuOpen ? 'hidden' : 'group-hover/thread:hidden')}>
-              {t.state === 'running' ? '' : relTime(t.updatedAt)}
-            </span>
-            <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
-              <DropdownMenuTrigger asChild>
-                <button type="button" aria-label="对话操作" onClick={(e) => e.stopPropagation()}
-                  className={cn('shrink-0 rounded p-0.5 text-foreground-subtle hover:bg-hover hover:text-foreground',
-                    menuOpen ? 'flex' : 'hidden group-hover/thread:flex')}>
-                  <EllipsisIcon className="size-3.5" />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
-                <DropdownMenuItem onSelect={() => setEditing(true)}><PencilIcon />重命名</DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => void updateThread(t.id, { archived: !t.archived })}>
-                  {t.archived ? <><ArchiveRestoreIcon />取消归档</> : <><ArchiveIcon />归档</>}
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem tone="destructive" onSelect={() => setConfirm(true)}><Trash2Icon />删除</DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </>
-        )}
-      </div>
+      <ContextMenu>
+        <ContextMenuTrigger asChild>
+          <div role="button" tabIndex={0}
+            onClick={open}
+            onDoubleClick={() => setEditing(true)}
+            onKeyDown={(e) => { if (e.key === 'Enter') open(); if (e.key === 'F2') setEditing(true); }}
+            className={cn(
+              'group/thread flex h-7.5 w-full cursor-pointer items-center gap-2 rounded-lg pl-7 pr-1.5 text-left transition-colors',
+              active ? 'bg-selected' : 'hover:bg-hover',
+              t.archived && 'opacity-60',
+            )}>
+            <ThreadStatus t={t} unread={unread} />
+            {editing ? (
+              <InlineRename value={t.title} onDone={(next) => {
+                setEditing(false);
+                if (next) void updateThread(t.id, { title: next });
+              }} />
+            ) : (
+              <span className={cn('min-w-0 flex-1 truncate text-ui-sm', active || unread ? 'text-foreground' : 'text-foreground-subtle')}
+                title={t.title}>
+                {t.title}
+              </span>
+            )}
+            {!editing && (
+              <>
+                {t.pending
+                  ? <span className={cn(menuOpen ? 'hidden' : 'group-hover/thread:hidden')}><PendingPill kind={t.pending} /></span>
+                  : (
+                    <span className={cn('shrink-0 text-ui-2xs tabular-nums text-foreground-subtlest', menuOpen ? 'hidden' : 'group-hover/thread:hidden')}>
+                      {t.state === 'running' ? '' : relTime(t.updatedAt)}
+                    </span>
+                  )}
+                <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+                  <DropdownMenuTrigger asChild>
+                    <button type="button" aria-label="对话操作" onClick={(e) => e.stopPropagation()}
+                      className={cn('shrink-0 rounded p-0.5 text-foreground-subtle hover:bg-hover hover:text-foreground',
+                        menuOpen ? 'flex' : 'hidden group-hover/thread:flex')}>
+                      <EllipsisIcon className="size-3.5" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                    {actions.map((a) => (
+                      <Fragment key={a.key}>
+                        {a.sep && <DropdownMenuSeparator />}
+                        <DropdownMenuItem tone={a.tone} onSelect={a.run}>{a.icon}{a.label}</DropdownMenuItem>
+                      </Fragment>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </>
+            )}
+          </div>
+        </ContextMenuTrigger>
+        <ContextMenuContent>
+          {actions.map((a) => (
+            <Fragment key={a.key}>
+              {a.sep && <ContextMenuSeparator />}
+              <ContextMenuItem tone={a.tone} onSelect={a.run}>{a.icon}{a.label}</ContextMenuItem>
+            </Fragment>
+          ))}
+        </ContextMenuContent>
+      </ContextMenu>
       <ConfirmDialog open={confirm} onOpenChange={setConfirm}
         title={`删除对话「${t.title}」？`}
         description="对话历史、任务清单与子代理轨迹会一并删除，无法恢复。"
         confirmLabel="删除"
-        onConfirm={async () => { await deleteThread(t.id); }} />
+        onConfirm={async () => {
+          if (!(await deleteThread(t.id))) throw new Error('删除失败：引擎不可达或对话仍在运行');
+        }} />
     </>
   );
 }

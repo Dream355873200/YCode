@@ -4,11 +4,12 @@
 import { useState } from 'react';
 import { CircleAlertIcon, PlusIcon, PowerIcon, PuzzleIcon } from 'lucide-react';
 import { AgentEditor } from './AgentsTab';
+import { AgentAvatar } from '../agentIcon';
 import { allMcp, errorsFor, mcpNamesExcept, pluginById, useCatalog, type PluginItem } from './catalog';
 import { engine } from '../../protocol';
 import { AgentCard, McpCard, PanelCard, RuleCard, SkillCard, ToolsetCard } from './cards';
 import { AssetActions, EditorFrame, FormField, LoadErrors, OriginChip, ToggleChips, useFileText, useSaver } from './editing';
-import { buildPluginManifest, pluginFormFrom, type PluginForm } from './manifest';
+import { buildPluginManifest, pluginFormFrom, withPlugins, type PluginForm } from './manifest';
 import { NEW_ID, useNav } from './nav';
 import {
   CardSection, Chip, DetailFrame, DetailSection, EmptyHint, ErrorBox, GroupHeader, InfoRow, Loading,
@@ -17,6 +18,7 @@ import {
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Textarea } from '../../components/ui/textarea';
+import { cn } from '../../components/lib/utils';
 
 const MCP_EXAMPLE = '[{ "name": "fs", "command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "."] }]';
 
@@ -136,11 +138,34 @@ function PluginDetail({ id }: { id: string }) {
             onCopy={() => void run([{ copy: { src: plugin.dir, dest: `plugins/${plugin.id}` } }])}
             onEdit={() => setEditing('plugin')}
             onDelete={() => void run([{ rm: `plugins/${plugin.id}` }], nav.back)} />
-          {plugin.usedBy.length === 0 && <Chip>未被模式引用</Chip>}
+          {plugin.usedBy.length === 0 && <Chip>未交给任何智能体</Chip>}
         </>
       }>
       {error && <ErrorBox message={error} />}
       <LoadErrors errors={catalog.errors.filter((e) => e.kind !== 'mode' && e.file?.startsWith(plugin.dir))} />
+      <CardSection title="交给这些智能体" count={plugin.usedBy.length}
+        hint={plugin.disabled ? '插件已停用：启用后才会对智能体生效。' : '点一下即把插件加进或移出该智能体（内置智能体会保存为你的自定义版本）。'}>
+        <div className="col-span-full flex flex-wrap gap-1.5">
+          {catalog.modes.map((m) => {
+            const on = m.plugins.includes(plugin.id);
+            return (
+              <button key={m.id} type="button" disabled={saving}
+                onClick={() => {
+                  const next = on ? m.plugins.filter((x) => x !== plugin.id) : [...m.plugins, plugin.id];
+                  const r = withPlugins(m, next, {
+                    pluginIds: catalog.plugins.map((p) => p.id), promptNames: catalog.prompts.map((g) => g.name),
+                  });
+                  void run(r.ok ? [{ write: r.value }] : { error: r.error });
+                }}
+                className={cn('flex items-center gap-1.5 rounded-full border py-0.5 pl-0.5 pr-2.5 text-ui-sm transition-colors disabled:opacity-50',
+                  on ? 'border-brand/60 bg-brand/10 text-foreground' : 'border-border text-foreground-subtle hover:bg-hover')}>
+                <AgentAvatar icon={m.icon} size="sm" className="rounded-full" />
+                {m.name}
+              </button>
+            );
+          })}
+        </div>
+      </CardSection>
       <DetailSection title="清单">
         <InfoRow label="id"><span className="font-mono text-ui-xs">{plugin.id}</span></InfoRow>
         <InfoRow label="目录"><span className="break-all font-mono text-ui-xs">{plugin.dir}</span></InfoRow>
@@ -227,7 +252,15 @@ export function PluginsTab() {
                     <PluginToggle id={p.id} disabled={p.disabled} />
                     {p.disabled && <Chip tone="muted">停用</Chip>}
                     {p.origin === 'user' && <OriginChip origin="user" />}
-                    {p.usedBy.length === 0 && <Chip>未引用</Chip>}
+                    {p.usedBy.length === 0
+                      ? <Chip>未交给智能体</Chip>
+                      : (
+                        <span className="flex items-center -space-x-1" title={`交给：${p.usedBy.map((id) => catalog.modes.find((m) => m.id === id)?.name ?? id).join('、')}`}>
+                          {p.usedBy.slice(0, 4).map((id) => (
+                            <AgentAvatar key={id} icon={catalog.modes.find((m) => m.id === id)?.icon} size="sm" className="rounded-full ring-2 ring-card" />
+                          ))}
+                        </span>
+                      )}
                     {(p.toolsets?.length ?? 0) > 0 && <Chip>工具集 ×{p.toolsets!.length}</Chip>}
                     {p.rules && <Chip>规范</Chip>}
                     {p.skills && <Chip>技能</Chip>}

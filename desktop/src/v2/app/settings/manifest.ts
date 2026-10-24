@@ -2,7 +2,7 @@
 // 校验规则与引擎加载一致（mode.go / plugin.go / agents.go / skillsdir.go），
 // 在前端先拦下能预知的错误；引擎 reload 仍是最终裁决（错误回显到页面）。
 // 路径一律相对用户资产根（electron assets:* 限定在其内）。
-import type { MCPServerDecl, ModeDecl, ProjectField } from '../modeRegistry';
+import type { MCPServerDecl, ModeDecl, ProjectField, Starter } from '../modeRegistry';
 import type { PluginItem } from './catalog';
 
 /** 模式 / 插件 / 子代理 / 技能 / MCP 名的合法字符集（进目录名与工具名）。 */
@@ -21,12 +21,16 @@ const json = (v: unknown): string => `${JSON.stringify(v, null, 2)}\n`;
 /** frontmatter 值只支持单行：换行折成空格。 */
 const oneLine = (s: string): string => s.replace(/\s*\r?\n\s*/g, ' ').trim();
 
-// ---------- 模式 ----------
+// ---------- 智能体（模式） ----------
 
 export interface ModeForm {
   id: string;
   name: string;
   description: string;
+  /** 图标键（agentIcon.tsx）；空 = 默认图标。 */
+  icon: string;
+  /** 开场建议（≤ 6 条；空行忽略）。 */
+  starters: Starter[];
   /** 提示词组名；空 = 内置通用提示词。 */
   prompts: string;
   plugins: string[];
@@ -46,12 +50,17 @@ export function modeFormFrom(m?: ModeDecl): ModeForm {
     id: m?.id ?? '',
     name: m?.name ?? '',
     description: m?.description ?? '',
+    icon: m?.icon ?? '',
+    starters: m?.starters ? m.starters.map((s) => ({ ...s })) : [],
     prompts: m?.prompts ?? '',
     plugins: m ? [...m.plugins] : [],
     scaffold: m?.scaffold ?? '',
     projectFields: JSON.stringify(m?.projectFields?.length ? m.projectFields : DEFAULT_PROJECT_FIELDS, null, 2),
   };
 }
+
+const ICON_KEY_RE = /^[a-z0-9-]{1,32}$/;
+const MAX_STARTERS = 6;
 
 const FIELD_TYPES = ['text', 'textarea', 'folder', 'choice'];
 
@@ -92,13 +101,34 @@ export function buildModeManifest(form: ModeForm, ctx: {
   if (prompts && !ctx.promptNames.includes(prompts)) return fail(`提示词组 ${prompts} 不存在`);
   const fields = parseProjectFields(form.projectFields);
   if (!fields.ok) return fields;
+  const icon = form.icon.trim();
+  if (icon && !ICON_KEY_RE.test(icon)) return fail('图标键只能含小写字母、数字与 -');
+  const starters = form.starters
+    .map((s) => ({ label: s.label.trim(), prompt: s.prompt.trim() }))
+    .filter((s) => s.label || s.prompt);
+  if (starters.length > MAX_STARTERS) return fail(`开场建议最多 ${MAX_STARTERS} 条`);
+  for (const [i, s] of starters.entries()) {
+    if (!s.label || !s.prompt) return fail(`开场建议第 ${i + 1} 条需要同时填写按钮文字与提示`);
+    if ([...s.label].length > 16) return fail(`开场建议第 ${i + 1} 条的按钮文字超过 16 个字`);
+  }
   const manifest: Record<string, unknown> = { id, name };
   if (form.description.trim()) manifest.description = form.description.trim();
+  if (icon) manifest.icon = icon;
+  if (starters.length) manifest.starters = starters;
   if (prompts) manifest.prompts = prompts;
   manifest.plugins = form.plugins;
   if (form.scaffold.trim()) manifest.scaffold = form.scaffold.trim();
   manifest.projectFields = fields.value;
   return { ok: true, value: { path: `modes/${id}/mode.json`, content: json(manifest) } };
+}
+
+/** 把智能体的插件列表改成 plugins，产出要写的清单（内置智能体写成同 id 的用户覆盖）。 */
+export function withPlugins(m: ModeDecl, plugins: string[], ctx: {
+  pluginIds: string[]; promptNames: string[];
+}): BuildResult<FileWrite> {
+  return buildModeManifest({ ...modeFormFrom(m), plugins }, {
+    isNew: false, modeIds: [], pluginIds: ctx.pluginIds, promptNames: ctx.promptNames,
+  });
 }
 
 // ---------- 插件 ----------

@@ -1,9 +1,10 @@
-// NewProjectDialog — 新建项目弹窗（模式声明驱动）。
-// 先选模式，表单按该模式 mode.json 的 projectFields 渲染；提交走
-// projects:create（有 scaffold 的模式生成工程，否则打开已有目录），
-// 注册后直接进入该项目会话。
+// NewProjectDialog — 添加项目（智能体声明驱动）。
+// 先选智能体，表单按其 mode.json 的 projectFields 渲染；提交走
+// projects:create（有 scaffold 的智能体生成工程，否则打开已有目录），
+// 注册后进入该项目的新对话草稿。
 import { useEffect, useMemo, useState } from 'react';
 import { useApp, type Project } from './appState';
+import { AgentAvatar } from './agentIcon';
 import { useModes, type ModeDecl, type ProjectField } from './modeRegistry';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../components/ui/dialog';
 import { Button } from '../components/ui/button';
@@ -115,30 +116,40 @@ export function NewProjectDialog() {
 
   return (
     <Dialog open={createDialogOpen} onOpenChange={close}>
-      <DialogContent className="max-w-125">
+      <DialogContent className="max-w-150">
         <DialogHeader>
-          <DialogTitle>新建项目</DialogTitle>
-          <DialogDescription>{mode?.description || '选择模式，其余交给 AI。'}</DialogDescription>
+          <DialogTitle>添加项目</DialogTitle>
+          <DialogDescription className="text-ui-sm">选择一个智能体：打开已有文件夹，或按它的模板生成新工程。之后在项目里可以随时换智能体。</DialogDescription>
         </DialogHeader>
 
         {modes.length === 0 ? (
-          <div className="text-ui-sm text-foreground-subtle">引擎未就绪，暂无可用模式。</div>
+          <div className="text-ui-sm text-foreground-subtle">引擎未就绪，暂无可用智能体。</div>
         ) : (
-          <div className="grid gap-3">
-            {modes.length > 1 && (
-              <div className="flex flex-wrap gap-2">
-                {modes.map((m) => (
-                  <button key={m.id} type="button" className={chip(m.id === mode?.id)}
-                    onClick={() => setModeId(m.id)} disabled={busy}>
-                    {m.name}
-                  </button>
-                ))}
-              </div>
-            )}
-            {mode?.projectFields.map((f) => (
-              <Field key={`${mode.id}:${f.id}`} field={f} value={values[f.id] ?? ''}
-                onChange={(v) => set(f.id, v)} onPickDir={() => void pickDir(f.id)} />
-            ))}
+          <div className="grid gap-4">
+            <div className="grid grid-cols-2 gap-2">
+              {modes.map((m) => (
+                <button key={m.id} type="button" disabled={busy} onClick={() => setModeId(m.id)}
+                  className={cn(
+                    'flex items-start gap-2.5 rounded-xl border p-2.5 text-left transition-colors',
+                    m.id === mode?.id ? 'border-brand/60 bg-brand/8' : 'border-border hover:border-border-hover hover:bg-hover',
+                  )}>
+                  <AgentAvatar icon={m.icon} size="md" />
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-center gap-1.5 text-ui-sm font-medium text-foreground">
+                      {m.name}
+                      {m.scaffold && <span className="rounded bg-info/12 px-1 text-ui-2xs font-normal text-info">生成工程</span>}
+                    </span>
+                    {m.description && <span className="line-clamp-2 text-ui-xs text-foreground-subtlest">{m.description}</span>}
+                  </span>
+                </button>
+              ))}
+            </div>
+            <div className="grid gap-3">
+              {mode?.projectFields.map((f) => (
+                <Field key={`${mode.id}:${f.id}`} field={f} value={values[f.id] ?? ''}
+                  onChange={(v) => set(f.id, v)} onPickDir={() => void pickDir(f.id)} />
+              ))}
+            </div>
           </div>
         )}
 
@@ -148,8 +159,8 @@ export function NewProjectDialog() {
           <Button variant="outline" onClick={() => close(false)} disabled={busy}>取消</Button>
           <Button onClick={() => void create()} disabled={busy || !mode || missing}>
             {busy
-              ? (mode?.scaffold ? `创建中…（${mode.scaffold}）` : '打开中…')
-              : (mode?.scaffold ? '创建并开始' : '打开并开始')}
+              ? (mode?.scaffold ? '正在生成工程…' : '打开中…')
+              : (mode?.scaffold ? '生成并开始' : '打开并开始')}
           </Button>
         </DialogFooter>
       </DialogContent>

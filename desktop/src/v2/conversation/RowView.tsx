@@ -2,7 +2,7 @@
 // 工具卡片复用 legacy 渲染器注册表（toolRender.jsx，P0 平移资产）；
 // 交互卡（审批/确认/提问）直接挂 store 回传。
 import { memo, useEffect, useRef, useState } from 'react';
-import { Bot, Brain, Check as CheckIco, CornerDownLeft as SendIco, FileTextIcon, Loader2 as Loader2Ico, PanelRightIcon, Square as StopIco, X as XIco } from 'lucide-react';
+import { Bot, Brain, Check as CheckIco, CornerDownLeft as SendIco, FileTextIcon, GoalIcon, Loader2 as Loader2Ico, PanelRightIcon, Square as StopIco, X as XIco } from 'lucide-react';
 import type { Row, ToolRow } from './projection/rows';
 import { useConversation } from './store';
 import { useApp } from '../app/appState';
@@ -504,9 +504,30 @@ function Notice({ row }: { row: Extract<Row, { kind: 'notice' }> }) {
 
 // ---------- 分发 ----------
 
+// 目标续跑轮的输入（引擎 goals.go continuationPrompt 生成）：画成轮次分隔，不当用户气泡
+const GOAL_TURN_RE = /^继续推进目标（第 (\d+) 轮）：/;
+
+function GoalTurnDivider({ text }: { text: string }) {
+  const n = GOAL_TURN_RE.exec(text)?.[1];
+  const next = /下一步：(.+)/.exec(text)?.[1];
+  const reason = /上一轮验收未通过：(.+)/.exec(text)?.[1];
+  return (
+    <div className="my-3 flex items-center gap-2" title={text}>
+      <span className="h-px flex-1 bg-border" />
+      <span className="flex max-w-[80%] items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1 text-ui-xs text-foreground-subtle">
+        <GoalIcon className="size-3.5 shrink-0 text-brand" />
+        <span className="shrink-0">目标第 {n} 轮</span>
+        {(next || reason) && <span className="min-w-0 truncate text-foreground-subtlest">· {next || reason}</span>}
+      </span>
+      <span className="h-px flex-1 bg-border" />
+    </div>
+  );
+}
+
 export function RowView({ row, sid, liveThinking }: { row: Row; sid: string; liveThinking?: boolean }) {
   switch (row.kind) {
     case 'user':
+      if (GOAL_TURN_RE.test(row.text)) return <GoalTurnDivider text={row.text} />;
       return (
         <div className="my-2 flex justify-end">
           <div className="max-w-[85%] rounded-2xl rounded-br-md bg-card px-3.5 py-2 text-ui-base text-foreground whitespace-pre-wrap">

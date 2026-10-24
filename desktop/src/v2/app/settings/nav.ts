@@ -8,16 +8,25 @@ import {
 
 export type Tab = 'general' | 'model' | 'modes' | 'toolsets' | 'plugins' | 'agents' | 'skills' | 'prompts' | 'mcp' | 'about';
 
+/** 左栏分组：通用 · 能力（日常用到的三件事）· 进阶（能力的零件，按需深入）。
+ *  路由 id 沿用引擎名词（modes = 智能体、agents = 子代理），界面一律用中文名。 */
+export const TAB_GROUPS: Array<{ title: string; tabs: Tab[] }> = [
+  { title: '通用', tabs: ['general', 'model'] },
+  { title: '能力', tabs: ['modes', 'plugins', 'skills'] },
+  { title: '进阶', tabs: ['prompts', 'toolsets', 'agents', 'mcp'] },
+  { title: '', tabs: ['about'] },
+];
+
 export const TABS: Array<{ id: Tab; label: string; icon: typeof Settings2Icon }> = [
   { id: 'general', label: '常规', icon: Settings2Icon },
-  { id: 'model', label: '模型设置', icon: CpuIcon },
-  { id: 'modes', label: '模式', icon: ShapesIcon },
+  { id: 'model', label: '模型', icon: CpuIcon },
+  { id: 'modes', label: '智能体', icon: ShapesIcon },
   { id: 'plugins', label: '插件', icon: PuzzleIcon },
+  { id: 'skills', label: '技能', icon: SparklesIcon },
   { id: 'prompts', label: '提示词', icon: FileTextIcon },
   { id: 'toolsets', label: '工具集', icon: BlocksIcon },
   { id: 'agents', label: '子代理', icon: BotIcon },
   { id: 'mcp', label: 'MCP', icon: CableIcon },
-  { id: 'skills', label: '技能', icon: SparklesIcon },
   { id: 'about', label: '关于', icon: InfoIcon },
 ];
 

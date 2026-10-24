@@ -6,15 +6,16 @@
 // 能力目录的详情页用卡片互相引用（模式 → 插件 → 技能 …），跳转走路由栈：
 // 返回逐级弹栈，点左栏分区重置栈。
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { CheckIcon, MinusIcon, PlusIcon, XIcon } from 'lucide-react';
+import { MinusIcon, PlusIcon, XIcon } from 'lucide-react';
 import { useApp } from './appState';
+import { AgentAvatar } from './agentIcon';
 import { engine } from '../protocol';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { cn } from '../components/lib/utils';
 import { CatalogProvider } from './settings/catalog';
-import { NavContext, TABS, type Nav, type Route, type Tab } from './settings/nav';
+import { NavContext, TAB_GROUPS, TABS, type Nav, type Route, type Tab } from './settings/nav';
 import { ModesTab } from './settings/ModesTab';
 import { PluginsTab } from './settings/PluginsTab';
 import { PromptsTab } from './settings/PromptsTab';
@@ -96,22 +97,19 @@ function Segmented<T extends string | number>({ value, options, onChange }: {
   );
 }
 
-/** 能力目录分区的标题与说明（详情页不显示，让位给详情自己的标题）。 */
+/** 能力目录分区的标题与一句话（详情页不显示，让位给详情自己的标题）。 */
 const CATALOG_SECTIONS: Partial<Record<Tab, { title: string; desc: string }>> = {
-  modes: { title: '模式', desc: '模式把提示词组与能力插件组合成一种 Agent 形态，按项目生效、切换不重启引擎。' },
-  plugins: {
-    title: '插件',
-    desc: '能力包：打包原生工具集 + 领域规范 + 技能 + 子代理 + MCP + 右栏面板，供模式引用。设置页保存后引擎即时重载，坏清单只跳过该项并提示错误；技能内容 30s 内自动重扫。',
-  },
-  prompts: { title: '提示词', desc: '系统提示词（内置 + 提示词组分段覆盖）与插件携带的领域规范，决定模型的身份、做事方式与领域约束。' },
-  toolsets: { title: '工具集', desc: '引擎原生元能力（Go 代码实现），模式与插件只能按 id 引用；新增工具集需改引擎。' },
-  agents: { title: '子代理', desc: '插件打包的独立 agent：主 agent 把多步检索类任务委派出去，子代理只回传结论，主对话上下文不被撑爆。' },
-  mcp: { title: 'MCP', desc: '外部工具服务：插件声明、引擎启动时后台连接，server 提供的工具注册进引用该插件的模式会话。' },
-  skills: { title: '技能', desc: '模型可调用的操作知识：目录式 <name>/SKILL.md（可携带参考资产）或平铺 <name>.md。' },
+  modes: { title: '智能体', desc: '一组插件 + 一套指令 = 一种工作者。对话里随时切换。' },
+  plugins: { title: '插件', desc: '能力包：工具、技能、子代理、MCP 与右栏面板。打开开关即可加进智能体。' },
+  prompts: { title: '提示词', desc: '智能体的系统提示词组与插件携带的领域规范。' },
+  toolsets: { title: '工具集', desc: '引擎内置的原生工具，由插件引用。' },
+  agents: { title: '子代理', desc: '插件携带的只读助手，智能体把检索类任务委派给它们。' },
+  mcp: { title: 'MCP', desc: '插件声明的外部工具服务及其连接状态。' },
+  skills: { title: '技能', desc: '智能体按需加载的操作知识。' },
 };
 
 export function SettingsPage() {
-  const { settingsOpen, setSettingsOpen, engineStatus, defaultMode, saveDefaultMode } = useApp();
+  const { settingsOpen, setSettingsOpen, settingsRoute, engineStatus, defaultMode, saveDefaultMode, modes } = useApp();
   const [stack, setStack] = useState<Route[]>([{ tab: 'general' }]);
   const [cfg, setCfg] = useState<Cfg | null>(null);
   const [saving, setSaving] = useState(false);
@@ -134,10 +132,10 @@ export function SettingsPage() {
 
   useEffect(() => {
     if (settingsOpen) {
-      setStack([{ tab: 'general' }]);
+      setStack(settingsRoute ? [{ tab: settingsRoute.tab }, ...(settingsRoute.id ? [settingsRoute] : [])] : [{ tab: 'general' }]);
       window.amc.config.get().then(setCfg).catch(() => {});
     }
-  }, [settingsOpen]);
+  }, [settingsOpen, settingsRoute]);
 
   const close = useCallback((open: boolean): void => {
     if (!saving) setSettingsOpen(open);
@@ -204,7 +202,7 @@ export function SettingsPage() {
       const n = Array.isArray(list) ? list.length : 0;
       setTestResult(n ? `连接正常，可用模型 ${n} 个` : '端点可达，但未返回模型列表');
     } catch (e) {
-      setTestResult(`✗ 连接失败：${e instanceof Error ? e.message : String(e)}`);
+      setTestResult(`连接失败：${e instanceof Error ? e.message : String(e)}`);
     } finally {
       setTesting(false);
     }
@@ -250,25 +248,30 @@ export function SettingsPage() {
       <CatalogProvider>
         <NavContext.Provider value={nav}>
           <div className="flex min-h-0 flex-1">
-            {/* 左导航：点分区重置路由栈 */}
-            <nav className="flex w-52 shrink-0 flex-col gap-0.5 border-r border-border/50 p-2">
-              {TABS.map((t) => {
-                const Icon = t.icon;
-                return (
-                  <button key={t.id} type="button"
-                    className={cn(
-                      'flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-ui-sm transition-colors',
-                      tab === t.id
-                        ? 'bg-selected font-medium text-foreground'
-                        : 'text-foreground-subtle hover:bg-hover hover:text-foreground',
-                    )}
-                    onClick={() => setStack([{ tab: t.id }])}>
-                    <Icon className="size-4 shrink-0" />
-                    {t.label}
-                    {tab === t.id && <CheckIcon className="ml-auto size-3.5 shrink-0 text-brand" />}
-                  </button>
-                );
-              })}
+            {/* 左导航：分组；点分区重置路由栈 */}
+            <nav className="flex w-52 shrink-0 flex-col gap-0.5 overflow-y-auto border-r border-border/50 p-2">
+              {TAB_GROUPS.map((g) => (
+                <div key={g.title || 'tail'} className={cn('grid gap-0.5', g.title ? 'mb-2' : 'mt-auto border-t border-border/50 pt-2')}>
+                  {g.title && <div className="px-2.5 pb-0.5 pt-1 text-ui-2xs font-medium text-foreground-subtlest">{g.title}</div>}
+                  {g.tabs.map((id) => {
+                    const t = TABS.find((x) => x.id === id)!;
+                    const Icon = t.icon;
+                    return (
+                      <button key={t.id} type="button"
+                        className={cn(
+                          'flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-ui-sm transition-colors',
+                          tab === t.id
+                            ? 'bg-selected font-medium text-foreground'
+                            : 'text-foreground-subtle hover:bg-hover hover:text-foreground',
+                        )}
+                        onClick={() => setStack([{ tab: t.id }])}>
+                        <Icon className="size-4 shrink-0" />
+                        {t.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              ))}
             </nav>
 
             {/* 内容面 */}
@@ -300,6 +303,20 @@ export function SettingsPage() {
                         </Button>
                       </div>
                     </Field>
+                    {modes.length > 0 && (
+                      <Field label="默认智能体" hint="新项目与没有记录过智能体的项目，开新对话时默认交给它。">
+                        <div className="flex flex-wrap gap-1.5">
+                          {modes.map((m) => (
+                            <button key={m.id} type="button" onClick={() => void setDefault(m.id)}
+                              className={cn('flex items-center gap-1.5 rounded-full border py-0.5 pl-0.5 pr-2.5 text-ui-sm transition-colors',
+                                m.id === defaultMode ? 'border-brand/60 bg-brand/10 text-foreground' : 'border-border text-foreground-subtle hover:bg-hover')}>
+                              <AgentAvatar icon={m.icon} size="sm" className="rounded-full" />
+                              {m.name}
+                            </button>
+                          ))}
+                        </div>
+                      </Field>
+                    )}
                   </Section>
                 )}
 

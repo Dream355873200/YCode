@@ -5,8 +5,8 @@
 // busy 时：无草稿显示停止钮；有草稿时发送 = 入队（当前轮结束后独立成轮）。
 import { useEffect, useRef, useState } from 'react';
 import {
-  ArrowUpIcon, BrainIcon, ChevronDownIcon, ClipboardListIcon, GoalIcon, Loader2Icon, PenLineIcon,
-  ShieldCheckIcon, SlidersHorizontalIcon, SquareIcon, ZapIcon, type LucideIcon,
+  ArrowUpIcon, BrainIcon, ChevronDownIcon, ClipboardListIcon, FolderIcon, FolderPlusIcon, GoalIcon, Loader2Icon,
+  PenLineIcon, ShieldCheckIcon, SlidersHorizontalIcon, SquareIcon, ZapIcon, type LucideIcon,
 } from 'lucide-react';
 import { useConversation } from './store';
 import ContextRing from './ContextRing';
@@ -196,6 +196,37 @@ function ModelPicker({ disabled }: { disabled: boolean }) {
   );
 }
 
+/** 草稿的项目：新对话还没建，可以换到别的项目再发。 */
+function ProjectChip() {
+  const { project, projects, setCreateDialogOpen } = useApp();
+  const select = useWorkspace((s) => s.select);
+  if (!project) return null;
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button type="button" className={chipCls} title="在哪个项目里开始">
+          <FolderIcon className="size-3.5" />
+          <span className="max-w-32 truncate text-foreground">{project.name}</span>
+          <ChevronDownIcon className="size-3 opacity-60" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent side="top" align="start" className="w-64">
+        <DropdownMenuLabel>项目</DropdownMenuLabel>
+        <DropdownMenuRadioGroup value={project.dir} onValueChange={(dir) => select({ kind: 'draft', dir })}>
+          {projects.map((p) => (
+            <DropdownMenuRadioItem key={p.dir} value={p.dir} title={p.dir}>
+              <FolderIcon />
+              <span className="min-w-0 flex-1 truncate">{p.name}</span>
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onSelect={() => setCreateDialogOpen(true)}><FolderPlusIcon />添加项目</DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 export function Composer({ sid, variant = 'docked', seed }: {
   /** 对话 id；null = 草稿（首条消息时创建对话）。 */
   sid: string | null;
@@ -208,6 +239,7 @@ export function Composer({ sid, variant = 'docked', seed }: {
   const interrupt = useConversation((s) => s.interrupt);
   const consumeDraftRestore = useConversation((s) => s.consumeDraftRestore);
   const busy = useConversation((s) => (sid ? s.sessions[sid]?.busy ?? false : false));
+  const hasHistory = useConversation((s) => (sid ? (s.sessions[sid]?.rows.length ?? 0) > 0 : false));
   const { project, composerSeed, projectMode, permission, modes, thread } = useApp();
   const startThread = useWorkspace((s) => s.startThread);
   const startGoal = useWorkspace((s) => s.startGoal);
@@ -285,8 +317,10 @@ export function Composer({ sid, variant = 'docked', seed }: {
   const placeholder = goalMode
     ? '描述要达成的目标：智能体会持续推进，每轮结束自动验收，直到达成'
     : busy
-      ? '任务执行中——发送将排队，当前任务结束后依次执行'
-      : agent ? `交给${agent.name}：描述你要完成的事` : '描述你要完成的事';
+      ? '继续输入，排队到当前任务之后（Esc 停止当前任务）'
+      : hasHistory
+        ? '提出后续要求'
+        : agent ? `交给${agent.name}：描述你要完成的事` : '描述你要完成的事';
 
   return (
     <div className="relative z-10">
@@ -310,6 +344,9 @@ export function Composer({ sid, variant = 'docked', seed }: {
             if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault();
               void submit();
+            } else if (e.key === 'Escape' && sid && busy) {
+              e.preventDefault();
+              void interrupt(sid);
             }
           }}
           placeholder={placeholder}
@@ -318,6 +355,7 @@ export function Composer({ sid, variant = 'docked', seed }: {
         />
         <div className="mt-2 flex items-center gap-2">
           <div className="flex min-w-0 flex-1 items-center gap-0.5">
+            {!sid && <ProjectChip />}
             <AgentPicker />
             <PermissionPicker />
             <button type="button" onClick={() => setGoalMode(!goalMode)} aria-pressed={goalMode}
