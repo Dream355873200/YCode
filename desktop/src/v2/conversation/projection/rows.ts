@@ -17,7 +17,7 @@ export type Tone = 'info' | 'error' | 'stopped';
 
 /** 子 agent 进度：状态 + 活动流水（每次工具启动 / 阶段性结论一行）。 */
 export type AgentProgress = {
-  status: 'running' | 'done' | 'failed';
+  status: 'running' | 'done' | 'failed' | 'cancelled';
   activities: string[];
   toolUses: number;
   tokens: number;
@@ -28,7 +28,10 @@ export type AgentProgress = {
 const AGENT_ACTIVITY_CAP = 200;
 
 function mergeAgentProgress(prev: AgentProgress | undefined, frame: Envelope): AgentProgress {
-  const status = frame.agent_status === 'done' ? 'done' : frame.agent_status === 'failed' ? 'failed' : 'running';
+  const status = frame.agent_status === 'done' ? 'done'
+    : frame.agent_status === 'failed' ? 'failed'
+    : frame.agent_status === 'cancelled' ? 'cancelled'
+    : 'running';
   const act = frame.agent_activity || '';
   const base: AgentProgress = prev ?? { status, activities: [], toolUses: 0, tokens: 0 };
   let activities = base.activities;

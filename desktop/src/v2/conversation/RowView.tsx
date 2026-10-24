@@ -172,7 +172,7 @@ function AgentCard({ row }: { row: ToolRow }) {
   const name = row.name.replace(/^Agent_/, '');
 
   // 状态：子 agent 进度优先（后台任务在 tool_done 之后仍在跑）
-  const status: 'running' | 'done' | 'failed' = ag?.status
+  const status: 'running' | 'done' | 'failed' | 'cancelled' = ag?.status
     ?? (row.state === 'running' ? 'running' : row.state === 'err' ? 'failed' : 'done');
   const running = status === 'running';
   const acts = ag?.activities ?? [];
@@ -187,8 +187,10 @@ function AgentCard({ row }: { row: ToolRow }) {
 
   const stText = running
     ? (background && row.state !== 'running' ? '后台运行中' : '运行中')
-    : status === 'failed' ? '失败' : '完成';
-  const stCls = running ? 'text-brand' : status === 'failed' ? 'text-destructive' : 'text-success';
+    : status === 'failed' ? '失败' : status === 'cancelled' ? '已停止' : '完成';
+  const stCls = running ? 'text-brand'
+    : status === 'failed' ? 'text-destructive'
+    : status === 'cancelled' ? 'text-foreground-subtlest' : 'text-success';
   const meta = [
     ag && ag.toolUses > 0 ? `${ag.toolUses} 次工具` : '',
     ag && ag.tokens > 0 ? `${fmtTokens(ag.tokens)} tokens` : '',

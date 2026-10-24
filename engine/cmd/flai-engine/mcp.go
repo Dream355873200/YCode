@@ -203,16 +203,67 @@ func connectPluginMCP(app *goagent.App, p *Plugin, srv MCPServer, e *mcpEntry) {
 	}
 	e.client = client
 	e.status.Status, e.status.Server = "connected", info
-	e.status.Tools = append(e.status.Tools, names...)
+	e.status.Tools = names
 	// 注册即登记：本服务器下线（停用插件 / 声明变更 / 移除）时撤销器
-	// 隐藏工具并断开连接（stdio 服务器进程随之终止）。
+	// 隐藏工具并断开连接（stdio 服务器进程随之终止）。工具集以后续
+	// list_changed 同步后的现表为准（撤销时读快照）。
 	pluginLifecycle.register(p.ID, "mcp:"+srv.Name, func() {
-		for _, n := range names {
+		mcpHub.mu.RLock()
+		live := append([]string{}, e.status.Tools...)
+		mcpHub.mu.RUnlock()
+		for _, n := range live {
 			pluginTools.hide(n)
 		}
 		_ = client.Disconnect()
 	})
 	mcpHub.mu.Unlock()
+	// 服务端运行中增删工具（notifications/tools/list_changed）→ 同步注册表：
+	// 新增/变更注册，消失的注销下线（只动本服务器前缀，重名规则与初次相同）。
+	client.OnToolsChanged(func([]mcp.ToolInfo) {
+		mcpHub.mu.RLock()
+		live := current()
+		prev := append([]string{}, e.status.Tools...)
+		mcpHub.mu.RUnlock()
+		if !live { // 已被 reload 取代：新连接有自己的订阅
+			return
+		}
+		converted, err := mcp.DiscoverAndConvert(context.Background(), client)
+		if err != nil {
+			log.Printf("[mcp] %s（插件 %s）工具列表刷新失败: %v", srv.Name, p.ID, err)
+			return
+		}
+		existing := map[string]bool{}
+		for _, n := range app.ToolNames() {
+			existing[n] = true
+		}
+		own := "mcp__" + srv.Name + "__"
+		names := make([]string, 0, len(converted))
+		for _, t := range converted {
+			if existing[t.Name] && !strings.HasPrefix(t.Name, own) {
+				continue
+			}
+			existing[t.Name] = true
+			pluginTools.claim(t.Name, p.ID)
+			app.ReplaceTool(t.Name, goagent.MCPToolDef(t))
+			names = append(names, t.Name)
+		}
+		now := map[string]bool{}
+		for _, n := range names {
+			now[n] = true
+		}
+		for _, n := range prev {
+			if !now[n] {
+				pluginTools.hide(n)
+				app.RemoveTool(n)
+			}
+		}
+		mcpHub.mu.Lock()
+		if current() {
+			e.status.Tools = names
+		}
+		mcpHub.mu.Unlock()
+		log.Printf("[mcp] %s（插件 %s）工具列表变更: %d 个工具", srv.Name, p.ID, len(names))
+	})
 	log.Printf("[mcp] %s（插件 %s）已连接: %d 个工具", srv.Name, p.ID, len(names))
 }
 
@@ -233,9 +284,11 @@ func stopPluginMCP() {
 }
 
 // mcpConfig 插件声明 → 连接配置（展开 ${PLUGIN_DIR} / ${VAR}；stdio 工作目录 = 插件目录）。
+// Elicit：服务器在工具调用中向用户索取输入时转成所在会话的提问（工具经
+// MCPToolDef 注册才能定位会话），桌面端按 payload.kind=mcp_elicitation 作答。
 func mcpConfig(p *Plugin, s MCPServer) mcp.ServerConfig {
 	exp := func(v string) string { return expandVars(v, p.Dir) }
-	cfg := mcp.ServerConfig{Name: s.Name, Command: exp(s.Command), URL: exp(s.URL)}
+	cfg := mcp.ServerConfig{Name: s.Name, Command: exp(s.Command), URL: exp(s.URL), Elicit: goagent.ElicitViaAskUser}
 	if s.Command != "" {
 		cfg.Dir = p.Dir
 	}
