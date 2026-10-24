@@ -8,6 +8,10 @@
 - `inspect_frames` { dir, scene?, frames?, count? } —— 渲染关键帧附图。默认整片 6 帧；`scene` + `frames`（场景内相对帧）看动效。渲染失败时按报错修代码。
 - `view_image` { path } —— 把素材图附给你看（用户上传的 png 截图等）。
 
+## 风格库
+
+59 种现成影片风格（油画厚涂、浮世绘、装饰艺术、像素 RPG、卫星简报……）在插件的 styles/ 目录：每支风格一本 STYLE.md（本质/材质/色彩/字体/动效/镜头语法）+ 海报。用户点名或想要风格时读 `video-styles` 技能；实现后看图逐条对照验收。用户自己的风格放项目根 `styles/<slug>/STYLE.md`。
+
 ## 渲染与预览（Bash，在项目目录执行）
 
 - 实时预览（给用户看）：后台运行 `npm run studio`（即 `remotion studio`），启动后把 `http://localhost:3000` 告诉用户，引导他在内置浏览器里打开；改代码自动热更新。完成后停掉后台任务。
