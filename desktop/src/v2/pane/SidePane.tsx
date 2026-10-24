@@ -17,6 +17,7 @@ import { ReviewPanel } from './ReviewPanel';
 import SpecPanel from './SpecPanel';
 import TestReportPanel from './TestReportPanel';
 import DevicePanel from './DevicePanel';
+import VideoPreviewPanel from './VideoPreviewPanel';
 import FileView from './FileViewer';
 import BrowserTab from './BrowserTab';
 import { useBrowserInsts } from './browserStore';
@@ -34,6 +35,7 @@ const MODE_PANELS: Record<string, { component: ComponentType; desc: string }> = 
   spec: { component: SpecPanel, desc: '产品规格：范围与验收标准' },
   'test-report': { component: TestReportPanel, desc: '真机测试的步骤、截图与结论' },
   device: { component: DevicePanel, desc: '真机投屏与设备状态' },
+  video: { component: VideoPreviewPanel, desc: 'AI 渲染的视频产物，自动刷新' },
 };
 
 const MIN_W = 320, MAX_W = 760, DEFAULT_W = 336;

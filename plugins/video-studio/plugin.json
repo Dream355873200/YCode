@@ -3,6 +3,7 @@
   "name": "视频工坊",
   "description": "Remotion 视频制作管线：需求→分镜→场景代码→渲染关键帧自检→预览→导出 MP4，工程目录与版本自动管理",
   "rules": "rules.md",
+  "sidePanels": [{ "id": "video", "label": "视频预览" }],
   "mcpServers": [
     { "name": "studio", "command": "node", "args": ["${PLUGIN_DIR}/mcp/server.js"] }
   ]

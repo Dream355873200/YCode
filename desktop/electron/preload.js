@@ -63,6 +63,7 @@ contextBridge.exposeInMainWorld('amc', {
   fs: {
     readFile: (p) => ipcRenderer.invoke('fs:readFile', p),
     exists: (p) => ipcRenderer.invoke('fs:exists', p),
+    videoArtifacts: (dir) => ipcRenderer.invoke('fs:videoArtifacts', dir),
     writeFile: (p, content) => ipcRenderer.invoke('fs:writeFile', p, content),
     listDir: (p) => ipcRenderer.invoke('fs:listDir', p),
     readImage: (p) => ipcRenderer.invoke('fs:readImage', p),

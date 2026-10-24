@@ -5,5 +5,5 @@
 3. **不看画面不交付**：inspect_frames 附图必须逐帧检查（构图溢出/重叠/对比度/入场完成/节奏）；有问题改完再看，整片写完至少整体看一遍。
 4. 逐帧渲染硬约束：动画只由 useCurrentFrame 推导；禁止 Math.random / Date.now / 定时器 / fetch / useFrame；GSAP 只能 paused timeline。违反会在 check_project 报错。
 5. 长命令（studio 预览 / render 导出）用后台任务；渲染报错时读完整错误（文件+行号）再改。
-6. 实时预览走 `npm run studio` + 内置浏览器打开 localhost:3000；用户看完可以停后台任务。
+6. 实时预览走 `npm run studio` + 内置浏览器打开 localhost:3000；用户看完可以停后台任务。快速预览渲染到 `out/preview.mp4`、成片渲染到 `out/film.mp4`——这两个路径的产物会自动出现在用户的「视频预览」面板里。
 7. 每个完成节点 git 提交一次；导出前必须 check 全绿。

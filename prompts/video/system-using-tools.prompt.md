@@ -9,7 +9,7 @@
 ## 渲染与预览（Bash，在项目目录执行）
 
 - 实时预览（给用户看）：后台运行 `npm run studio`（即 `remotion studio`），启动后把 `http://localhost:3000` 告诉用户，引导他在内置浏览器里打开；改代码自动热更新。完成后停掉后台任务。
-- 快速预览成片：`npx remotion render src/index.ts Film out/preview.mp4 --scale=0.5 --crf=23`
+- 快速预览成片：`npx remotion render src/index.ts Film out/preview.mp4 --scale=0.5 --crf=23`——渲染完成后文件会自动出现在用户的「视频预览」面板（右栏）里，无需再做别的。
 - 正式成片：`npx remotion render src/index.ts Film out/film.mp4 --crf=18`（竖屏/4K 由 manifest 画幅决定；长片渲染慢，用后台任务跑，完成后核对文件存在与大小）
 - 只看某一帧：`npx remotion still src/index.ts Film out/one.png --frame=30`（一般用 inspect_frames 更方便，会直接附图）
 

@@ -112,6 +112,25 @@ ipcMain.handle('fs:listDir', (_e, p) => {
     return { ok: true, files: names.map((n) => path.join(p, n)) };
   } catch { return { ok: true, files: [] }; }
 });
+// 视频面板：扫描工程 out/ 下的渲染产物（按修改时间新→旧；跳过隐藏目录）
+ipcMain.handle('fs:videoArtifacts', (_e, dir) => {
+  try {
+    const found = [];
+    for (const p of [path.join(dir, 'out', 'film.mp4'), path.join(dir, 'out', 'preview.mp4')]) {
+      if (fs.existsSync(p)) found.push(p);
+    }
+    try {
+      for (const f of fs.readdirSync(path.join(dir, 'out', 'renders'))) {
+        if (f.toLowerCase().endsWith('.mp4')) found.push(path.join(dir, 'out', 'renders', f));
+      }
+    } catch { /* renders 目录还没有 */ }
+    const videos = found.map((p) => {
+      const st = fs.statSync(p);
+      return { path: p, name: path.basename(p), mtimeMs: st.mtimeMs, size: st.size };
+    }).sort((a, b) => b.mtimeMs - a.mtimeMs);
+    return { ok: true, videos };
+  } catch (e) { return { ok: false, error: e.message, videos: [] }; }
+});
 // 读图片为 dataURL（报告页签的截图证据）
 ipcMain.handle('fs:readImage', (_e, p) => {
   try {
