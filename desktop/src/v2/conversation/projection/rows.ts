@@ -73,6 +73,8 @@ export type Row =
     mode?: string; choices?: string[]; detail?: string;
     index?: number; total?: number;
     history?: Array<{ question: string; answer: string }>;
+    /** MCP elicitation 载荷（payload.kind=mcp_elicitation）：按 mode 渲染表单/链接。 */
+    elicit?: { server: string; mode: string; schema?: unknown; url?: string; error?: string };
     resolved?: boolean; answer?: string;
   }
   /** 普通提问（无结构化载荷的 ask_user）。 */
@@ -110,6 +112,15 @@ function confirmOrAsk(frame: Envelope): Row {
     if (legacy) { payload = legacy.payload; text = legacy.question; }
   }
   if (payload && payload.kind !== 'ask') {
+    const elicit = payload.kind === 'mcp_elicitation'
+      ? {
+        server: typeof payload.server === 'string' ? payload.server : '',
+        mode: typeof payload.mode === 'string' ? payload.mode : 'form',
+        schema: payload.schema,
+        url: typeof payload.url === 'string' ? payload.url : undefined,
+        error: typeof payload.error === 'string' ? payload.error : undefined,
+      }
+      : undefined;
     return {
       kind: 'confirm', id: nextRowId(), requestId: frame.request_id || '',
       question: text,
@@ -118,6 +129,7 @@ function confirmOrAsk(frame: Envelope): Row {
       detail: typeof payload.detail === 'string' ? payload.detail : undefined,
       index: typeof payload.index === 'number' ? payload.index : undefined,
       total: typeof payload.total === 'number' ? payload.total : undefined,
+      elicit,
     };
   }
   return { kind: 'ask', id: nextRowId(), requestId: frame.request_id || '', question: text };
@@ -292,6 +304,11 @@ export function applyFrame(rows: readonly Row[], frame: Envelope): Row[] {
       break;
   }
   return out;
+}
+
+/** 本地推送的提示行（指示未送达、停止失败等渲染层自身的结果反馈）。 */
+export function pushNotice(rows: readonly Row[], text: string, tone: 'info' | 'error' | 'stopped' = 'info'): Row[] {
+  return [...rows, { kind: 'notice', id: nextRowId(), text, tone }];
 }
 
 /** 本地推送的用户消息（send 即时显示；引擎不回显用户输入帧）。 */

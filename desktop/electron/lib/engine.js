@@ -5,6 +5,7 @@ const { URL } = require('url');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { dialog, clipboard } = require('electron');
 // goagent 协议 TS 客户端：SSE 解析/统一信封/交互回传全部走 SDK，不再手写
 const { GoAgentClient } = require('goagent-client');
 
@@ -190,11 +191,88 @@ async function ensure(cfg, extraEnv = {}) {
 // 每流独立状态：begin 标记与 session 归属都是流内变量，多会话并行流互不串扰；
 // sse:done / sse:error 携带该流的 session_id，renderer 按会话收尾（不再依赖
 // 「最近活跃会话」猜测，避免并行流先结束的一方误关别家的轮次）。
+// autoResume：连接在 metadata 前中断时按最后 session_seq 自动续传（引擎侧
+// 会话事件日志补帧），渲染层看到的是一条连续帧流；彻底失败才冒泡成 sse:error
+// 走渲染层的轮询恢复。tools：主进程原生执行的前端工具（引擎沙箱做不到的
+// 系统能力），流内 tool_start 命中即在主进程执行并回传，流不断、无需停车。
 function client() {
   if (!state.client || state.client.baseUrl !== state.addr) {
     state.client = new GoAgentClient(state.addr);
   }
   return state.client;
+}
+
+// 前端工具声明（/chat tools 字段）：给模型看的能力清单。名称 amc_ 前缀
+// 避免与引擎注册工具撞名（撞名时引擎侧优先，声明被忽略）。
+const FRONTEND_TOOLS = [
+  {
+    name: 'amc_pick_directory',
+    description: '打开系统目录选择对话框，让用户当面挑选一个文件夹。返回所选绝对路径；用户取消时返回取消说明。需要用户选择项目目录、资源目录等场景使用。',
+    parameters: {
+      type: 'object',
+      properties: { purpose: { type: 'string', description: '为什么需要这个目录（作为对话框标题语境）' } },
+    },
+  },
+  {
+    name: 'amc_pick_file',
+    description: '打开系统文件选择对话框，让用户当面挑选一个文件。返回所选绝对路径；用户取消时返回取消说明。',
+    parameters: {
+      type: 'object',
+      properties: {
+        purpose: { type: 'string', description: '为什么需要这个文件（作为对话框标题语境）' },
+        extensions: { type: 'array', items: { type: 'string' }, description: '允许的扩展名（不含点，如 ["png","jpg"]）；省略 = 不限' },
+      },
+    },
+  },
+  {
+    name: 'amc_clipboard_write',
+    description: '把文本写入系统剪贴板（用户可直接粘贴）。',
+    parameters: {
+      type: 'object',
+      properties: { text: { type: 'string', description: '要复制的文本' } },
+      required: ['text'],
+    },
+  },
+];
+
+// runFrontendTool 主进程执行前端工具，返回交给模型的文本结果。
+async function runFrontendTool(name, input) {
+  const args = input && typeof input === 'object' ? input : {};
+  try {
+    if (name === 'amc_pick_directory') {
+      const r = await dialog.showOpenDialog(state.win, {
+        title: args.purpose || '选择目录', properties: ['openDirectory', 'createDirectory'],
+      });
+      return r.canceled || !r.filePaths[0] ? '（用户取消了目录选择）' : r.filePaths[0];
+    }
+    if (name === 'amc_pick_file') {
+      const filters = Array.isArray(args.extensions) && args.extensions.length
+        ? [{ name: '文件', extensions: args.extensions }]
+        : undefined;
+      const r = await dialog.showOpenDialog(state.win, {
+        title: args.purpose || '选择文件', properties: ['openFile'], filters,
+      });
+      return r.canceled || !r.filePaths[0] ? '（用户取消了文件选择）' : r.filePaths[0];
+    }
+    if (name === 'amc_clipboard_write') {
+      clipboard.writeText(String(args.text ?? ''));
+      return '已写入剪贴板';
+    }
+  } catch (e) {
+    return `执行失败：${e && e.message || e}`;
+  }
+  return `未知前端工具 ${name}`;
+}
+
+// maybeHandleFrontendTool 流内 tool_start 命中前端工具清单 → 异步执行并回传
+// 结果（不 await：SSE 迭代继续收帧，运行在引擎侧阻塞等待结果）。
+function maybeHandleFrontendTool(sid, evt) {
+  if (!evt || evt.type !== 'tool_start' || !evt.tool_use_id) return;
+  if (!FRONTEND_TOOLS.some((t) => t.name === evt.name)) return;
+  runFrontendTool(evt.name, evt.tool_input)
+    .then((content) => client().toolResult(sid, evt.tool_use_id, content))
+    .catch((e) => client().toolResult(sid, evt.tool_use_id, `执行失败：${String(e && e.message || e)}`, 'error'))
+    .catch(() => { /* 回传也失败（引擎已断）：结果随 30 分钟超时按失败收口 */ });
 }
 
 function send(channel, payload) {
@@ -205,9 +283,10 @@ async function streamChat({ message, sessionId, resumeQueue }) {
   let sid = sessionId || '';
   let first = true;
   try {
-    for await (const evt of client().chat({ message, sessionId, resumeQueue })) {
+    for await (const evt of client().chat({ message, sessionId, resumeQueue, autoResume: true, tools: FRONTEND_TOOLS })) {
       if (evt && evt.session_id) sid = evt.session_id;
       if (first) { send('sse:begin', evt); first = false; }
+      maybeHandleFrontendTool(sid, evt);
       send('sse:event', evt);
     }
     send('sse:done', { session_id: sid });

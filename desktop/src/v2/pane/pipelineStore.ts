@@ -1,11 +1,14 @@
 // pipelineStore — create_pipeline 的 DAG 运行状态捕获（模块级单份）。
 //
-// 数据源是主对话 SSE 流的两类帧：
+// 数据源是主对话 SSE 流的三类帧：
 //   - tool_start(tool_name=create_pipeline) → 从 tool_input.spec 解析 DAG
 //     拓扑（节点/依赖/injects），节点状态归零——新流水线开始
-//   - subagent_progress → agent_id = 节点名（dynpipeline 的事件透出），
-//     agent_status: running/done → 更新节点状态与活动一句话，并按节点
-//     累积运行过程（面板点节点查看；节点是内存循环，无持久会话）
+//   - custom(goagent.pipeline_node) → 引擎下发的结构化节点事件
+//     {node, status, text}，优先消费（不依赖 agent_id=node 约定）
+//   - subagent_progress → agent_id = 节点名（dynpipeline 的事件透出，
+//     旧引擎兼容路径），agent_status: running/done/error/cancelled →
+//     更新节点状态与活动一句话，并按节点累积运行过程（面板点节点查看；
+//     节点是内存循环，无持久会话）
 //
 // 团队分派（team_dispatch）也走 subagent_progress，但其 agent_id 是成员
 // 会话 ID（team-*），不在节点表里会被忽略——两套编排互不干扰。
@@ -88,6 +91,20 @@ function parseSpec(raw: unknown): { goal: string; nodes: DagNode[] } | null {
   }
 }
 
+/** 节点事件 → 面板状态（custom 结构化事件与 subagent_progress 兼容路径共用）。 */
+function applyNodeFrame(
+  st: ReturnType<typeof usePipelineStore.getState>,
+  node: string,
+  status: string,
+  text: string,
+): void {
+  if (!st.nodes.find((n) => n.name === node)) return;
+  const s = status === 'done' ? 'done' : status === 'error' || status === 'cancelled' ? 'error' : 'running';
+  st.update(node, { status: s, activity: text });
+  if (text) st.pushEvent(node, text);
+  if (st.nodes.every((n) => n.status === 'done' || n.status === 'error')) st.finish();
+}
+
 let inited = false;
 
 /** 初始化 SSE 帧捕获（模块级一次；面板打开与否都持续更新——切走再回来不丢状态）。 */
@@ -101,14 +118,13 @@ export function initPipelineCapture(): void {
       if (parsed) st.reset(parsed.nodes, parsed.goal);
       return;
     }
+    if (frame.type === 'custom' && frame.name === 'goagent.pipeline_node') {
+      const v = frame.value as { node?: string; status?: string; text?: string } | undefined;
+      if (v?.node) applyNodeFrame(st, v.node, v.status || '', v.text || '');
+      return;
+    }
     if (frame.type === 'subagent_progress' && st.nodes.length > 0) {
-      const id = frame.agent_id || '';
-      const node = st.nodes.find((n) => n.name === id);
-      if (!node) return;
-      const status = frame.agent_status === 'done' ? 'done' : frame.agent_status === 'error' ? 'error' : 'running';
-      st.update(id, { status, activity: frame.agent_activity || '' });
-      if (frame.agent_activity) st.pushEvent(id, frame.agent_activity);
-      if (st.nodes.every((n) => n.status === 'done' || n.status === 'error')) st.finish();
+      applyNodeFrame(st, frame.agent_id || '', frame.agent_status || '', frame.agent_activity || '');
     }
   });
 }

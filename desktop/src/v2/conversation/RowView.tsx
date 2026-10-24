@@ -2,7 +2,7 @@
 // 工具卡片复用 legacy 渲染器注册表（toolRender.jsx，P0 平移资产）；
 // 交互卡（审批/确认/提问）直接挂 store 回传。
 import { memo, useEffect, useRef, useState } from 'react';
-import { Bot, Brain, Check as CheckIco, FileTextIcon, Loader2 as Loader2Ico, PanelRightIcon, X as XIco } from 'lucide-react';
+import { Bot, Brain, Check as CheckIco, CornerDownLeft as SendIco, FileTextIcon, Loader2 as Loader2Ico, PanelRightIcon, Square as StopIco, X as XIco } from 'lucide-react';
 import type { Row, ToolRow } from './projection/rows';
 import { useConversation } from './store';
 import { useApp } from '../app/appState';
@@ -11,6 +11,7 @@ import { resolveRenderer, actObj, actVerbPlain, toolStats } from '../../lib/tool
 import { renderMD } from '../../lib/markdown';
 import { Button } from '../components/ui/button';
 import { Collapse } from '../components/ui/collapse';
+import { Input } from '../components/ui/input';
 
 // ---------- 工具结果产物（ZCode 式）----------
 
@@ -163,8 +164,11 @@ const fmtTokens = (n: number): string => (n >= 1000 ? `${(n / 1000).toFixed(1)}k
 function AgentCard({ row }: { row: ToolRow }) {
   const [open, setOpen] = useState(false);
   const [showOld, setShowOld] = useState(false);
+  const [steer, setSteer] = useState('');
   const listRef = useRef<HTMLDivElement>(null);
   const { sid, openPaneTab, setPaneActive } = useApp();
+  const steerAgent = useConversation((s) => s.steerAgent);
+  const stopAgent = useConversation((s) => s.stopAgent);
   const input = (typeof row.input === 'string' ? safeJson(row.input) : row.input) as Record<string, unknown> | undefined;
   const task = typeof input?.task === 'string' ? input.task : '';
   const background = input?.run_in_background === true;
@@ -198,6 +202,13 @@ function AgentCard({ row }: { row: ToolRow }) {
   // 结果去掉统计附注（卡头已显示）
   const result = (row.result || '').replace(/\n*--- agent「[^」]*」: .*---\s*$/, '').trim();
 
+  const sendSteer = (): void => {
+    const text = steer.trim();
+    if (!text || !sid || !row.toolUseId) return;
+    setSteer('');
+    void steerAgent(sid, row.toolUseId, text);
+  };
+
   return (
     <div className="my-1 rounded-lg border border-border bg-surface">
       <button
@@ -214,6 +225,20 @@ function AgentCard({ row }: { row: ToolRow }) {
         <span className="ml-auto flex shrink-0 items-center gap-2 text-ui-xs">
           {meta && <span className="text-foreground-subtlest">{meta}</span>}
           <span className={stCls}>{stText}</span>
+          {running && sid && row.toolUseId && (
+            <button
+              type="button"
+              aria-label="停止该子代理"
+              title="只停止这个子代理（父任务继续）"
+              className="rounded p-0.5 text-foreground-subtlest hover:bg-hover hover:text-destructive"
+              onClick={(e) => {
+                e.stopPropagation();
+                void stopAgent(sid, row.toolUseId!);
+              }}
+            >
+              <StopIco size={12} />
+            </button>
+          )}
           {sid && row.toolUseId && (
             <button
               type="button"
@@ -271,6 +296,31 @@ function AgentCard({ row }: { row: ToolRow }) {
           </div>
         )}
       </Collapse>
+      {/* 运行中：插话下沉——指示在子代理自己的工具批边界送达，不用等它整个结束 */}
+      {running && sid && row.toolUseId && (
+        <div className="flex items-center gap-1.5 border-t border-border px-3 py-1.5">
+          <Input
+            value={steer}
+            onChange={(e) => setSteer(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && steer.trim()) { e.preventDefault(); sendSteer(); }
+              e.stopPropagation();
+            }}
+            placeholder={`给 ${name} 发指示…`}
+            className="h-7 min-w-0 flex-1 bg-surface text-ui-xs"
+          />
+          <button
+            type="button"
+            aria-label="发送指示"
+            title="发送指示"
+            disabled={!steer.trim()}
+            className="shrink-0 rounded p-1 text-foreground-subtlest hover:bg-hover hover:text-foreground disabled:opacity-40"
+            onClick={sendSteer}
+          >
+            <SendIco size={13} />
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -356,6 +406,9 @@ export function ReadGroup({ group }: { group: ReadGroupUnit }) {
 
 function PermissionCard({ row, sid }: { row: Extract<Row, { kind: 'permission' }>; sid: string }) {
   const approve = useConversation((s) => s.approve);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+  const [bad, setBad] = useState('');
   if (row.resolved) {
     return (
       <div className="my-2 rounded-lg border border-border bg-surface px-3 py-2 text-ui-sm text-foreground-subtlest">
@@ -364,16 +417,46 @@ function PermissionCard({ row, sid }: { row: Extract<Row, { kind: 'permission' }
     );
   }
   const obj = actObj(row.toolName, row.toolInput);
+  const openEditor = (): void => {
+    setDraft(JSON.stringify(row.toolInput ?? {}, null, 2));
+    setBad('');
+    setEditing(true);
+  };
+  // 改参批准：JSON 解析失败就地报错不发；成功按替换后的参数放行
+  const approveEdited = (): void => {
+    let input: unknown;
+    try { input = JSON.parse(draft); } catch (e) { setBad(`JSON 无效：${String(e)}`); return; }
+    if (input === null || typeof input !== 'object' || Array.isArray(input)) { setBad('参数须是 JSON 对象'); return; }
+    approve(sid, row.requestId, true, input as Record<string, unknown>);
+  };
   return (
     <div className="my-2 rounded-lg border border-border-hover bg-card px-3 py-2.5">
       <div className="text-ui-sm">
         <span className="font-medium text-foreground">允许执行 {row.toolName}</span>
         {obj && <span className="ml-2 text-foreground-subtlest">{obj}</span>}
       </div>
-      <div className="mt-2 flex gap-2">
-        <Button type="button" size="sm" onClick={() => approve(sid, row.requestId, true)}>允许</Button>
-        <Button type="button" variant="outline" size="sm" onClick={() => approve(sid, row.requestId, false)}>拒绝</Button>
-      </div>
+      {editing ? (
+        <>
+          <textarea
+            value={draft}
+            onChange={(e) => { setDraft(e.target.value); setBad(''); }}
+            rows={Math.min(12, Math.max(3, draft.split('\n').length))}
+            spellCheck={false}
+            className="mt-2 w-full rounded-md border border-border bg-surface p-2 font-mono text-ui-xs text-foreground outline-none focus:border-brand/60"
+          />
+          {bad && <div className="mt-1 text-ui-xs text-destructive">{bad}</div>}
+          <div className="mt-2 flex gap-2">
+            <Button type="button" size="sm" onClick={approveEdited}>以此参数允许</Button>
+            <Button type="button" variant="ghost" size="sm" onClick={() => setEditing(false)}>取消</Button>
+          </div>
+        </>
+      ) : (
+        <div className="mt-2 flex gap-2">
+          <Button type="button" size="sm" onClick={() => approve(sid, row.requestId, true)}>允许</Button>
+          <Button type="button" variant="outline" size="sm" onClick={openEditor}>修改参数…</Button>
+          <Button type="button" variant="outline" size="sm" onClick={() => approve(sid, row.requestId, false)}>拒绝</Button>
+        </div>
+      )}
     </div>
   );
 }

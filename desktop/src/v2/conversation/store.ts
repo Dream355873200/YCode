@@ -9,7 +9,7 @@
 //      支持撤回编辑 / 立即发送（停当前轮 + 该条立成新轮）
 import { create } from 'zustand';
 import {
-  applyFrame, resolvePermission, resolveAsk, pushUser, pendingBackgroundAgents, markAgentTasksLost, type Row,
+  applyFrame, resolvePermission, resolveAsk, pushUser, pushNotice, pendingBackgroundAgents, markAgentTasksLost, type Row,
 } from './projection/rows';
 import { ThinkTagSplitter } from './projection/thinkTags';
 import { historyToRows } from './projection/historyToRows';
@@ -38,7 +38,11 @@ interface ConversationStore {
   restore(sid: string): Promise<void>;
   send(sid: string, text: string): Promise<void>;
   interrupt(sid: string): Promise<void>;
-  approve(sid: string, requestId: string, allow: boolean): Promise<void>;
+  /** 向运行中的子代理发指示（agent_id = 发起调用的 tool_use_id）。 */
+  steerAgent(sid: string, agentId: string, text: string): Promise<boolean>;
+  /** 只停止该子代理（父运行继续，收到明确的错误结果）。 */
+  stopAgent(sid: string, agentId: string): Promise<boolean>;
+  approve(sid: string, requestId: string, allow: boolean, input?: Record<string, unknown>): Promise<void>;
   answer(sid: string, id: string, requestId: string, answer: string): Promise<void>;
   /** busy 时发送 = 入队（run 结束后自动逐条续跑）。 */
   enqueue(sid: string, text: string): Promise<void>;
@@ -169,6 +173,17 @@ export const useConversation = create<ConversationStore>((set, get) => {
 
     const terminal = evt.type === 'done' || evt.type === 'error' || evt.type === 'interrupted';
     if (terminal) stopResume(sid); // 在 set 外先停轮询（set 更新器内不做副作用）
+
+    // resync：主进程自动续传后仍落后于服务端缓冲（中间帧已丢）——引擎
+    // 历史整体重放，未决提问随后对账补回；resync 本身不投影
+    if (evt.type === 'resync') {
+      void engine.get(`/sessions/${sid}/messages`).then((res) => {
+        if (!Array.isArray(res.body)) return;
+        patch(set, sid, (s) => ({ ...s, rows: historyToRows(res.body as never) }));
+        void reconcilePendingAsk(sid, patch, set);
+      }).catch(() => { /* 引擎暂不可达：下个周期再试 */ });
+      return;
+    }
 
     // queue_run：队列消费开新轮——弹出队头（drain 严格 FIFO），busy 维持
     if (evt.type === 'queue_run') {
@@ -387,6 +402,35 @@ export const useConversation = create<ConversationStore>((set, get) => {
       stopResume(sid);
     },
 
+    async steerAgent(sid, agentId, text) {
+      const message = text.trim();
+      if (!message || !agentId) return false;
+      try {
+        // 带 agent_id 的 /chat 是指示投递（不开新 run）：子代理不在运行时 4xx
+        const r = await engine.post('/chat', { session_id: sid, agent_id: agentId, message });
+        const steered = (r.body as { steered?: boolean } | undefined)?.steered;
+        if (!steered) {
+          patch(set, sid, (s) => ({ ...s, rows: pushNotice(s.rows, '指示未送达：该子代理已不在运行', 'stopped') }));
+        }
+        return !!steered;
+      } catch (e) {
+        patch(set, sid, (s) => ({ ...s, rows: pushNotice(s.rows, `指示未送达：${String(e)}`, 'error') }));
+        return false;
+      }
+    },
+
+    async stopAgent(sid, agentId) {
+      if (!agentId) return false;
+      try {
+        // 只中断该子代理：父运行收到「已被用户中断」的错误结果后继续
+        await engine.post('/interrupt', { session_id: sid, agent_id: agentId, reason: '用户停止子代理' });
+        return true;
+      } catch {
+        patch(set, sid, (s) => ({ ...s, rows: pushNotice(s.rows, '停止失败：该子代理已不在运行', 'stopped') }));
+        return false;
+      }
+    },
+
     async enqueue(sid, text) {
       const message = text.trim();
       if (!message) return;
@@ -447,8 +491,12 @@ export const useConversation = create<ConversationStore>((set, get) => {
       return text;
     },
 
-    async approve(sid, requestId, allow) {
-      await engine.post('/approve', { request_id: requestId, session_id: sid, allow, always_allow: false });
+    async approve(sid, requestId, allow, input) {
+      await engine.post('/approve', {
+        request_id: requestId, session_id: sid, allow, always_allow: false,
+        // input 非空 = 改参批准（完整替换工具参数；引擎按 schema 校验，不记为始终允许）
+        ...(input ? { input } : {}),
+      });
       patch(set, sid, (s) => ({ ...s, rows: resolvePermission(s.rows, requestId, allow) }));
     },
 

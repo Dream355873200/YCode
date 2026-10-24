@@ -13,9 +13,9 @@ exports.FrameType = {
     ToolDone: "tool_done",
     PermissionRequest: "permission_request",
     AskUser: "ask_user",
+    /** 保留，当前服务端不产生。 */
     PlanConfirm: "plan_confirm",
     Progress: "progress",
-    StatusKey: "status_key",
     Usage: "usage",
     TurnComplete: "turn_complete",
     Compaction: "compaction",
@@ -23,8 +23,12 @@ exports.FrameType = {
     Steer: "steer",
     QueueRun: "queue_run",
     SubAgentProgress: "subagent_progress",
+    /** 自定义事件：name 为 <命名空间>.<事件名>，value 为任意 JSON。 */
+    Custom: "custom",
     Interrupted: "interrupted",
     Error: "error",
     Done: "done",
     Metadata: "metadata",
+    /** 续传位置早于服务端缓冲：其间的帧已丢弃（oldest 为最旧帧的 session_seq），应从 messages() 重建。 */
+    Resync: "resync",
 };
