@@ -1,5 +1,4 @@
-// src/v2 — 前端 v2 入口（对齐 ZCode 的三帧工作区：侧栏 + 会话帧 + Side Pane）。
-// P0 骨架阶段：最小可加载壳；P1 起长出对话主轴。
+// 渲染层入口：侧栏（项目 → 对话 / 团队）+ 对话帧 + 右栏面板。
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './app/App';

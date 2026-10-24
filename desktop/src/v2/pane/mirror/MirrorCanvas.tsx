@@ -1,4 +1,4 @@
-// Web 原生投屏（自 legacy MirrorCanvas 移植）：主线程只做调度，视频字节
+// Web 原生投屏：主线程只做调度，视频字节
 // 处理全在 mirrorWorker（专职线程）。主进程建 video+control 双 TCP 通道并
 // 攒批推 IPC 流 → 此处 transfer 进 worker（零拷贝）→ worker 解析+解码，画
 // 到移交出去的 OffscreenCanvas。触控注入走 control 通道（坐标必须换算到

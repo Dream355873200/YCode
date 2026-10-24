@@ -68,7 +68,7 @@ func isThreadID(id string) bool {
 var threadIDRe = regexp.MustCompile(`^[A-Za-z0-9\p{L}\p{N}_.-]{1,128}$`)
 
 // normDir 路径归一：分隔符统一为 /、去尾部分隔符；盘符路径不区分大小写。
-// 与桌面壳 sessionId.ts 的 normalizeDir 一致。
+// 与桌面壳 dirs.ts 的 normalizeDir 一致。
 func normDir(dir string) string {
 	d := strings.TrimRight(strings.ReplaceAll(dir, `\`, "/"), "/")
 	if len(d) >= 2 && d[1] == ':' && unicode.IsLetter(rune(d[0])) {
@@ -79,7 +79,8 @@ func normDir(dir string) string {
 
 func sameDir(a, b string) bool { return normDir(a) == normDir(b) }
 
-// dirHash FNV-1a 32 位（按 UTF-16 码元，与桌面壳 dirHash 逐位一致）→ 8 位十六进制。
+// dirHash FNV-1a 32 位（按 UTF-16 码元）→ 8 位十六进制。算法不可改：老项目的
+// 首段对话 ID（amc-<目录名>-<哈希>）由旧版桌面壳按同一算法算出并已落盘。
 func dirHash(dir string) string {
 	h := uint32(0x811c9dc5)
 	for _, u := range utf16.Encode([]rune(normDir(dir))) {

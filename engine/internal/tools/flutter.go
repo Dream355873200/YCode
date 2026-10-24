@@ -109,7 +109,7 @@ func flutterRun(ctx goagent.Context, in FlutterInput) (string, error) {
 	}
 	dev, err := adbDevice(ctx.Context)
 	if err != nil {
-		return "", fmt.Errorf("无设备可部署（%v）——插手机或让用户点桌面壳的「部署运行」", err)
+		return "", fmt.Errorf("无设备可部署（%v）——请用户插上手机（开 USB 调试）或启动模拟器；也可以请用户在右栏「手机」面板点「运行」", err)
 	}
 	timeout := 300
 	if in.TimeoutSec > 0 {

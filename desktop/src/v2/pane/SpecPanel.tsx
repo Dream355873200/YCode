@@ -1,4 +1,4 @@
-// SPEC 规范面板（自 legacy StagePanel SPEC 页签移植，槽位消费方）：
+// SPEC 规范面板（槽位消费方）：
 // 轮询读项目根 SPEC.md（AI 与用户对话敲定的「范围契约」，必须反映最新
 // 内容），Markdown 渲染。挂载即读（SidePane tab 切换 = 重新挂载 = 刷新）。
 import { useEffect, useState } from 'react';

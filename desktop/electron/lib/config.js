@@ -30,7 +30,6 @@ function defaultConfig() {
       autoStart: true,
     },
     theme: 'dark',
-    uiVersion: 'v2', // v2 重构期开关：v2 = 新三帧 UI，v1 = legacy（P4 清理）
   };
 }
 

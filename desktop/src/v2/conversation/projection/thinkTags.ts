@@ -1,7 +1,6 @@
 // thinkTags.ts — 正文流里思考标签的流式解析（纯状态机）。
 // DeepSeek 惯用 <think>、GLM/Qwen 惯用 <thinking>、o-series 风格惯用
-// <analysis>；模型可能不走独立 reasoning 通道而把思考打进正文——从
-// legacy useChat 迁移，抽成可测试的纯状态机。
+// <analysis>；模型可能不走独立 reasoning 通道而把思考打进正文。
 //
 // 混用容错（实测踩坑）：provider 历史回填把思考包成 <thinking> 放进
 // content，模型有时以 <analysis> 收尾（</analysis>）——闭合标签互认，

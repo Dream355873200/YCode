@@ -1,5 +1,5 @@
 // RowView — row → 组件分发。展示层唯一职责：把权威 row 画出来。
-// 工具卡片复用 legacy 渲染器注册表（toolRender.jsx，P0 平移资产）；
+// 工具卡片走渲染器注册表（lib/toolRender.jsx）；
 // 交互卡（审批/确认/提问）直接挂 store 回传。
 import { memo, useEffect, useRef, useState } from 'react';
 import { Bot, Brain, Check as CheckIco, CornerDownLeft as SendIco, FileTextIcon, GoalIcon, Loader2 as Loader2Ico, PanelRightIcon, Square as StopIco, X as XIco } from 'lucide-react';
@@ -50,7 +50,7 @@ function ArtifactChips({ text }: { text: string }) {
 
 // renderMD 按原文缓存（lib/markdown）；memo 挡掉父级无关重渲染
 const Markdown = memo(function Markdown({ text }: { text: string }) {
-  // renderMD 产出受控 HTML（legacy 同路径：先转义再高亮，无注入面）
+  // renderMD 产出受控 HTML（先转义再高亮，无注入面）
   return <div className="v2-md" dangerouslySetInnerHTML={{ __html: renderMD(text) }} />;
 });
 

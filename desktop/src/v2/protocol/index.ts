@@ -1,5 +1,5 @@
-// v2 协议层：直接复用 vendored goagent-client 的类型与常量。
-// 渲染层的 HTTP/SSE 仍走 preload IPC 桥（legacy 复用同一 preload），
+// 协议层：直接复用 vendored goagent-client 的类型与常量。
+// 渲染层的 HTTP/SSE 走 preload IPC 桥，
 // 本层提供类型化能力面供 store 与组件消费。
 export type { Envelope, ChatRequest, Description } from 'goagent-client';
 
@@ -84,6 +84,28 @@ export interface GitBridge {
   push(dir: string): Promise<{ ok: boolean; error?: string }>;
 }
 
+/** flutter run 的阶段：构建安装中 → 运行中（热重载 / 热重启进行时短暂切换）。 */
+export type FlutterRunStatus = 'building' | 'running' | 'reloading' | 'restarting';
+
+export interface FlutterLogLine { level: 'info' | 'error' | 'progress'; text: string }
+
+export type FlutterEvent =
+  | { evt: 'status'; projectDir: string; runId: number; status: FlutterRunStatus; deviceId: string; result?: 'reloaded' | 'restarted' | 'failed' }
+  | { evt: 'log'; projectDir: string; runId: number; level: FlutterLogLine['level']; text: string }
+  | { evt: 'exited'; projectDir: string; runId: number; code: number | null; error?: string };
+
+export interface FlutterBridge {
+  start(p: { projectDir: string; deviceId: string }): Promise<{ ok: boolean; error?: string; runId?: number }>;
+  stop(dir: string): Promise<{ ok: boolean }>;
+  reload(dir: string): Promise<{ ok: boolean; error?: string }>;
+  restart(dir: string): Promise<{ ok: boolean; error?: string }>;
+  status(dir: string): Promise<
+    | { running: true; runId: number; status: FlutterRunStatus; deviceId: string; log: FlutterLogLine[] }
+    | { running: false; last?: { runId: number; code: number | null; error?: string; log: FlutterLogLine[] } }
+  >;
+  onEvent(cb: (e: FlutterEvent) => void): () => void;
+}
+
 declare global {
   interface Window {
     amc: {
@@ -117,7 +139,7 @@ declare global {
         list(): Promise<unknown>;
         onChanged(cb: (x: unknown) => void): () => void;
       };
-      flutter: Record<string, (...args: unknown[]) => unknown>;
+      flutter: FlutterBridge;
       browser: {
         list(): Promise<unknown>;
         open(url: string): Promise<unknown>;

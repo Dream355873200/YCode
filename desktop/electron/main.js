@@ -19,33 +19,24 @@ const browserctl = require('./lib/browserctl');
 let win = null;
 
 // ---------- 窗口 ----------
-// v2 自绘标题栏：无边框 + 无系统菜单；legacy 保留系统边框（平行运行期）
+// 自绘标题栏：无边框 + 无系统菜单
 function createWindow() {
-  const uiVersion = loadConfig().uiVersion;
-  if (uiVersion === 'v2') Menu.setApplicationMenu(null);
+  Menu.setApplicationMenu(null);
   win = new BrowserWindow({
     width: 1480,
     height: 940,
     minWidth: 1180,
     minHeight: 720,
     backgroundColor: '#17181C',
-    frame: uiVersion !== 'v2',
+    frame: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
     },
   });
-  if (process.env.VITE_DEV_SERVER_URL) {
-    // 双入口：按 uiVersion 加载 legacy（index.html）或 v2（v2/index.html）
-    const base = process.env.VITE_DEV_SERVER_URL.replace(/\/$/, '');
-    win.loadURL(loadConfig().uiVersion === 'v2' ? `${base}/v2/index.html` : base);
-  } else {
-    const page = loadConfig().uiVersion === 'v2'
-      ? path.join(__dirname, '..', 'dist', 'v2', 'index.html')
-      : path.join(__dirname, '..', 'dist', 'index.html');
-    win.loadFile(page);
-  }
+  if (process.env.VITE_DEV_SERVER_URL) win.loadURL(process.env.VITE_DEV_SERVER_URL);
+  else win.loadFile(path.join(__dirname, '..', 'dist', 'index.html'));
   win.on('closed', () => (win = null));
 
   engine.setWin(win);

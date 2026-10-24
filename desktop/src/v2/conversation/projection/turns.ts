@@ -96,3 +96,19 @@ export function foldTurns(rows: readonly Row[]): TurnUnit[] {
   }
   return units;
 }
+
+const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit']);
+
+/** 最近一轮（最后一条非插话的用户消息之后）成功改写过的文件路径（去重）。 */
+export function lastTurnEdits(rows: readonly Row[]): string[] {
+  const out: string[] = [];
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const r = rows[i]!;
+    if (r.kind === 'user' && !r.steered) break;
+    if (r.kind !== 'tool' || r.state !== 'ok' || !EDIT_TOOLS.has(r.name)) continue;
+    const input = r.input as { file_path?: string; path?: string } | undefined;
+    const file = input?.file_path ?? input?.path;
+    if (file && !out.includes(file)) out.unshift(file);
+  }
+  return out;
+}

@@ -14,8 +14,8 @@ import (
 	goagent "github.com/Dream355873200/GoAgent"
 )
 
-// TestDirHashMatchesShell 目录哈希与桌面壳 sessionId.ts 逐位一致
-// （向量取自真实 session-map：amc-<目录名>-<哈希> 由壳计算）。
+// TestDirHashMatchesShell 目录哈希与旧版桌面壳算出的 ID 逐位一致
+// （向量取自真实 session-map：amc-<目录名>-<哈希>）。
 func TestDirHashMatchesShell(t *testing.T) {
 	for dir, want := range map[string]string{
 		`E:\aaaa\test2`:   "502239ea",

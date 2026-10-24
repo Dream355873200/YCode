@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import { useApp } from './appState';
 import { isUnread, sameDir, threadsOf, useWorkspace, type Project, type TeamSummary, type Thread } from './workspace';
-import { normalizeDir } from './sessionId';
+import { normalizeDir } from './dirs';
 import { Button } from '../components/ui/button';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from '../components/ui/context-menu';

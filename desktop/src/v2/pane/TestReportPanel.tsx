@@ -1,4 +1,4 @@
-// 测试报告面板（自 legacy TestReportTab 移植，槽位消费方）：
+// 测试报告面板（槽位消费方）：
 // 扫 .yume/test-reports/（test_report 工具落盘的 Markdown + frontmatter
 // 结构化元数据），列表 → 详情（Markdown 正文 + 内嵌截图证据 + 放大）。
 import { useEffect, useState } from 'react';

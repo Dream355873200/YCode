@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { foldTurns, type TurnUnit } from './turns';
+import { foldTurns, lastTurnEdits, type TurnUnit } from './turns';
 import { applyFrame, pushUser, resetRowIds, type Row } from './rows';
 import type { Envelope } from '../../protocol';
 
@@ -127,5 +127,25 @@ describe('foldTurns', () => {
     const turn = units[1] as Extract<TurnUnit, { type: 'turn' }>;
     expect(turn.rows).toHaveLength(0);
     expect(turn.aborted).toBe(false);
+  });
+});
+
+describe('lastTurnEdits', () => {
+  const edit = (name: string, file: string, ok = true): Array<Partial<Envelope>> => [
+    { type: 'tool_start', tool_name: name, tool_use_id: `${name}-${file}`, tool_input: { file_path: file } },
+    { type: 'tool_done', tool_use_id: `${name}-${file}`, tool_result: ok ? 'ok' : '写入失败' },
+  ];
+
+  it('只收最近一轮里成功的 Edit / Write，去重', () => {
+    const rows = run([
+      { user: '先改' }, ...edit('Edit', 'lib/old.dart'),
+      { user: '再改' }, ...edit('Edit', 'lib/a.dart'), ...edit('Write', 'README.md'),
+      ...edit('Read', 'lib/b.dart'), ...edit('Edit', 'lib/c.dart', false), ...edit('Write', 'lib/a.dart'),
+    ]);
+    expect(lastTurnEdits(rows).sort()).toEqual(['README.md', 'lib/a.dart']);
+  });
+
+  it('最后一条是用户消息时本轮还没有改动', () => {
+    expect(lastTurnEdits(run([{ user: 'a' }, ...edit('Edit', 'x.dart'), { user: 'b' }]))).toEqual([]);
   });
 });

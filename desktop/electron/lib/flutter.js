@@ -1,102 +1,182 @@
-// flutter run --machine 守护进程：自动部署到设备 + Hot Reload
-// --machine 输出 JSON-RPC（[{id/result}…{method,params}…] 每行一个 JSON）：
-//   事件 method: flutter.log（日志）、app.started（部署完成可交互）、
-//                app.progress（进度条，msgId=hot-restart 等）、app.reloadTomatoesCurrent
-//   请求 method: app.hotReload / app.hotRestart（发 {id, method} 即触发）
-// 参考 Flutter daemon 协议（与 dart-cli flutter.daemon 同族）
-const { spawn } = require('child_process');
-const path = require('path');
+// flutter run --machine：把 Flutter 应用部署到设备并保持热重载通道。
+// 协议见 flutter_tools/doc/daemon.md：每行一个方括号包裹的 JSON 数组；
+// 事件 { event, params }、请求 { id, method, params }、回执 { id, result | error }。
+//   app.start{appId} → app.started → app.log{log,error?} / app.progress{id,message?,finished?} → app.stop
+//   请求：app.restart{appId, fullRestart}（热重载 / 热重启）、app.stop{appId}
+// 发给渲染层的事件都带 runId：同一项目先停后启时，旧进程迟到的退出事件不会误伤新运行。
+const { spawn, execFile } = require('child_process');
 const readline = require('readline');
 const { flutterBin } = require('./tools');
 
+const LOG_TAIL = 80;
+const REQUEST_TIMEOUT_MS = 90_000;
+const DEVICE_ID_RE = /^[\w.:-]{1,128}$/;
+
 const state = {
   win: null,
-  runs: new Map(), // projectDir → { proc, deviceId, status, rl, nextId }
+  seq: 0,
+  runs: new Map(), // projectDir → run
+  last: new Map(), // projectDir → 最近一次已结束运行的 { runId, code, error, log }
 };
 
 function setWin(w) { state.win = w; }
 
-function send(evt, extra) {
-  if (state.win && !state.win.isDestroyed()) state.win.webContents.send('flutter:evt', { evt, ...extra });
-}
-
-// 启动 flutter run -d <deviceId> --machine（单项目单实例，重复启动先杀旧）
-function start({ projectDir, deviceId }) {
-  if (!projectDir || !deviceId) return { ok: false, error: '缺少项目目录或设备' };
-  stop(projectDir); // 幂等：旧进程清理
-
-  const proc = spawn(flutterBin(), ['run', '--machine', '-d', deviceId], {
-    cwd: projectDir,
-    windowsHide: true,
-    shell: false,
-  });
-  const entry = { proc, deviceId, status: 'building', nextId: 1 };
-  state.runs.set(projectDir, entry);
-
-  // stdout 按行切 JSON（--machine 每行一个 JSON-RPC 消息）
-  const rl = readline.createInterface({ input: proc.stdout });
-  rl.on('line', (line) => {
-    const t = line.trim();
-    if (!t.startsWith('[') && !t.startsWith('{')) return; // 混入的非 JSON 行
-    let msg;
-    try { msg = JSON.parse(t); } catch { return; }
-    handleMsg(projectDir, entry, msg);
-  });
-  proc.stderr.on('data', (c) => {
-    const s = String(c).trim();
-    if (s) send('log', { projectDir, level: 'stderr', text: s });
-  });
-  proc.on('exit', (code) => {
-    state.runs.delete(projectDir);
-    send('exited', { projectDir, code });
-  });
-  send('starting', { projectDir, deviceId });
-  return { ok: true };
-}
-
-function handleMsg(projectDir, entry, msg) {
-  // 响应（我们发的请求的回执）——只关心 method 事件
-  if (!msg.method) return;
-  const p = msg.params || {};
-  if (msg.method === 'app.started') {
-    entry.status = 'running';
-    send('started', { projectDir });
-  } else if (msg.method === 'app.progress') {
-    // 进度：startId/endId（如 hot-restart）；完成即代表 reload/restart 生效
-    if (p.endId) send('progress-done', { projectDir, id: p.endId, msgId: p.msgId || '' });
-    else if (p.startId) send('progress-start', { projectDir, id: p.startId, msgId: p.msgId || '' });
-  } else if (msg.method === 'flutter.log') {
-    send('log', { projectDir, level: p.level || 'info', text: String(p.message || '') });
+function send(evt, projectDir, run, extra) {
+  if (state.win && !state.win.isDestroyed()) {
+    state.win.webContents.send('flutter:evt', { evt, projectDir, runId: run.id, ...extra });
   }
 }
 
-// 发 JSON-RPC 请求（hotReload / hotRestart）
-function request(projectDir, method) {
-  const entry = state.runs.get(projectDir);
-  if (!entry) return { ok: false, error: '应用未在运行' };
-  const id = entry.nextId++;
-  entry.proc.stdin.write(JSON.stringify({ id, method }) + '\n');
-  return { ok: true };
+function pushLog(projectDir, run, text, level = 'info') {
+  for (const line of String(text ?? '').split(/\r?\n/)) {
+    const t = line.replace(/\s+$/, '');
+    if (!t) continue;
+    run.log.push({ level, text: t });
+    send('log', projectDir, run, { level, text: t });
+  }
+  if (run.log.length > LOG_TAIL) run.log.splice(0, run.log.length - LOG_TAIL);
 }
 
-const hotReload = (projectDir) => request(projectDir, 'app.hotReload');
-const hotRestart = (projectDir) => request(projectDir, 'app.hotRestart');
+function setStatus(projectDir, run, status, extra) {
+  run.status = status;
+  send('status', projectDir, run, { status, deviceId: run.deviceId, ...extra });
+}
 
+function alive(proc) { return proc.exitCode === null && proc.signalCode === null; }
+
+// flutter 是 .bat 包装：Windows 上经 shell 启动，结束时按进程树杀（只杀 cmd.exe 会留下 dart 进程）。
+function killTree(proc) {
+  if (!alive(proc)) return;
+  if (process.platform === 'win32') execFile('taskkill', ['/pid', String(proc.pid), '/T', '/F'], { windowsHide: true }, () => {});
+  else try { proc.kill(); } catch { /* 已退出 */ }
+}
+
+function write(run, msg) {
+  try { run.proc.stdin.write(`[${JSON.stringify(msg)}]\n`); return true; } catch { return false; }
+}
+
+function onMessage(projectDir, run, m) {
+  if (!m || typeof m !== 'object') return;
+  if (m.event === undefined && m.id !== undefined) {
+    const done = run.pending.get(m.id);
+    if (done) { run.pending.delete(m.id); done(m.error !== undefined ? { error: String(m.error) } : { result: m.result }); }
+    return;
+  }
+  const p = m.params || {};
+  switch (m.event) {
+    case 'app.start': run.appId = p.appId || null; break;
+    case 'app.started': setStatus(projectDir, run, 'running'); break;
+    case 'app.log': pushLog(projectDir, run, p.log, p.error ? 'error' : 'info'); break;
+    case 'app.progress': if (p.message) pushLog(projectDir, run, p.message, 'progress'); break;
+    case 'daemon.logMessage': pushLog(projectDir, run, p.message, p.level === 'error' ? 'error' : 'info'); break;
+    case 'app.stop': run.appId = null; break;
+    default: break;
+  }
+}
+
+function onLine(projectDir, run, line) {
+  const t = line.trim();
+  if (!t) return;
+  if (!t.startsWith('[')) { pushLog(projectDir, run, t); return; }
+  let msgs;
+  try { msgs = JSON.parse(t); } catch { pushLog(projectDir, run, t); return; }
+  for (const m of Array.isArray(msgs) ? msgs : [msgs]) onMessage(projectDir, run, m);
+}
+
+// 启动 flutter run -d <deviceId> --machine（每个项目一个运行，重复启动先停旧的）
+function start({ projectDir, deviceId }) {
+  if (!projectDir || !deviceId) return { ok: false, error: '缺少项目目录或设备' };
+  if (!DEVICE_ID_RE.test(deviceId)) return { ok: false, error: '设备 ID 不合法' };
+  stop(projectDir);
+  const bin = flutterBin();
+  const viaShell = process.platform === 'win32';
+  let proc;
+  try {
+    proc = spawn(viaShell ? `"${bin}"` : bin, ['run', '--machine', '-d', deviceId], {
+      cwd: projectDir, windowsHide: true, shell: viaShell,
+    });
+  } catch (err) {
+    return { ok: false, error: `启动 flutter 失败：${err.message || err}` };
+  }
+  const run = {
+    id: ++state.seq, proc, deviceId, status: 'building', appId: null,
+    nextId: 1, pending: new Map(), log: [], error: '',
+  };
+  state.runs.set(projectDir, run);
+  state.last.delete(projectDir);
+  readline.createInterface({ input: proc.stdout }).on('line', (line) => onLine(projectDir, run, line));
+  proc.stderr.on('data', (c) => pushLog(projectDir, run, c, 'error'));
+  proc.on('error', (err) => {
+    run.error = String(err.message || err);
+    pushLog(projectDir, run, run.error, 'error');
+  });
+  proc.on('exit', (code) => {
+    if (state.runs.get(projectDir) === run) state.runs.delete(projectDir);
+    for (const done of run.pending.values()) done({ error: '应用已退出' });
+    run.pending.clear();
+    const last = { runId: run.id, code, error: run.error, log: run.log };
+    if (!state.runs.has(projectDir)) state.last.set(projectDir, last);
+    send('exited', projectDir, run, { code, error: run.error });
+  });
+  setStatus(projectDir, run, 'building');
+  return { ok: true, runId: run.id };
+}
+
+function request(run, method, params) {
+  const id = run.nextId++;
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => { run.pending.delete(id); resolve({ error: '应用没有响应' }); }, REQUEST_TIMEOUT_MS);
+    run.pending.set(id, (r) => { clearTimeout(timer); resolve(r); });
+    if (!write(run, { id, method, params: { appId: run.appId, ...params } })) {
+      run.pending.delete(id);
+      clearTimeout(timer);
+      resolve({ error: '与 flutter 进程的连接已断开' });
+    }
+  });
+}
+
+// 热重载（full=false）/ 热重启（full=true）：app.restart 回执 { code, message }，code 0 为成功
+async function restart(projectDir, full) {
+  const run = state.runs.get(projectDir);
+  if (!run || !run.appId || run.status === 'building') return { ok: false, error: '应用还没启动完成' };
+  if (run.status !== 'running') return { ok: false, error: '上一次重载还没结束' };
+  setStatus(projectDir, run, full ? 'restarting' : 'reloading');
+  const r = await request(run, 'app.restart', { fullRestart: !!full, reason: 'manual' });
+  const res = r.error !== undefined
+    ? { ok: false, error: r.error }
+    : r.result && r.result.code === 0
+      ? { ok: true }
+      : { ok: false, error: (r.result && r.result.message) || '重载失败' };
+  if (state.runs.get(projectDir) === run) {
+    if (!res.ok) pushLog(projectDir, run, res.error, 'error');
+    setStatus(projectDir, run, 'running', { result: res.ok ? (full ? 'restarted' : 'reloaded') : 'failed' });
+  }
+  return res;
+}
+
+const hotReload = (projectDir) => restart(projectDir, false);
+const hotRestart = (projectDir) => restart(projectDir, true);
+
+// 先请应用自己退出（设备上的进程一并结束），稍后兜底杀进程树
 function stop(projectDir) {
-  const entry = state.runs.get(projectDir);
-  if (!entry) return { ok: true };
-  try { entry.proc.kill(); } catch { /* */ }
+  const run = state.runs.get(projectDir);
+  if (!run) return { ok: true };
   state.runs.delete(projectDir);
+  const graceful = !!run.appId && write(run, { id: run.nextId++, method: 'app.stop', params: { appId: run.appId } });
+  setTimeout(() => killTree(run.proc), graceful ? 1500 : 0);
   return { ok: true };
 }
 
 function status(projectDir) {
-  const entry = state.runs.get(projectDir);
-  return entry ? { running: true, status: entry.status, deviceId: entry.deviceId } : { running: false };
+  const run = state.runs.get(projectDir);
+  if (run) return { running: true, runId: run.id, status: run.status, deviceId: run.deviceId, log: run.log };
+  const last = state.last.get(projectDir);
+  return last ? { running: false, last } : { running: false };
 }
 
 function killAll() {
-  for (const dir of state.runs.keys()) stop(dir);
+  for (const run of state.runs.values()) killTree(run.proc);
+  state.runs.clear();
 }
 
 module.exports = { setWin, start, stop, hotReload, hotRestart, status, killAll };

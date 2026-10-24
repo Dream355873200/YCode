@@ -6,8 +6,9 @@
 // 重启后回到上次的对话。
 import { create } from 'zustand';
 import { engine, type Envelope } from '../protocol';
-import { normalizeDir } from './sessionId';
+import { normalizeDir } from './dirs';
 import { useConversation } from '../conversation/store';
+import { autoReloadAfterTurn } from '../pane/flutterRun';
 import type { ThreadGoal } from '../conversation/status/statusPanelModel';
 
 export interface Project {
@@ -370,12 +371,19 @@ async function verifyGoal(sid: string): Promise<void> {
   }
 }
 
-/** 运行收尾（本窗口直播的流）：推进或暂停该对话的目标。 */
+/** 运行收尾（本窗口直播的流）：改过 Dart 就热重载手机上的应用；推进或暂停该对话的目标。 */
 function onRunEnd(sid: string, type: string): void {
   const t = useWorkspace.getState().threads.find((x) => x.id === sid);
+  if (t && type === 'done') void reloadDeviceApp(sid, t.dir);
   if (t?.goal?.status !== 'active') return;
   if (type === 'done') void verifyGoal(sid);
   else void useWorkspace.getState().pauseGoal(sid, type === 'interrupted' ? '运行被中断' : '运行出错');
+}
+
+async function reloadDeviceApp(sid: string, dir: string): Promise<void> {
+  const conv = useConversation.getState();
+  const r = await autoReloadAfterTurn(dir, conv.sessions[sid]?.rows ?? []);
+  if (r) conv.note(sid, r.ok ? '已热重载到手机' : `热重载失败：${r.error}`, r.ok ? 'info' : 'error');
 }
 
 // ---------- 同步：轮询 + SSE 即时反馈 ----------
