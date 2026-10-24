@@ -125,6 +125,7 @@ func TestReloadHidesRemovedAgents(t *testing.T) {
 // 已装配的子代理经生命周期表下线，重新启用后恢复。
 func TestPluginDisabled(t *testing.T) {
 	sessMap = &sessionMap{path: filepath.Join(t.TempDir(), "session-map.json")}
+	configuredDefaultMode = "code" // 本用例单跑时也成立（reloadCatalog 按它解析默认模式）
 	app := goagent.New(goagent.WithBuiltinTools())
 	full, err := LoadCatalog("code")
 	if err != nil {
