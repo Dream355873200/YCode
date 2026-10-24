@@ -1,0 +1,20 @@
+{
+  "version": 2,
+  "title": "未命名影片",
+  "format": { "width": 1920, "height": 1080, "fps": 30 },
+  "theme": "midnight",
+  "overlays": { "captions": false },
+  "scenes": [
+    {
+      "id": "scene_01",
+      "title": "片头",
+      "component": "scene_01.tsx",
+      "duration": "4s",
+      "data": {
+        "kicker": "VIDEO STUDIO",
+        "title": "未命名影片",
+        "subtitle": "告诉 AI 你想做一支什么样的视频"
+      }
+    }
+  ]
+}

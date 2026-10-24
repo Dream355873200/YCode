@@ -1,0 +1,49 @@
+{
+  "name": "video-film",
+  "version": "1.0.0",
+  "private": true,
+  "description": "视频工程（Remotion）：场景代码 → 关键帧自检 → 预览 → 成片",
+  "scripts": {
+    "studio": "remotion studio",
+    "render": "remotion render src/index.ts Film out/film.mp4"
+  },
+  "dependencies": {
+    "@fontsource-variable/inter": "5.3.0",
+    "@fontsource-variable/jetbrains-mono": "5.3.0",
+    "@fontsource-variable/montserrat": "5.3.0",
+    "@fontsource-variable/noto-sans-sc": "5.3.1",
+    "@fontsource-variable/noto-serif-sc": "5.3.1",
+    "@fontsource-variable/playfair-display": "5.3.0",
+    "@fontsource-variable/space-grotesk": "5.3.0",
+    "@fontsource/ma-shan-zheng": "5.3.1",
+    "@fontsource/zcool-kuaile": "5.3.0",
+    "@fontsource/zcool-qingke-huangyou": "5.3.0",
+    "@react-three/fiber": "8.17.10",
+    "@remotion/animation-utils": "4.0.252",
+    "@remotion/cli": "4.0.252",
+    "@remotion/lottie": "4.0.252",
+    "@remotion/media-utils": "4.0.252",
+    "@remotion/motion-blur": "4.0.252",
+    "@remotion/noise": "4.0.252",
+    "@remotion/paths": "4.0.252",
+    "@remotion/player": "4.0.252",
+    "@remotion/shapes": "4.0.252",
+    "@remotion/three": "4.0.252",
+    "@remotion/transitions": "4.0.252",
+    "@remotion/layout-utils": "4.0.252",
+    "d3": "7.9.0",
+    "gsap": "3.15.0",
+    "lottie-web": "5.13.0",
+    "lucide-react": "0.468.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "remotion": "4.0.252",
+    "three": "0.170.0"
+  },
+  "devDependencies": {
+    "@types/d3": "7.4.3",
+    "@types/react": "18.3.12",
+    "@types/three": "0.170.0",
+    "typescript": "5.6.3"
+  }
+}

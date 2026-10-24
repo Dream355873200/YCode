@@ -1,0 +1,10 @@
+{
+  "id": "rea",
+  "name": "逆向工程 REA",
+  "description": "Reverse Engineer Anything：分析二进制 / 安装包 / Electron 应用 / 移动应用 / 固件 / 模型文件，反编译、取证、版本对比（官方 rea-agents MCP，本仓库零重写）",
+  "rules": "rules.md",
+  "skills": "skills",
+  "mcpServers": [
+    { "name": "rea", "command": "node", "args": ["${PLUGIN_DIR}/mcp/launch.js"] }
+  ]
+}

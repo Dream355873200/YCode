@@ -1,0 +1,65 @@
+{
+  "id": "video",
+  "name": "视频工坊",
+  "description": "从一句需求到成片 MP4：AI 导演在 Remotion 工程里写分镜与场景代码，渲染关键帧自查画面，实时预览，迭代到满意后导出",
+  "icon": "clapperboard",
+  "starters": [
+    {
+      "label": "做一支宣传片",
+      "prompt": "帮我做一支视频："
+    },
+    {
+      "label": "数据可视化短片",
+      "prompt": "把下面这组数据做成一支动态图表短片："
+    },
+    {
+      "label": "竖屏短视频",
+      "prompt": "做一支 9:16 竖屏短视频："
+    },
+    {
+      "label": "继续上次的片子",
+      "prompt": "继续这个视频工程，先看看现状（brief.md 和 manifest），接着做完。"
+    }
+  ],
+  "prompts": "video",
+  "scaffold": "video-film",
+  "projectFields": [
+    {
+      "id": "name",
+      "label": "作品名称",
+      "type": "text",
+      "required": true,
+      "placeholder": "例如：春节促销宣传片"
+    },
+    {
+      "id": "dir",
+      "label": "工程目录",
+      "type": "folder",
+      "required": true,
+      "placeholder": "选择一个空目录"
+    },
+    {
+      "id": "idea",
+      "label": "需求描述",
+      "type": "textarea",
+      "required": true,
+      "placeholder": "想做什么内容？给谁看、多长、什么风格？",
+      "hint": "开始对话后也可以继续补充"
+    },
+    {
+      "id": "format",
+      "label": "画幅",
+      "type": "choice",
+      "default": "16:9",
+      "options": [
+        { "value": "16:9", "label": "横屏 16:9" },
+        { "value": "9:16", "label": "竖屏 9:16" },
+        { "value": "1:1", "label": "方形 1:1" },
+        { "value": "4:5", "label": "4:5" }
+      ]
+    }
+  ],
+  "plugins": [
+    "video-studio"
+  ]
+}

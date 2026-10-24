@@ -1,7 +1,7 @@
 // 智能体图标：mode.json 的 icon 键 → lucide 图标（未知键回落 Bot）。
 // 设置页图标选择器用 AGENT_ICON_KEYS 列出全部可选键。
 import {
-  BookOpenIcon, BotIcon, BriefcaseIcon, ChartColumnIcon, CodeIcon, DatabaseIcon, FileTextIcon,
+  BookOpenIcon, BotIcon, BriefcaseIcon, ChartColumnIcon, ClapperboardIcon, CodeIcon, DatabaseIcon, FileTextIcon,
   FlaskConicalIcon, Gamepad2Icon, GlobeIcon, GraduationCapIcon, PaletteIcon, PenToolIcon, SearchIcon,
   SmartphoneIcon, SparklesIcon, TerminalIcon, WrenchIcon, type LucideIcon,
 } from 'lucide-react';
@@ -25,6 +25,7 @@ const ICONS: Record<string, LucideIcon> = {
   briefcase: BriefcaseIcon,
   wrench: WrenchIcon,
   sparkles: SparklesIcon,
+  clapperboard: ClapperboardIcon,
   bot: BotIcon,
 };
 

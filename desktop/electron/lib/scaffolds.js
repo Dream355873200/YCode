@@ -39,6 +39,37 @@ const scaffolds = {
     await run('git', ['-C', dir, 'commit', '-m', 'chore: flutter 脚手架 + SPEC 草稿（amobileCreater）']);
     return { ok: true, record: { idea: idea || '', kind: kind || 'app', color: brand } };
   },
+
+  // 视频工程（Remotion）：拷贝模板（场景/组件库/manifest）→ brief/storyboard → git init
+  // 依赖不在这里装（npm install 由智能体开工时自己跑）。模板随插件走：
+  // plugins/video-studio/template（开发期源码树内；打包发行需随 assets 一起带）。
+  'video-film': async ({ name, dir, idea, format }) => {
+    if (!name) return { ok: false, error: '作品名称必填' };
+    if (fs.existsSync(dir) && fs.readdirSync(dir).length > 0) {
+      return { ok: false, error: '目录非空，请选择空目录' };
+    }
+    const template = path.join(__dirname, '..', '..', '..', 'plugins', 'video-studio', 'template');
+    if (!fs.existsSync(path.join(template, 'src'))) {
+      return { ok: false, error: `视频工程模板缺失: ${template}` };
+    }
+    fs.mkdirSync(dir, { recursive: true });
+    fs.cpSync(template, dir, { recursive: true });
+    const [w, h] = { '16:9': [1920, 1080], '9:16': [1080, 1920], '1:1': [1080, 1080], '4:5': [1080, 1350] }[format || '16:9'];
+    const mfPath = path.join(dir, 'src', 'scenes', 'manifest.json');
+    const mf = JSON.parse(fs.readFileSync(mfPath, 'utf-8'));
+    mf.title = name;
+    mf.format = { width: w, height: h, fps: mf.format?.fps ?? 30 };
+    fs.writeFileSync(mfPath, JSON.stringify(mf, null, 2) + '\n', 'utf-8');
+    fs.writeFileSync(path.join(dir, 'brief.md'),
+      `# ${name}\n\n## 需求\n\n${idea || '（用户会在对话里补充）'}\n\n## 制作笔记\n\n（画幅 ${format || '16:9'}）\n`, 'utf-8');
+    fs.writeFileSync(path.join(dir, 'storyboard.md'),
+      `# 分镜：${name}\n\n（待写：每段的目的、画面、文案、时长、转场）\n`, 'utf-8');
+
+    await run('git', ['-C', dir, 'init']);
+    await run('git', ['-C', dir, 'add', '.']);
+    await run('git', ['-C', dir, 'commit', '-m', 'chore: 视频工程脚手架 + 需求草稿（amobileCreater）']);
+    return { ok: true, record: { idea: idea || '', format: format || '16:9' } };
+  },
 };
 
 module.exports = { scaffolds };

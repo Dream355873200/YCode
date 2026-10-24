@@ -94,6 +94,7 @@ import {
   GitBranchIcon, SearchIcon, ListChecksIcon, TriangleAlertIcon, CircleCheckIcon,
   MousePointer2Icon, GlobeIcon, ImageIcon, EyeIcon, RefreshCwIcon, FileCodeIcon,
   ClipboardListIcon, CrosshairIcon, ScrollTextIcon, KeyRoundIcon, PlayIcon,
+  ClapperboardIcon,
 } from 'lucide-react';
 
 export const TOOL_RENDERERS = {
@@ -164,6 +165,14 @@ const MCP_RENDERERS = {
       browser_key: ['按键', (i) => i?.key], browser_scroll: ['滚动页面'],
       browser_screenshot: ['网页截图', ], browser_console: ['读取控制台'],
       browser_evaluate: ['执行页面脚本', (i) => String(i?.expression || '').slice(0, 40)],
+    },
+  },
+  studio: {
+    Icon: ClapperboardIcon,
+    tools: {
+      check_project: ['检查视频工程'],
+      inspect_frames: ['渲染关键帧自检'],
+      view_image: ['查看图片', (i) => base(i?.path || '')],
     },
   },
 };

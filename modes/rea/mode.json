@@ -1,0 +1,37 @@
+{
+  "id": "rea",
+  "name": "逆向工程",
+  "description": "看穿编译后的东西：分析二进制、安装包、Electron 应用、移动应用与模型文件，反编译、取证、版本对比",
+  "icon": "wrench",
+  "starters": [
+    {
+      "label": "分析一个程序",
+      "prompt": "帮我分析这个程序/安装包："
+    },
+    {
+      "label": "看看这个 APK",
+      "prompt": "分析这个 APK：manifest、签名、打包方式，尽量还原主要逻辑结构。"
+    },
+    {
+      "label": "拆解 Electron 应用",
+      "prompt": "分析这个 Electron 应用的结构：入口、模块、IPC、与原生模块的关系。"
+    },
+    {
+      "label": "对比两个版本",
+      "prompt": "对比这两个版本文件的差异，说明改了什么："
+    }
+  ],
+  "prompts": "rea",
+  "plugins": [
+    "rea"
+  ],
+  "projectFields": [
+    {
+      "id": "dir",
+      "label": "工作目录",
+      "type": "folder",
+      "required": true,
+      "placeholder": "选择存放分析产物与笔记的目录"
+    }
+  ]
+}
