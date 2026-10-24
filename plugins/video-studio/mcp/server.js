@@ -214,7 +214,9 @@ function runCmd(cmd, args, opts = {}) {
 
 // 系统浏览器优先：Remotion 首次渲染会从 googleapis 下载 chrome-headless-shell
 // 到项目 node_modules（国内网络经常卡死/半截），机器上现成的 Chrome/Edge 完全
-// 能干同样的活——检测到就直接用，零下载。
+// 能干同样的活——检测到就直接用，零下载。更重要的是：headless-shell 的 WebGL
+// 是 SwiftShader 纯软件渲染（三维场景吃 CPU），系统 Chrome 无头模式走显卡
+// 硬件加速（ANGLE/D3D11），3D 场景明显更快。
 const BROWSER_CANDIDATES = [
   process.env.REMOTION_BROWSER_EXECUTABLE,
   "C:/Program Files/Google/Chrome/Application/chrome.exe",
@@ -226,14 +228,18 @@ const BROWSER_CANDIDATES = [
   "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
 ].filter(Boolean);
 let browserPath; // undefined=未检测
-function browserArgs() {
+function detectBrowser() {
   if (browserPath === undefined) {
     browserPath = null;
     for (const c of BROWSER_CANDIDATES) {
       try { fs.accessSync(c); browserPath = c; break; } catch { /* 下一个 */ }
     }
   }
-  return browserPath ? ["--browser-executable", browserPath] : [];
+  return browserPath;
+}
+function browserArgs() {
+  const b = detectBrowser();
+  return b ? ["--browser-executable", b] : [];
 }
 
 // 从 dir 向上找含 remotion 的 node_modules（工程可能在共享运行时的子目录）
@@ -267,14 +273,59 @@ async function remotion(dir, args, timeoutMs = 8 * 60_000) {
   return runCmd(useBin ? bin : "npx", useBin ? args : ["remotion", ...args], { cwd: dir, timeoutMs, shell: true });
 }
 
-// 渲染命令提示：把解析出的绝对 CLI 路径告诉 agent，免得它自己猜入口踩库入口的坑
+// 渲染命令提示：把解析出的绝对 CLI 路径告诉 agent，免得它自己猜入口踩库入口的坑；
+// 带上检测到的系统浏览器——默认的 chrome-headless-shell WebGL 走 SwiftShader
+// 纯软件渲染，三维场景慢；系统 Chrome/Edge 无头模式是显卡硬件加速。
+const REMOTION_CONFIG_TS = `// Remotion CLI 配置：渲染/预览浏览器用系统 Chrome/Edge（检测到即用）。
+// Remotion 默认下载的 chrome-headless-shell 的 WebGL 走 SwiftShader 纯软件
+// 渲染，三维场景（three.js/ThreeStage）会慢数倍；系统浏览器无头模式走显卡
+// 硬件加速（Windows 上是 ANGLE/D3D11）。本文件被 remotion CLI 自动加载，
+// 对 studio / render / still 全部生效。
+import fs from "node:fs";
+import { Config } from "@remotion/cli/config";
+
+const candidates = [
+  process.env.REMOTION_BROWSER_EXECUTABLE,
+  "C:/Program Files/Google/Chrome/Application/chrome.exe",
+  "C:/Program Files (x86)/Google/Chrome/Application/chrome.exe",
+  "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe",
+  "C:/Program Files/Microsoft/Edge/Application/msedge.exe",
+  process.env.LOCALAPPDATA ? \`\${process.env.LOCALAPPDATA}/Google/Chrome/Application/chrome.exe\` : "",
+  "/usr/bin/google-chrome",
+  "/usr/bin/chromium-browser",
+  "/usr/bin/chromium",
+  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+].filter(Boolean) as string[];
+
+for (const c of candidates) {
+  try {
+    fs.accessSync(c);
+    Config.setBrowserExecutable(c);
+    break;
+  } catch {
+    // 下一个候选
+  }
+}
+`;
+
+// 存量工程补 remotion.config.ts（新工程由模板自带）：已有文件一律不覆盖。
+function ensureRemotionConfig(dir) {
+  const p = path.join(dir, "remotion.config.ts");
+  if (fs.existsSync(p)) return;
+  try { fs.writeFileSync(p, REMOTION_CONFIG_TS); } catch { /* 失败不阻断检查 */ }
+}
+
 function renderHint(dir) {
   const root = findRuntimeRoot(dir);
   if (!root) return "";
   const cli = path.join(root, "node_modules", "@remotion", "cli", "remotion-cli.js");
   if (!fs.existsSync(cli)) return "";
+  const b = detectBrowser();
+  const browserFlag = b ? ` --browser-executable="${b}"` : "";
   return `渲染成片命令（CLI 入口必须用 remotion-cli.js；remotion 主包的 dist/index.js 是库入口，跑了会静默退出）：
-node "${cli}" render src/index.ts Film out/final.mp4 --codec h264`;
+node "${cli}" render src/index.ts Film out/final.mp4 --codec h264${browserFlag}
+
+必须带 --browser-executable="${b || "(未检测到系统浏览器)"}"：Remotion 默认下载的 chrome-headless-shell 是纯软件渲染，三维场景慢；系统浏览器无头模式走显卡硬件加速。`;
 }
 
 // bundle 内容寻址缓存：src+public 指纹不变就直接复用（省 15-30s/次）。
@@ -447,7 +498,8 @@ def("check_project",
         scan.push(...scanSource(`src/lib/${f}`, fs.readFileSync(path.join(libDir, f), "utf8")));
       }
     }
-      const runtimeRoot = findRuntimeRoot(dir);
+    const runtimeRoot = findRuntimeRoot(dir);
+    ensureRemotionConfig(dir); // 存量工程补系统浏览器配置（已有文件不动）
   const tscBin = runtimeRoot ? path.join(runtimeRoot, "node_modules", "typescript", "bin", "tsc") : null;
     let types = "";
     if (tscBin && fs.existsSync(tscBin)) {
@@ -466,8 +518,7 @@ def("check_project",
     if (scan.length) parts.push(`【逐帧规则违反】\n${scan.slice(0, 30).join("\n")}`);
     if (types) parts.push(`【类型】${types}`);
     if (parts.length) return `检查未通过（${parts.length} 类问题）：\n\n${parts.join("\n\n")}`;
-    return `检查通过${warn.length ? `\n提醒：\n${warn.join("\n")}` : ""}\n\n${manifestSummary(dir)}\n\n${renderHint(dir)}`;
-  });
+    return `检查通过${warn.length ? `\n提醒：\n${warn.join("\n")}` : ""}\n\n${manifestSummary(dir)}\n\n${renderHint(dir)}`;  });
 
 // ---------- 抽帧 ----------
 
