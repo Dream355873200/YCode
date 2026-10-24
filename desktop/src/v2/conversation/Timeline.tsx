@@ -152,7 +152,6 @@ function TurnRail({ turns, containerRef, onJump }: {
     return () => { el.removeEventListener('scroll', onScroll); if (raf) cancelAnimationFrame(raf); };
   }, [turns, containerRef]);
 
-  if (turns.length === 0) return null;
   const n = turns.length;
   // tick 间距：固定 10px；放不下时压缩到最小 9px 并转为可滚动列表
   //（对齐 ZCode：不再无限压缩挤成一团，滚动查看即可），溢出时自动把
@@ -172,6 +171,7 @@ function TurnRail({ turns, containerRef, onJump }: {
       el.scrollTop = top - el.clientHeight / 2;
     }
   }, [active, overflow, gap]);
+  if (n === 0) return null;
   const center = overflow ? 3 + contentH / 2 : railH / 2;
   return (
     <div ref={railRef} onMouseLeave={() => setHover(-1)}

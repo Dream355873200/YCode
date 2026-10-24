@@ -42,7 +42,7 @@ function Switch({ on, busy, onToggle, label }: { on: boolean; busy?: boolean; on
   return (
     <button type="button" role="switch" aria-checked={on} aria-label={label} disabled={busy} onClick={onToggle}
       className={cn('relative h-5 w-9 shrink-0 rounded-full transition-colors disabled:opacity-50', on ? 'bg-brand' : 'bg-secondary')}>
-      <span className={cn('absolute top-0.5 size-4 rounded-full bg-white shadow transition-transform', on ? 'translate-x-4.5' : 'translate-x-0.5')} />
+      <span className={cn('absolute left-0 top-0.5 size-4 rounded-full bg-white shadow transition-transform', on ? 'translate-x-4.5' : 'translate-x-0.5')} />
     </button>
   );
 }

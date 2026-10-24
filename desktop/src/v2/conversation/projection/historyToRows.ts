@@ -24,12 +24,27 @@ export interface HistoryMessage {
   is_meta?: boolean;
 }
 
+/** GoAgent 恢复提示的固定开头：旧版引擎落盘时没打 is_meta 标记。 */
+const LEGACY_META_PREFIXES = [
+  'Your previous reply contained only internal reasoning',
+  'Output token limit hit. Resume directly',
+];
+
+/** 运行机制注入的元消息（模型上下文保留，展示层跳过）。 */
+export function isMetaMessage(m: HistoryMessage): boolean {
+  if (m.is_meta) return true;
+  if (m.role !== 'user') return false;
+  const text = typeof m.content === 'string'
+    ? m.content
+    : m.content.length === 1 && m.content[0]?.type === 'text' ? m.content[0].text ?? '' : '';
+  return LEGACY_META_PREFIXES.some((p) => text.trimStart().startsWith(p));
+}
+
 /** 历史 → rows。tool_result 按 tool_use_id 配对回填到 tool 行。 */
 export function historyToRows(messages: readonly HistoryMessage[]): Row[] {
   const rows: Row[] = [];
   const toolById = new Map<string, Extract<Row, { kind: 'tool' }>>();
-  // 元消息防御：老引擎序列化不带 is_meta 时端点已过滤；新引擎双保险。
-  const visible = messages.filter((m) => !m.is_meta);
+  const visible = messages.filter((m) => !isMetaMessage(m));
 
   // assistant 正文喂 ThinkTagSplitter：<think>/<thinking> 段分流成 reasoning
   // row（与直播路径同语义——思考内容不残留在正式文本里，直播/回放一致）。

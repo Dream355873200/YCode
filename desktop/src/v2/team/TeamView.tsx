@@ -1,10 +1,10 @@
 // TeamView — 团队对话（主区）：团队是一种对话。顶部成员条（状态 / 正在做什么，
 // 点成员在右栏看其时间线），中间群聊，底部带 @路由的输入框（不 @ = 交给队长）。
 // 数据来自引擎 /teams* 轮询（成员运行在引擎侧，没有直播流）。
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  CheckIcon, CrownIcon, EllipsisIcon, MessageCircleQuestionIcon, PencilIcon, SendIcon, ShieldAlertIcon,
-  SquareIcon, Trash2Icon, UserIcon, UsersIcon, XIcon,
+  CheckIcon, ChevronDownIcon, CornerDownRightIcon, CrownIcon, EllipsisIcon, MessageCircleQuestionIcon, PencilIcon,
+  SendIcon, ShieldAlertIcon, SquareIcon, Trash2Icon, UserIcon, UsersIcon, XIcon,
 } from 'lucide-react';
 import { renderMD } from '../../lib/markdown';
 import { useApp } from '../app/appState';
@@ -44,6 +44,32 @@ function MemberChip({ m, onOpen, onStop }: { m: TeamMemberInfo; onOpen(): void; 
         </button>
       )}
     </span>
+  );
+}
+
+// 引擎递给成员的插话原文形如「[群聊 @leader] tester: 正文」/「[群聊] 用户: 正文」
+const RELAY_RE = /^\[群聊(?: @([^\]\s]+))?\]\s*([^:：\n]+?)\s*(?:提问)?[:：]\s*([\s\S]*)$/;
+const who = (n: string): string => (n === 'leader' ? '队长' : n === 'user' || n === '用户' ? '你' : n);
+
+/** 插话（成员忙时递进其运行中的对话）：收成一行，点开看全文。 */
+function RelayLine({ m }: { m: TeamChatMsg }) {
+  const [open, setOpen] = useState(false);
+  const hit = RELAY_RE.exec(m.text);
+  const from = hit?.[2] ?? (m.from === 'system' ? '' : m.from);
+  const to = m.to || hit?.[1] || '';
+  const body = hit?.[3] ?? m.text;
+  const preview = body.replace(/[*_`#>|]+/g, '').replace(/\s+/g, ' ').trim();
+  return (
+    <div className="rounded-xl border border-dashed border-border/70 px-3 py-1.5">
+      <button type="button" onClick={() => setOpen(!open)}
+        className="flex w-full min-w-0 items-center gap-1.5 text-left text-ui-xs text-foreground-subtlest hover:text-foreground-subtle">
+        <CornerDownRightIcon className="size-3 shrink-0" />
+        <span className="shrink-0 text-foreground-subtle">{from ? `${who(from)} 插话给 ${who(to)}` : `插话给 ${who(to)}`}</span>
+        {!open && <span className="min-w-0 truncate">{preview}</span>}
+        <ChevronDownIcon className={cn('ml-auto size-3 shrink-0 transition-transform', open && 'rotate-180')} />
+      </button>
+      {open && <div className="v2-md mt-1 break-words text-ui-sm leading-relaxed text-foreground" dangerouslySetInnerHTML={{ __html: renderMD(body) }} />}
+    </div>
   );
 }
 
@@ -89,8 +115,9 @@ function Bubble({ m, team, onReply }: { m: TeamChatMsg; team: TeamDetail; onRepl
       </div>
     );
   }
-  if (m.type === 'system' || m.type === 'steer') {
-    return <div className="text-center text-ui-xs text-foreground-subtlest">{m.text}</div>;
+  if (m.type === 'steer') return <RelayLine m={m} />;
+  if (m.type === 'system') {
+    return <div className="line-clamp-2 text-center text-ui-xs text-foreground-subtlest" title={m.text}>{m.text}</div>;
   }
   const isUser = m.from === 'user';
   const agent = modes.find((x) => x.id === sender?.agent);
@@ -159,6 +186,17 @@ export function TeamView({ dir, name }: { dir: string; name: string }) {
     if (near) el.scrollTo({ top: el.scrollHeight });
   }, [msgs.length]);
 
+  // 插话回执与群聊里已有的同一条发言重复时不再单列
+  const spoken = useMemo(
+    () => new Set(msgs.filter((m) => m.type !== 'steer' && m.type !== 'system').map((m) => m.text.trim())),
+    [msgs],
+  );
+  const isEcho = (m: TeamChatMsg): boolean => {
+    if (m.type !== 'steer') return false;
+    const body = RELAY_RE.exec(m.text)?.[3];
+    return !!body && spoken.has(body.trim());
+  };
+
   const send = async (): Promise<void> => {
     const text = draft.trim();
     if (!text) return;
@@ -219,15 +257,15 @@ export function TeamView({ dir, name }: { dir: string; name: string }) {
 
       {/* 群聊 */}
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto grid max-w-3xl gap-3 px-6 py-4">
+        <div className="mx-auto grid max-w-3xl grid-cols-1 gap-3 px-6 py-4">
           {msgs.length === 0 && (
             <div className="py-10 text-center text-ui-sm text-foreground-subtlest">
               给队长一个目标，队长会拆解任务、分派给成员，成员的产出会回到这里
             </div>
           )}
-          {msgs.map((m, i) => (
+          {msgs.map((m, i) => (isEcho(m) ? null : (
             <Bubble key={`${m.ts}-${i}`} m={m} team={team} onReply={(who) => { setAt(who === 'leader' ? '' : who); inputRef.current?.focus(); }} />
-          ))}
+          )))}
         </div>
       </div>
 
