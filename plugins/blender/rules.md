@@ -7,7 +7,9 @@
    - Blender 不在默认安装路径（Steam 版等）：启动器 `mcp/launch.js` 自动探测（注册表关联 → PATH → 常见目录 → Steam 库），找到即注入 `BLENDER_BIN`。探测不到时在 `~/.amobilecreater/blender.json` 写 `{"blenderBin": "blender.exe 路径"}`。
    - **launch 失败禁止全盘扫描找 blender.exe**（递归扫盘又慢又吵）：先问用户 Blender 装在哪，拿到路径要么配 blender.json 要么用 Bash `start "" "<blender.exe>"` 拉起，然后 `server_status` 确认 9877 通了再继续。
 
-2. **双轨操作策略**（本仓库策略，覆盖上游 SKILL 里「Python 仅作最后手段」的倾向——实测对强代码模型，脚本轨道的建模质量远高于在细粒度工具里挑选）：
+2. **blender_launch 前先 `server_status` 探测**：通了这个调用立即返回；不通它会把 `timeoutMs`（模型常传 120s）整段盲等在端口就绪上，看起来像卡死。status 不通先按第 1 条修连接，别盲等。另外 launch 前打开 Blender 也行——addon 连上后同一调用即返回。
+
+7. **双轨操作策略**（本仓库策略，覆盖上游 SKILL 里「Python 仅作最后手段」的倾向——实测对强代码模型，脚本轨道的建模质量远高于在细粒度工具里挑选）：
 
    **轨道 A——创意/程序化建模：脚本优先（`exec_python`）**。做东西（建模型、改形体、程序化生成、批量操作）时，写**一段完整自包含的 bpy 脚本**一次到位，配 `vision_snapshot` 看结果迭代。要求：
    - 自包含：执行环境不跨调用保留变量——每次从 `bpy.data` 读取现有状态，结尾把产出写回场景；
