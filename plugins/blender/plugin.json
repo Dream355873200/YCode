@@ -10,7 +10,10 @@
       "command": "node",
       "args": [
         "${PLUGIN_DIR}/mcp/launch.js"
-      ]
+      ],
+      "env": {
+        "BLENDER_AGENT_ALLOW_EXEC_PYTHON": "1"
+      }
     }
   ]
 }
