@@ -1,0 +1,9 @@
+# mgaudio 核心依赖（配乐合成）。一次性安装：
+#   python -m pip install -r <插件目录>/lib/audio/requirements.txt
+# 验证过的组合同 mg-styles-15 原库；numba 首次导入会 JIT 编译，稍慢属正常。
+numpy>=1.24
+scipy>=1.10
+soundfile>=0.12
+numba>=0.59
+pedalboard>=0.9
+pyloudnorm>=0.2
