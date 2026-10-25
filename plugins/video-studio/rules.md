@@ -8,3 +8,5 @@
 6. 实时预览走 `npm run studio` + 内置浏览器打开 localhost:3000；用户看完可以停后台任务。快速预览渲染到 `out/preview.mp4`、成片渲染到 `out/film.mp4`——这两个路径的产物会自动出现在用户的「视频预览」面板里。
 7. 每个完成节点 git 提交一次；导出前必须 check 全绿。
 8. 风格库只是参考不是约束：用户点名库内风格 → 读 video-styles 技能按 STYLE.md 落地并看图对照验收；用户没点名 → 按需求原创设计（可以做得比库更好），不要主动套库；用户拿不定方向时主动推荐，库里库外一起给——2 个库内风格看海报 + 1 个带理由的原创方向提案，让他挑；用户自己的风格放项目根 styles/。
+9. 歌曲 MV / 歌词视频 / 手书 PV / 音乐卡点动画 → `init_project {kind:"mv"}` 走 tegaki-mv 技能（上游管线原生工作流：analyze_audio 听歌 → 概念 → 分镜 → timeline.js → stills 评审 → 渲染产物落 out/film.mp4）；Remotion 的规则对 MV 工程不适用，check_project / inspect_frames / render_thumbs 均有 MV 分支。
+10. 参考视频逆向：用户给了参考视频（链接或文件）→ 先 `analyze_video` 出结构化 brief + 关键帧（PySceneDetect 场景切分），结合帧做风格/钩子/结构判断，再进正常流程。

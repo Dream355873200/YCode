@@ -16,10 +16,17 @@ const { spawn } = require("child_process");
 // ---------- 工程目录解析 ----------
 
 let lastDir = null;
+// 工程两种类型：remotion（默认，src/index.ts）| mv（手书 MV 管线，engine/index.html）
+function projectKind(dir) {
+  if (fs.existsSync(path.join(dir, "src", "index.ts"))) return "remotion";
+  if (fs.existsSync(path.join(dir, "engine", "index.html"))) return "mv";
+  return null;
+}
 function resolveDir(a) {
   const dir = path.resolve(String(a.dir || lastDir || "").trim());
-  if (!fs.existsSync(path.join(dir, "src", "index.ts"))) {
-    throw new Error(`不是视频工程目录：${dir}（缺少 src/index.ts）——先用 init_project 初始化，或确认 dir 传的是视频项目根目录`);
+  const kind = projectKind(dir);
+  if (!kind) {
+    throw new Error(`不是视频工程目录：${dir}（缺少 src/index.ts 或 engine/index.html）——先用 init_project 初始化，或确认 dir 传的是视频项目根目录`);
   }
   lastDir = dir;
   return dir;
@@ -316,6 +323,14 @@ function ensureRemotionConfig(dir) {
 }
 
 function renderHint(dir) {
+  // 手书 MV 工程：渲染走上游自带的 render_frames.mjs（CDP 驱动系统浏览器 + ffmpeg），
+  // 产物落 out/ 才会出现在「视频预览」面板
+  if (projectKind(dir) === "mv") {
+    return `手书 MV 工程渲染（上游管线原生方式，勿用 remotion）：
+预览：node tools/render_frames.mjs --out out/preview.mp4 --start 0 --end 15 --workers 2
+成片：node tools/render_final.mjs --name mv   （或直接 node tools/render_frames.mjs --out out/film.mp4 --workers 3 --audio audio/song.wav）
+静帧评审：node tools/stills.mjs --times 1,5,12（contact sheet 出到 render/stills/）`;
+  }
   const root = findRuntimeRoot(dir);
   if (!root) return "";
   const cli = path.join(root, "node_modules", "@remotion", "cli", "remotion-cli.js");
@@ -386,21 +401,58 @@ const def = (name, description, inputSchema, handler) =>
 const P = (description) => ({ type: "string", description });
 
 def("init_project",
-  "把视频工程结构初始化进一个目录（模板：场景体系/组件库/manifest/package.json + brief/storyboard）。" +
-  "目录里已有 src/index.ts 时什么都不做直接返回；补齐缺失文件、绝不覆盖你或用户已改过的文件。切到视频工程却没有 src/index.ts 时先调它。",
+  "把视频工程结构初始化进一个目录。kind=remotion（缺省）：场景体系/组件库/manifest/package.json + brief/storyboard；" +
+  "kind=mv：手书 MV 管线（vocaloid-style-mv-pipeline 模板，MIT）——Canvas/WebGL 引擎 + JIZURA 歌词动效 + " +
+  "节拍分析工具，做歌曲 MV/歌词视频/手书 PV 用，脚手架后按 tegaki-mv 技能继续。" +
+  "目录里已有工程时什么都不做直接返回；补齐缺失文件、绝不覆盖你或用户已改过的文件。",
   {
     type: "object",
-    properties: { dir: P("项目目录（绝对路径）；不存在会自动创建") },
+    properties: {
+      dir: P("项目目录（绝对路径）；不存在会自动创建"),
+      kind: { type: "string", enum: ["remotion", "mv"], description: "工程类型，缺省 remotion" },
+    },
     required: ["dir"],
   },
   async (a) => {
     const dir = path.resolve(String(a.dir || "").trim());
     if (!dir) throw new Error("dir 必填（项目目录绝对路径）");
-    if (fs.existsSync(path.join(dir, "src", "index.ts"))) {
-      return `已是视频工程（${dir}），无需初始化。
+    const existing = projectKind(dir);
+    if (existing) {
+      return `已是${existing === "mv" ? "手书 MV" : "Remotion"}工程（${dir}），无需初始化。
 
-${manifestSummary(dir)}`;
+${existing === "remotion" ? manifestSummary(dir) : ""}`.trim();
     }
+    // ---- 手书 MV：直接调上游脚手架（保留原项目行为），不在此处展开 ----
+    if (a.kind === "mv") {
+      const scriptDir = path.join(__dirname, "..", "skills", "tegaki-mv");
+      const py = process.platform === "win32" ? "python" : "python3";
+      const r = await new Promise((resolve) => {
+        const p = spawn(py, [path.join(scriptDir, "scripts", "new_project.py"), dir], { cwd: scriptDir });
+        let out = "", err = "";
+        p.stdout.on("data", (c) => (out += c));
+        p.stderr.on("data", (c) => (err += c));
+        p.on("error", (e) => resolve({ code: -1, out, err: String(e) }));
+        p.on("close", (code) => resolve({ code, out, err }));
+      });
+      if (r.code !== 0 || !fs.existsSync(path.join(dir, "engine", "index.html"))) {
+        throw new Error(`手书 MV 脚手架失败（需要 python3.10+）：\n${(r.err || r.out).slice(-1200)}\n备选：直接读 skills/tegaki-mv/SKILL.md 手动按模板搭。`);
+      }
+      if (!fs.existsSync(path.join(dir, ".git"))) {
+        await runCmd("git", ["init"], { cwd: dir });
+        await runCmd("git", ["add", "."], { cwd: dir });
+        await runCmd("git", ["commit", "-m", "init: mv project"], { cwd: dir });
+      }
+      return `手书 MV 工程已初始化到 ${dir}（模板：vocaloid-style-mv-pipeline by NikusonP，MIT）。
+
+下一步（按 skills/tegaki-mv/SKILL.md 工作流走）：
+1. 工程里 npm install，然后 npm run setup —— 装 Playwright/Python 依赖/字体(~260MB)/克隆 JIZURA；
+   网络紧张可 npm run setup 加 -SkipFonts（字体跳过后部分排版场景降级）
+2. 环境验证建议先跑 demo 冒烟（template/demo/README.md，合成歌曲零素材）
+3. 工作流：analyze_audio 听歌 → 概念/人设 → 分镜 → engine/timeline.js → stills 评审循环 → 渲染
+4. 渲染产物必须落 out/film.mp4（成片）/ out/preview.mp4（预览）才会出现在「视频预览」面板
+5. 场景代码不得使用 Math.random/Date.now——一切是歌曲时间 t 的纯函数（上游契约）`;
+    }
+    // ---- Remotion 缺省分支（原逻辑） ----
     // 安全合并：目标已存在的文件一律跳过（不覆盖用户/你的改动）
     let copied = 0;
     const merge = (src, dest) => {
@@ -451,6 +503,9 @@ def("render_thumbs",
   { type: "object", properties: { dir: DIR }, required: ["dir"] },
   async (a) => {
     const dir = resolveDir(a);
+    if (projectKind(dir) === "mv") {
+      return "手书 MV 工程没有 manifest 场景表，render_thumbs 不适用。分镜静帧用上游管线：node tools/stills.mjs --times 1,5,12（或 --range 起:止:步长），contact sheet 出到 render/stills/。";
+    }
     const m = readManifest(dir);
     return serial(async () => {
       const bundleDir = await ensureBundle(dir);
@@ -482,6 +537,32 @@ def("check_project",
   { type: "object", properties: { dir: DIR }, required: ["dir"] },
   async (a) => {
     const dir = resolveDir(a);
+    // 手书 MV 工程：无 manifest/TS 场景体系，做上游契约的轻校验（语法 + 引擎文件齐全 + JIZURA 就绪提醒）
+    if (projectKind(dir) === "mv") {
+      const errs = [];
+      for (const rel of ["engine/index.html", "engine/core/main.js", "engine/timeline.js", "tools/render_frames.mjs"]) {
+        if (!fs.existsSync(path.join(dir, rel))) errs.push(`缺少 ${rel}（工程不完整，重新 init_project kind=mv）`);
+      }
+      if (!errs.length) {
+        const tl = path.join(dir, "engine", "timeline.js");
+        const r = await new Promise((resolve) => {
+          const p = spawn(process.platform === "win32" ? "node" : "node", ["--check", tl]);
+          let err = "";
+          p.stderr.on("data", (c) => (err += c));
+          p.on("error", (e) => resolve({ code: -1, err: String(e) }));
+          p.on("close", (code) => resolve({ code, err }));
+        });
+        if (r.code !== 0) errs.push(`timeline.js 语法错误：${r.err.slice(0, 800)}`);
+      }
+      const jizuraReady = fs.existsSync(path.join(dir, "jizura", "app", "jizura_engine.js"))
+        || fs.existsSync(path.join(dir, "vendor", "JIZURA"));
+      const lines = [];
+      if (errs.length) lines.push(`✗ ${errs.length} 个问题：`, ...errs.map((e) => `  - ${e}`));
+      else lines.push("✓ MV 工程结构完整（engine 契约文件在位，timeline.js 语法通过）");
+      lines.push(jizuraReady ? "✓ JIZURA 已就绪" : "⚠ JIZURA 未构建（歌词动效层缺位）——工程里跑 npm run jizura:clone && npm run jizura:build");
+      lines.push("确定性契约：一切帧是歌曲时间 t 的纯函数；禁 Math.random/Date.now，随机用 Z.rnd/Z.noise1 种子化。");
+      return lines.join("\n");
+    }
     generateRegistry(dir);
     const { errs, warn } = validateManifest(dir);
     const scan = [];
@@ -567,10 +648,31 @@ def("inspect_frames",
       scene: P("只看某个场景（manifest 里的场景 id）；看动效时与 frames 搭配"),
       frames: { type: "array", items: { type: "integer" }, description: "该场景内的相对帧（如 [0,6,12,18,24,30]，4-8 帧看动效）" },
       count: { type: "integer", description: "整片模式下的帧数（缺省 6，≤9）" },
+      times: { type: "string", description: "MV 工程专用：歌曲秒列表（如 \"1,5.5,12\"，≤8 个），走上游 stills 管线出图" },
     },
   },
   async (a) => {
     const dir = resolveDir(a);
+    // 手书 MV 工程：走上游 stills.mjs（起无头浏览器逐时刻出图），同样以图片附件返回
+    if (projectKind(dir) === "mv") {
+      const times = String(a.times || "").trim();
+      if (!times) throw new Error("MV 工程请传 times（歌曲秒列表，如 \"1,5.5,12\"，≤8 个；时间选在镜头切换/高潮/歌词重点处）");
+      const stillsDir = path.join(dir, "out", ".vsstills");
+      fs.rmSync(stillsDir, { recursive: true, force: true });
+      const r = await runCmd("node", [path.join(dir, "tools", "stills.mjs"), "--times", times, "--out", "out/.vsstills"], { cwd: dir });
+      if (r.code !== 0) {
+        throw new Error(`stills 失败（需先 npm install && npm run setup）：${(r.err || r.out).slice(-800)}`);
+      }
+      const files = fs.readdirSync(stillsDir).filter((f) => f.endsWith(".png")).sort().slice(0, 8);
+      if (!files.length) throw new Error("stills 未产出图片");
+      const tlist = times.split(",").map((s) => s.trim());
+      const parts = files.map((f, i) => {
+        const buf = fs.readFileSync(path.join(stillsDir, f));
+        if (buf.length > 120 * 1024) return `#${i + 1} t=${tlist[i] || "?"}s 图过大未内联：${f}`;
+        return `[IMAGE png ${buf.toString("base64")}]\n#${i + 1} t=${tlist[i] || "?"}s`;
+      });
+      return { __frames: { parts, labels: parts, frames: [] } };
+    }
     const m = readManifest(dir);
     const scene = a.scene ? m.scenes.find((s) => s.id === a.scene || s.component === a.scene) : null;
     let frames;
@@ -623,6 +725,46 @@ def("inspect_frames",
       } catch { /* 缩略图是附赠品，失败不阻断 */ }
       return { __frames: { parts, labels, frames } };
     });
+  });
+
+// ---------- 参考视频分析（PySceneDetect + yt-dlp + ffmpeg，与上游同工具链；判断交给模型） ----------
+
+def("analyze_video",
+  "分析参考视频（本地文件或 URL），产出结构化 brief + 关键帧图附给模型：ffprobe 元数据、" +
+  "PySceneDetect 场景切分（镜头边界+时长）、关键帧抽取（场景边界+中点采样，960w）、" +
+  "节奏分档。brief 落盘 analysis/video-brief.json。用于参考视频逆向：先分析再开工。" +
+  "依赖：pip install scenedetect[opencv]；URL 另需 yt-dlp（未装时工具会提示）。" +
+  "风格/钩子/结构判断由你结合关键帧完成——工具只出结构与帧。",
+  {
+    type: "object",
+    properties: {
+      dir: DIR,
+      source: P("参考视频：本地文件绝对路径，或 http(s) URL（走 yt-dlp）"),
+      maxKeyframes: { type: "integer", description: "关键帧上限（缺省 12，4-16）" },
+    },
+    required: ["dir", "source"],
+  },
+  async (a) => {
+    const dir = resolveDir(a);
+    const maxKf = Math.min(16, Math.max(4, a.maxKeyframes || 12));
+    const py = process.platform === "win32" ? "python" : "python3";
+    const script = path.join(__dirname, "..", "tools", "analyze_video.py");
+    const r = await runCmd(py, [script, "--video", String(a.source || "").trim(),
+      "--out-dir", path.join(dir, "analysis"), "--max-keyframes", String(maxKf)],
+      { timeoutMs: 20 * 60_000 });
+    const line = (r.out || "").trim().split("\n").filter((l) => l.startsWith("{")).pop();
+    if (!line) throw new Error(`分析失败（依赖缺失时先 python -m pip install scenedetect[opencv]）：\n${((r.err || r.out) || "").slice(-800)}`);
+    let brief;
+    try { brief = JSON.parse(line); } catch { throw new Error(`分析输出解析失败：${line.slice(0, 300)}`); }
+    if (brief.error) throw new Error(brief.error);
+    const parts = (brief.keyframes || []).map((k, i) => {
+      const buf = fs.readFileSync(path.join(dir, "analysis", k.file));
+      const label = `#${i + 1} t=${k.t}s（场景 ${k.scene ?? "?"}/${brief.scene_count}）`;
+      return buf.length > 130 * 1024
+        ? `${label} 图过大未内联：analysis/${k.file}`
+        : `[IMAGE jpeg ${buf.toString("base64")}]\n${label}`;
+    });
+    return { __frames: { parts, labels: parts, frames: [] }, text: JSON.stringify(brief, null, 1) };
   });
 
 def("view_image",
