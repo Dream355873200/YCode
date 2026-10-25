@@ -151,8 +151,8 @@ function fileIconOf(name: string) {
           placeholder="按路径过滤…"
           className="h-6 w-full rounded-md border border-border/60 bg-input px-2 text-ui-sm text-foreground outline-none placeholder:text-foreground-subtlest focus:border-ring" />
       </div>
-      {/* 树 */}
-      <div className="min-h-0 flex-1 overflow-y-auto px-1 pb-2">
+      {/* 树（overflow-x-hidden：单轴 auto 会把另一轴 visible 抬成 auto，深路径瞬时超宽顶出横向拖动条） */}
+      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-1 pb-2">
         {!project ? (
           <div className="px-2 py-6 text-center text-ui-sm text-foreground-subtlest">先选择一个项目</div>
         ) : !shown ? (

@@ -365,7 +365,9 @@ export function Sidebar() {
             <FolderPlusIcon className="size-3.5" />
           </button>
         </div>
-        <nav className="mt-0.5 min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+        {/* overflow-x-hidden：单轴 auto 会把另一轴的 visible 抬成 auto，
+            悬停显现按钮/行重排的瞬时超宽会顶出横向拖动条 */}
+        <nav className="mt-0.5 min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-2 pb-2">
           {projects.map((p) => (
             <ProjectGroup key={p.dir} p={p}
               expanded={!collapsed[normalizeDir(p.dir)]}
