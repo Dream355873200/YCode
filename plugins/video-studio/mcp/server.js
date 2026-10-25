@@ -740,17 +740,18 @@ def("analyze_video",
     properties: {
       dir: DIR,
       source: P("参考视频：本地文件绝对路径，或 http(s) URL（走 yt-dlp）"),
-      maxKeyframes: { type: "integer", description: "关键帧上限（缺省 12，4-16）" },
+      maxKeyframes: { type: "integer", description: "关键帧上限（缺省 20，4-24）" },
+      depth: { type: "string", enum: ["basic", "standard", "deep"], description: "分析深度：deep 对长镜头加 1/4、3/4 深采（缺省 standard）" },
     },
     required: ["dir", "source"],
   },
   async (a) => {
     const dir = resolveDir(a);
-    const maxKf = Math.min(16, Math.max(4, a.maxKeyframes || 12));
+    const maxKf = Math.min(24, Math.max(4, a.maxKeyframes || 20));
     const py = process.platform === "win32" ? "python" : "python3";
     const script = path.join(__dirname, "..", "tools", "analyze_video.py");
     const r = await runCmd(py, [script, "--video", String(a.source || "").trim(),
-      "--out-dir", path.join(dir, "analysis"), "--max-keyframes", String(maxKf)],
+      "--out-dir", path.join(dir, "analysis"), "--max-keyframes", String(maxKf), "--depth", String(a.depth || "standard")],
       { timeoutMs: 20 * 60_000 });
     const line = (r.out || "").trim().split("\n").filter((l) => l.startsWith("{")).pop();
     if (!line) throw new Error(`分析失败（依赖缺失时先 python -m pip install scenedetect[opencv]）：\n${((r.err || r.out) || "").slice(-800)}`);

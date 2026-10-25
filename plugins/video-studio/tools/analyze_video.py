@@ -76,12 +76,21 @@ def pacing_label(scenes: list[dict]) -> str:
     return "slow_contemplative（慢叙事长镜头）"
 
 
-def extract_keyframes(video: str, scenes: list[dict], kf_dir: Path, max_kf: int) -> list[dict]:
+def extract_keyframes(video: str, scenes: list[dict], kf_dir: Path, max_kf: int, depth: str = "standard") -> list[dict]:
     stamps: list[float] = []
     for s in scenes:
-        stamps.append(round(s["start"] + 0.05, 2))
-        if s["duration"] > 1.2:
+        stamps.append(round(s["start"] + 0.1, 2))
+        if s["duration"] > 3.0:  # 长镜头才取中点，短切本身已是信息
             stamps.append(round(s["start"] + s["duration"] / 2, 2))
+        if depth == "deep" and s["duration"] > 6.0:  # 深度档：长镜头加 1/4、3/4 点
+            stamps.append(round(s["start"] + s["duration"] * 0.25, 2))
+            stamps.append(round(s["start"] + s["duration"] * 0.75, 2))
+    stamps = sorted(set(stamps))
+    # 无切/极少切视频（连续运镜动画类）：回退均匀采样，保证覆盖全片
+    if len(stamps) < min(6, max_kf):
+        n = min(max_kf, 15)
+        dur = scenes[-1]["end"] if scenes else 0
+        stamps = sorted({round(dur * i / (n + 1), 2) for i in range(1, n + 1)})
     step = max(1, len(stamps) // max_kf + (1 if len(stamps) % max_kf else 0))
     picked = stamps[::step][:max_kf]
     kf_dir.mkdir(parents=True, exist_ok=True)
@@ -101,7 +110,8 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--video", required=True, help="本地视频路径或 http(s) URL")
     ap.add_argument("--out-dir", required=True, help="工程 analysis 输出目录")
-    ap.add_argument("--max-keyframes", type=int, default=12)
+    ap.add_argument("--max-keyframes", type=int, default=20)
+    ap.add_argument("--depth", choices=["basic", "standard", "deep"], default="standard")
     args = ap.parse_args()
 
     out_dir = Path(args.out_dir)
@@ -128,10 +138,11 @@ def main() -> int:
 
     meta = ffprobe_meta(video)
     scenes = detect_scenes(video)
-    keyframes = extract_keyframes(video, scenes, out_dir / "keyframes", max(4, min(16, args.max_keyframes)))
+    keyframes = extract_keyframes(video, scenes, out_dir / "keyframes", max(4, min(24, args.max_keyframes)), args.depth)
     brief = {
         "source": args.video, "file": str(Path(video).relative_to(out_dir.parent) if downloaded else video),
         "downloaded": downloaded,
+        "depth": args["depth"] if isinstance(args, dict) else args.depth,
         "duration": meta["duration"], "resolution": f'{meta["width"]}x{meta["height"]}', "fps": meta["fps"],
         "scene_count": len(scenes),
         "avg_scene_len": round(sum(s["duration"] for s in scenes) / len(scenes), 2) if scenes else meta["duration"],
