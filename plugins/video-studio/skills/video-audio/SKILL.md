@@ -10,10 +10,10 @@ description: 视频配乐与音效（mgaudio 合成器，numpy/numba 合成 + CC
 10 秒混音 3–8 秒渲完，**完全确定性（seed 固定则结果一致）**。产物自动母带：-14 LUFS、
 真峰值 ≤ -1.1 dBTP、首尾自带淡入淡出——**不要再在 Remotion 端二次淡入淡出或压音量**。
 
-## 什么时候用
+## 什么时候用（参考工具，非强制）
 
-- **成片默认带声音**：渲成片前必须完成配乐；用户明确说不要声音才跳过。
-- 用户点名「配乐/音效/卡点/紧张感/科技感声音」等。
+- 用户想要配乐/音效/卡点声音，或点名「紧张感/科技感声音」等氛围时；
+- 无声成片完全合理——是否加声音按用户需求和题材定，不主动强制。
 - 长片（3 分钟以上）配乐同样走本技能：`duration=全片长` 一次生成，
   `energy` 曲线按章节表标——模板见 `templates/`（cues.example.json +
   soundtrack.example.py，改插件路径即用）。
@@ -25,7 +25,7 @@ description: 视频配乐与音效（mgaudio 合成器，numpy/numba 合成 + CC
 
 ## 工作流
 
-1. **从 manifest 出 cue 表**（秒）：`drop` = 高潮场景的中点；`outro` = 末场景的起点；
+1. **从 manifest 出 cue 表**（秒，建议写到 audio/cues.json 供画面声音同源对齐）：`drop` = 高潮场景的中点；`outro` = 末场景的起点；
    各场景的 `from/duration` 换算成秒就是 sfx 挂点（场景切换 = transition whoosh、
    元素入场 = pop/tick、图表完成 = ding、标题 = impact/text_hit）。**把时间写成一个
    `audio/cues.json`**，画面和声音读同一份——这是对齐的根本。
