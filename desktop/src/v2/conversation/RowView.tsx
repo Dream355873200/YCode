@@ -19,8 +19,8 @@ import { SteerComposer } from './SteerComposer';
 // ---------- 工具结果产物（ZCode 式）----------
 
 // 图片标记：截图类工具（电脑控制/浏览器/设备）的结果内联缩略图。
-// 不要求闭合 ]——结果文本被截断时也能提取。
-const IMG_MARKER_RE = /\[IMAGE (?:jpeg|png) ([A-Za-z0-9+/=]{100,})/;
+// 不要求闭合 ]——结果文本被截断时也能提取。Timeline 的轮次缩略带也用它。
+export const IMG_MARKER_RE = /\[IMAGE (?:jpeg|png) ([A-Za-z0-9+/=]{100,})/;
 // 展示层剥离完整图片标记（巨型 base64 不进正文）
 const IMG_MARKER_STRIP_RE = /\[IMAGE (?:jpeg|png)[^\]]*\]\n?/g;
 

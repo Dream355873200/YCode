@@ -9,7 +9,7 @@ import { foldTurns, type TurnUnit } from './projection/turns';
 import {
   onUserScroll, shouldAutoScroll, showJumpBack, resetAnchor, type AnchorState,
 } from './projection/scrollAnchor';
-import { RowView, foldReads, ReadGroup } from './RowView';
+import { RowView, foldReads, ReadGroup, IMG_MARKER_RE } from './RowView';
 import { useConversation } from './store';
 import { Collapse } from '../components/ui/collapse';
 import { cn } from '../components/lib/utils';
@@ -62,6 +62,18 @@ function TurnBlock({ unit, sid, live }: { unit: Extract<TurnUnit, { type: 'turn'
   // 正文在段内长出来；正常完成后拆出轮尾（工作段收起，只留最终正文 + 摘要行）
   const bodyRows = expanded ? [...unit.visibleRows, ...unit.tail] : unit.visibleRows;
   const showBody = open && (hasWork || running || aborted);
+
+  // 完成收起后仍可见的例图带：截图类工具（view_image/inspect_frames 等）
+  // 结果里的图片不随工作段折掉——用户点名要看的内容收起后必须还在。
+  // 一条结果可能附多图，全部抽出；缩略带最多 8 张，超出折叠为「+N」。
+  const shots = useMemo(() => unit.visibleRows.flatMap((r) => {
+    if (r.kind !== 'tool' || r.state === 'running') return [] as { id: string; src: string; label: string }[];
+    const out: { id: string; src: string; label: string }[] = [];
+    for (const m of (r.result || '').matchAll(new RegExp(IMG_MARKER_RE.source, 'g'))) {
+      out.push({ id: `${r.id}-${out.length}`, src: `data:image/jpeg;base64,${m[1]}`, label: r.name });
+    }
+    return out;
+  }), [unit.visibleRows]);
   
   return (
     <div className="my-1" style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 600px' }}
@@ -97,6 +109,22 @@ function TurnBlock({ unit, sid, live }: { unit: Extract<TurnUnit, { type: 'turn'
         )}
         <div className="h-1.5" />
       </Collapse>
+      {/* 收起态例图带：缩略图常驻，点击展开工作段看大图 */}
+      {!expanded && shots.length > 0 && (
+        <div className="mb-1 flex flex-wrap items-center gap-1.5">
+          {shots.slice(0, 8).map((s) => (
+            <img key={s.id} src={s.src} alt={s.label} title={`${s.label}（点击展开）`}
+              onClick={() => setManual(true)}
+              className="h-20 cursor-zoom-in rounded-md border border-border object-cover transition-transform duration-150 hover:scale-[1.03]" />
+          ))}
+          {shots.length > 8 && (
+            <button type="button" onClick={() => setManual(true)}
+              className="h-20 rounded-md border border-border px-2.5 text-ui-sm text-foreground-subtlest hover:bg-hover hover:text-foreground">
+              +{shots.length - 8} 张
+            </button>
+          )}
+        </div>
+      )}
       {!expanded && tail.map((r) => <RowView key={r.id} row={r} sid={sid} />)}
     </div>
   );
