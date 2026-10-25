@@ -57,6 +57,7 @@ type threadView struct {
 	Pending     string      `json:"pending,omitempty"` // ask | approval
 	Permission  string      `json:"permission,omitempty"`
 	Model       string      `json:"model,omitempty"` // 会话级模型覆盖；空 = 全局默认
+	Effort      string      `json:"effort,omitempty"` // 会话级思考档位；空 = 全局默认
 	Archived    bool        `json:"archived,omitempty"`
 	Goal        *threadGoal `json:"goal,omitempty"`
 }
@@ -243,7 +244,7 @@ func viewOf(id string, b sessionBinding, s *session.SessionSummary) threadView {
 	v := threadView{
 		ID: id, Dir: b.Dir, Mode: b.Mode, Title: b.Title, TitleSource: b.TitleSource,
 		CreatedAt: b.CreatedAt, UpdatedAt: b.CreatedAt, State: "idle",
-		Permission: b.Permission, Model: b.Model, Archived: b.Archived, Goal: b.Goal,
+		Permission: b.Permission, Model: b.Model, Effort: b.Effort, Archived: b.Archived, Goal: b.Goal,
 	}
 	if v.Mode == "" {
 		v.Mode = catalog().DefaultMode
@@ -569,6 +570,7 @@ func threadsRoutes() map[string]func(http.ResponseWriter, *http.Request) {
 				Mode       *string `json:"mode"`
 				Permission *string `json:"permission"`
 				Model      *string `json:"model"`
+				Effort     *string `json:"effort"`
 				Archived   *bool   `json:"archived"`
 			}
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -604,6 +606,9 @@ func threadsRoutes() map[string]func(http.ResponseWriter, *http.Request) {
 				}
 				if req.Model != nil {
 					b.Model = strings.TrimSpace(*req.Model) // 空 = 清除覆盖，回全局默认
+				}
+				if req.Effort != nil {
+					b.Effort = strings.TrimSpace(*req.Effort) // 空 = 清除覆盖，回全局默认
 				}
 				if req.Archived != nil {
 					b.Archived = *req.Archived

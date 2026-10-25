@@ -30,6 +30,7 @@ type sessionBinding struct {
 	CreatedAt   int64       `json:"createdAt,omitempty"`   // Unix 毫秒
 	Permission  string      `json:"permission,omitempty"`  // plan | default | accept_edits | bypass；空 = 全局默认
 	Model       string      `json:"model,omitempty"`       // 会话级模型覆盖；空 = 全局默认
+	Effort      string      `json:"effort,omitempty"`      // 会话级思考档位；空 = 全局默认
 	Archived    bool        `json:"archived,omitempty"`
 	Goal        *threadGoal `json:"goal,omitempty"` // 对话目标（见 goals.go）
 }

@@ -13,13 +13,16 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	goagent "github.com/Dream355873200/GoAgent"
 	// 具名导入即触发 builtin init()（注册 Read/Write/Edit 等内置工具 provider）；
 	// ManagementTools（含 Skill 工具）也需要具名引用。
 	builtin "github.com/Dream355873200/GoAgent/builtin"
+	"github.com/Dream355873200/GoAgent/provider/openai"
 	"github.com/Dream355873200/GoAgent/task"
 
 	"github.com/amobileCreater/engine/internal/tools"
@@ -69,6 +72,7 @@ func main() {
 	maxOutput := flag.Int("max-output-tokens", envOrInt("FLAI_MAX_OUTPUT_TOKENS", 393216), "模型最大输出 token 数（推理模型的 reasoning 也占此额度，默认 4096 会导致正文被截断）")
 	modeID := flag.String("mode", envOr("FLAI_MODE", "code"), "默认模式（未绑定模式的会话使用；模式是会话级的，见 session-map.json）")
 	flag.Parse()
+	defaultModel := *model // 会话档位校验等处在无会话覆盖模型时使用的全局默认模型
 
 	// 会话绑定：单引擎多项目、多模式并存的地基。桌面壳把每个 session
 	// 对应的项目路径与模式写进 ~/.amobilecreater/session-map.json；引擎
@@ -149,6 +153,21 @@ func main() {
 		goagent.WithHTTPRoutes(threadsRoutes()),       // 对话注册表（列表/创建/改名/切智能体/权限/归档/删除）+ 模型辅助
 		goagent.WithSessionModel(func(sessionID string) string {
 			return sessMap.binding(sessionID).Model // 会话级模型覆盖；空 = 全局默认
+		}),
+		goagent.WithSessionThinking(func(sessionID string) string {
+			b := sessMap.binding(sessionID)
+			// 档位须在生效模型的支持集内，否则剥除回默认（对齐 ZCode 的
+			// normalizeModelSelection：换模型后不支持的档位失效）
+			if e := strings.TrimSpace(b.Effort); e != "" {
+				model := b.Model
+				if model == "" {
+					model = defaultModel
+				}
+				if slices.Contains(openai.ThinkingLevels(model), e) {
+					return e
+				}
+			}
+			return ""
 		}),
 		goagent.WithHTTPRoutes(goalRoutes()), // 对话目标（设定/暂停/继续/验收/清除）
 	}
