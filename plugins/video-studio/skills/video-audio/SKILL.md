@@ -14,6 +14,9 @@ description: 视频配乐与音效（mgaudio 合成器，numpy/numba 合成 + CC
 
 - **成片默认带声音**：渲成片前必须完成配乐；用户明确说不要声音才跳过。
 - 用户点名「配乐/音效/卡点/紧张感/科技感声音」等。
+- 长片（3 分钟以上）配乐同样走本技能：`duration=全片长` 一次生成，
+  `energy` 曲线按章节表标——模板见 `templates/`（cues.example.json +
+  soundtrack.example.py，改插件路径即用）。
 
 ## 一次性环境
 

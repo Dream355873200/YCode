@@ -1,0 +1,21 @@
+{
+  "bpm": null,
+  "drop": 42.0,
+  "outro": 46.0,
+  "chapters": [
+    { "t": 0.0,   "energy": 0.9, "note": "开场钩子：高能量" },
+    { "t": 0.5,   "energy": 0.55, "note": "第一章：稳定讲解" },
+    { "t": 3.2,   "energy": 0.5, "note": "留存谷：略微抬升铺垫" },
+    { "t": 4.2,   "energy": 1.0, "note": "drop：第一个大回报点" },
+    { "t": 6.0,   "energy": 0.45, "note": "换气段：最安静" },
+    { "t": 9.0,   "energy": 0.8, "note": "实证段：回升" },
+    { "t": 10.5,  "energy": 1.0, "note": "结论：最强" },
+    { "t": 11.5,  "energy": 0.4, "note": "尾声：收" }
+  ],
+  "sfx": [
+    { "at": 0.0,  "sound": "impact('punch', size=0.8)", "gain": -4 },
+    { "at": 3.0,  "sound": "whoosh(0.6)", "gain": -7 },
+    { "at": 4.2,  "sound": "boom(1.2, 60)", "gain": -3 },
+    { "at": 6.0,  "sound": "whoosh(0.8, kind='soft')", "gain": -8 }
+  ]
+}
