@@ -109,23 +109,23 @@ function TurnBlock({ unit, sid, live }: { unit: Extract<TurnUnit, { type: 'turn'
         )}
         <div className="h-1.5" />
       </Collapse>
-      {/* 收起态例图带：缩略图常驻，点击展开工作段看大图 */}
+      {!expanded && tail.map((r) => <RowView key={r.id} row={r} sid={sid} />)}
+      {/* 收起态例图带：跟在轮尾正文之后（轮次产出都在底部），点击展开工作段看大图 */}
       {!expanded && shots.length > 0 && (
-        <div className="mb-1 flex flex-wrap items-center gap-1.5">
+        <div className="mb-1 mt-0.5 flex flex-wrap items-center gap-2">
           {shots.slice(0, 8).map((s) => (
             <img key={s.id} src={s.src} alt={s.label} title={`${s.label}（点击展开）`}
               onClick={() => setManual(true)}
-              className="h-20 cursor-zoom-in rounded-md border border-border object-cover transition-transform duration-150 hover:scale-[1.03]" />
+              className="h-44 cursor-zoom-in rounded-lg border border-border object-cover transition-transform duration-150 hover:scale-[1.02]" />
           ))}
           {shots.length > 8 && (
             <button type="button" onClick={() => setManual(true)}
-              className="h-20 rounded-md border border-border px-2.5 text-ui-sm text-foreground-subtlest hover:bg-hover hover:text-foreground">
+              className="h-44 rounded-lg border border-border px-3 text-ui-sm text-foreground-subtlest hover:bg-hover hover:text-foreground">
               +{shots.length - 8} 张
             </button>
           )}
         </div>
       )}
-      {!expanded && tail.map((r) => <RowView key={r.id} row={r} sid={sid} />)}
     </div>
   );
 }
