@@ -103,7 +103,7 @@ function TurnBlock({ unit, sid, live, onView }: {
           r.kind === 'readgroup' ? (
             <ReadGroup key={r.id} group={r} />
           ) : (
-            <RowView key={r.id} row={r as Row} sid={sid}
+            <RowView key={r.id} row={r as Row} sid={sid} suppressImages={running}
               liveThinking={r.kind === 'reasoning' && r.id === bodyRows[bodyRows.length - 1]?.id && running}
               live={running && r.kind === 'assistant_text' && r.id === bodyRows[bodyRows.length - 1]?.id} />
           )

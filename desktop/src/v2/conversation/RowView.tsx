@@ -93,7 +93,7 @@ function StatusIco({ running, err }: { running: boolean; err: boolean }) {
 
 // ---------- 工具卡（ToolLayout 骨架 + 注册表分发） ----------
 
-function ToolCard({ row }: { row: Extract<Row, { kind: 'tool' }> }) {
+function ToolCard({ row, suppressImages }: { row: Extract<Row, { kind: 'tool' }>; suppressImages?: boolean }) {
   const [open, setOpen] = useState(false);
   const R = resolveRenderer(row.name);
   const input = typeof row.input === 'string' ? safeJson(row.input) : row.input;
@@ -128,12 +128,15 @@ function ToolCard({ row }: { row: Extract<Row, { kind: 'tool' }> }) {
         <span className={`shrink-0 ${stCls}`}>{stIco}</span>
       </button>
       {/* 截图类工具：结果图片直接内联（ZCode 式） */}
-      {row.image && row.state !== 'running' && (
+      {row.image && row.state !== 'running' && !suppressImages && (
         <div className="max-w-full px-3 pb-2">
           <img src={row.image} alt="截图" loading="lazy" decoding="async"
             className="max-h-64 max-w-full cursor-zoom-in rounded-md border border-border object-contain"
             onClick={() => setOpen(true)} />
         </div>
+      )}
+      {row.image && suppressImages && row.state !== 'running' && (
+        <div className="px-3 pb-2 text-ui-sm text-foreground-subtlest">🖼 截图已捕获（运行结束后在下方统一展示）</div>
       )}
       {/* 产物卡片：检测生成的文档/表格/演示/PDF/网页 */}
       {row.state !== 'running' && row.result && <div className="px-3 pb-2"><ArtifactChips text={row.result} /></div>}
@@ -501,7 +504,7 @@ function GoalTurnDivider({ text }: { text: string }) {
   );
 }
 
-export function RowView({ row, sid, liveThinking, live }: { row: Row; sid: string; liveThinking?: boolean; live?: boolean }) {
+export function RowView({ row, sid, liveThinking, live, suppressImages }: { row: Row; sid: string; liveThinking?: boolean; live?: boolean; suppressImages?: boolean }) {
   switch (row.kind) {
     case 'user':
       if (GOAL_TURN_RE.test(row.text)) return <GoalTurnDivider text={row.text} />;
@@ -517,7 +520,7 @@ export function RowView({ row, sid, liveThinking, live }: { row: Row; sid: strin
     case 'reasoning':
       return <Reasoning row={row} live={liveThinking} />;
     case 'tool':
-      return row.name.startsWith('Agent_') ? <AgentCard row={row} /> : <ToolCard row={row} />;
+      return row.name.startsWith('Agent_') ? <AgentCard row={row} /> : <ToolCard row={row} suppressImages={suppressImages} />;
     case 'permission':
       return <PermissionCard row={row} sid={sid} />;
     case 'confirm':
