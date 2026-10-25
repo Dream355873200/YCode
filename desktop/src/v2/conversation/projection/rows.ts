@@ -206,13 +206,17 @@ export function applyFrame(rows: readonly Row[], frame: Envelope): Row[] {
       if (last && last.kind === 'reasoning') {
         out[out.length - 1] = { ...last, text: stripThinkMarks(last.text + text) };
       } else {
-        // 正文之后又来的思考增量（DeepSeek-V4 交错思考：正文发完还会继续
-        // reasoning，且常复述刚写的内容）——并回本轮已有的思考卡，不在
-        // 正文后新开卡片，否则思考和正文交错、碎片成排。
+        // 正文之后又来的思考增量，两种情况：
+        // a) 中间只有正文、没有工具调用（DeepSeek-V4 交错思考：正文发完还会
+        //    继续 reasoning 且常复述刚写的内容）——并回本轮已有思考卡，
+        //    避免碎片成排；
+        // b) 中间出现过工具调用（智能体循环：思考→工具→思考→工具）——
+        //    每段思考属于它前面的那次调用，按时间顺序新开思考卡，
+        //    绝不倒灌回顶部第一张。
         const prev = out.findLast((r): r is Extract<Row, { kind: 'reasoning' }> => r.kind === 'reasoning');
         const ri = prev ? out.indexOf(prev) : -1;
-        const afterUser = prev ? out.slice(ri + 1).some((r) => r.kind === 'user') : false;
-        if (prev && !afterUser) {
+        const polluted = prev ? out.slice(ri + 1).some((r) => r.kind === 'user' || r.kind === 'tool') : false;
+        if (prev && !polluted) {
           out[ri] = { ...prev, text: stripThinkMarks(prev.text + text) };
         } else {
           out.push({ kind: 'reasoning', id: nextRowId(), text });
