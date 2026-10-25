@@ -750,9 +750,11 @@ def("analyze_video",
     const maxKf = Math.min(24, Math.max(4, a.maxKeyframes || 20));
     const py = process.platform === "win32" ? "python" : "python3";
     const script = path.join(__dirname, "..", "tools", "analyze_video.py");
-    const r = await runCmd(py, [script, "--video", String(a.source || "").trim(),
-      "--out-dir", path.join(dir, "analysis"), "--max-keyframes", String(maxKf), "--depth", String(a.depth || "standard")],
-      { timeoutMs: 20 * 60_000 });
+    const pyArgs = [script, "--video", String(a.source || "").trim(),
+      "--out-dir", path.join(dir, "analysis"), "--max-keyframes", String(maxKf),
+      "--depth", String(a.depth || "standard")];
+    if (a.fromT != null && a.toT != null) pyArgs.push("--from", String(a.fromT), "--to", String(a.toT));
+    const r = await runCmd(py, pyArgs, { timeoutMs: 30 * 60_000 });
     const line = (r.out || "").trim().split("\n").filter((l) => l.startsWith("{")).pop();
     if (!line) throw new Error(`分析失败（依赖缺失时先 python -m pip install scenedetect[opencv]）：\n${((r.err || r.out) || "").slice(-800)}`);
     let brief;
