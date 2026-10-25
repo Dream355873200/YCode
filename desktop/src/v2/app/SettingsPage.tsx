@@ -144,6 +144,7 @@ export function SettingsPage() {
   // 供应商编辑：正在新增/修改的档案草稿；formModels 是该端点拉到的模型列表
   const [editing, setEditing] = useState<ProviderProfile | null>(null);
   const [formModels, setFormModels] = useState<string[]>([]);
+  const [selectedKey, setSelectedKey] = useState<string | null>(null); // 'id:<pid>' | 'preset:<name>' | 'custom'
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const route = stack[stack.length - 1] ?? { tab: 'general' };
@@ -213,15 +214,6 @@ export function SettingsPage() {
     if (restart) await engine.restart();
   };
 
-  const activateProvider = async (p: ProviderProfile): Promise<void> => {
-    setSaving(true);
-    try {
-      await persistProviders(providers, p.id, true);
-    } finally {
-      setSaving(false);
-    }
-  };
-
   const saveEditing = async (activate: boolean): Promise<void> => {
     if (!editing) return;
     const next = providers.some((p) => p.id === editing.id)
@@ -230,6 +222,7 @@ export function SettingsPage() {
     setSaving(true);
     try {
       await persistProviders(next, activate ? editing.id : activeId, activate);
+      setSelectedKey(`id:${editing.id}`); // 新增/接入后导航落到已配置分组
       setEditing(null);
       setFormModels([]);
     } finally {
@@ -263,6 +256,41 @@ export function SettingsPage() {
       setTesting(false);
     }
   };
+
+  // 未配置的预置（baseUrl 未出现在已配置列表里）
+  const unconfiguredPresets = PROVIDER_PRESETS.filter((pr) => !providers.some((p) => p.baseUrl === pr.baseUrl));
+  const isPresetDraft = !!editing && !providers.some((p) => p.id === editing.id) && selectedKey?.startsWith('preset:');
+  const isCustomDraft = !!editing && !providers.some((p) => p.id === editing.id) && selectedKey === 'custom';
+
+  const openExisting = (p: ProviderProfile): void => {
+    setEditing({ ...p });
+    setFormModels([]);
+    setTestResult('');
+    setSelectedKey(`id:${p.id}`);
+  };
+  const openPreset = (preset: { name: string; baseUrl: string }): void => {
+    setEditing({ id: `prov-${Date.now()}`, name: preset.name, baseUrl: preset.baseUrl, apiKey: '', model: '', contextWindow: 1_000_000 });
+    setFormModels([]);
+    setTestResult('');
+    setSelectedKey(`preset:${preset.name}`);
+  };
+  const openCustom = (): void => {
+    setEditing({ id: `prov-${Date.now()}`, name: '', baseUrl: '', apiKey: '', model: '', contextWindow: 1_000_000 });
+    setFormModels([]);
+    setTestResult('');
+    setSelectedKey('custom');
+  };
+
+  // 进入模型页时默认选中当前使用中的供应商
+  useEffect(() => {
+    if (tab !== 'model' || selectedKey || !providers.length) return;
+    const p = providers.find((x) => x.id === activeId) ?? providers[0];
+    if (p) {
+      setEditing({ ...p });
+      setSelectedKey(`id:${p.id}`);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, selectedKey, activeId]);
 
   /** 即时生效项（主题/字号）：写 config + 立刻应用，引擎不重启。 */
   const patchLive = async (patch: Partial<Cfg>): Promise<void> => {
@@ -391,131 +419,135 @@ export function SettingsPage() {
                 {tab === 'model' && (
                   <Section
                     title="模型供应商"
-                    desc="管理多个 OpenAI 兼容端点（中转 / 官方 / 本地），点「使用」切换并重启引擎。对话中可在输入框右下角临时切换模型与思考档位。">
-                    <div className="flex flex-col gap-2">
-                      {providers.map((p) => (
-                        <div key={p.id} className={cn(
-                          'flex items-center gap-3 rounded-xl border px-3.5 py-2.5',
-                          p.id === activeId ? 'border-brand/50 bg-brand/5' : 'border-border',
-                        )}>
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-2">
-                              <span className="truncate text-ui-base font-medium text-foreground">{p.name}</span>
-                              {p.id === activeId && (
-                                <span className="shrink-0 rounded-full bg-brand/15 px-2 py-0.5 text-ui-xs font-medium text-brand">使用中</span>
-                              )}
-                            </div>
-                            <div className="mt-0.5 truncate text-ui-sm text-foreground-subtlest" title={p.baseUrl}>
-                              {p.baseUrl} · {p.model || '未设模型'}
-                            </div>
+                    desc="管理多个 OpenAI 兼容端点（中转 / 官方 / 本地）。对话中可在输入框右下角临时切换模型与思考档位。">
+                    <div className="grid grid-cols-[13rem_1fr] gap-5">
+                      {/* 左：供应商导航（预置 / 已配置，对齐 ZCode 的分组导航） */}
+                      <div className="flex min-w-0 flex-col gap-1 border-r border-border pr-3">
+                        {providers.length > 0 && (
+                          <div className="px-2 pb-1 text-ui-xs font-medium tracking-wider text-foreground-subtlest">已配置</div>
+                        )}
+                        {providers.map((p) => (
+                          <button key={p.id} type="button"
+                            onClick={() => openExisting(p)}
+                            className={cn('flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-ui-base transition-colors',
+                              selectedKey === `id:${p.id}` ? 'bg-selected text-foreground' : 'text-foreground-subtle hover:bg-hover hover:text-foreground')}>
+                            <span className={cn('size-1.5 shrink-0 rounded-full', p.id === activeId ? 'bg-brand' : 'bg-border')} />
+                            <span className="min-w-0 flex-1 truncate">{p.name || p.baseUrl}</span>
+                            {p.id === activeId && <span className="shrink-0 text-ui-xs text-brand">使用中</span>}
+                          </button>
+                        ))}
+                        {unconfiguredPresets.length > 0 && (
+                          <div className="px-2 pb-1 pt-3 text-ui-xs font-medium tracking-wider text-foreground-subtlest">预置供应商</div>
+                        )}
+                        {unconfiguredPresets.map((preset) => (
+                          <button key={preset.name} type="button" title={preset.baseUrl}
+                            onClick={() => openPreset(preset)}
+                            className={cn('flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-ui-base transition-colors',
+                              selectedKey === `preset:${preset.name}` ? 'bg-selected text-foreground' : 'text-foreground-subtle hover:bg-hover hover:text-foreground')}>
+                            <span className="size-1.5 shrink-0 rounded-full bg-border" />
+                            <span className="min-w-0 flex-1 truncate">{preset.name}</span>
+                          </button>
+                        ))}
+                        <button type="button"
+                          onClick={openCustom}
+                          className={cn('mt-2 flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-ui-base transition-colors',
+                            selectedKey === 'custom' ? 'bg-selected text-foreground' : 'text-foreground-subtle hover:bg-hover hover:text-foreground')}>
+                          <PlusIcon className="size-3.5 shrink-0" />
+                          自定义供应商
+                        </button>
+                      </div>
+
+                      {/* 右：详情表单 */}
+                      {editing ? (
+                        <div className="flex min-w-0 flex-col gap-3">
+                          <div className="flex items-center gap-2">
+                            <span className="text-ui-base font-semibold text-foreground">
+                              {editing.name || '新供应商'}
+                            </span>
+                            {editing.id === activeId && (
+                              <span className="rounded-full bg-brand/15 px-2 py-0.5 text-ui-xs font-medium text-brand">使用中</span>
+                            )}
                           </div>
-                          {p.id !== activeId && (
-                            <Button type="button" variant="outline" size="sm" disabled={saving}
-                              onClick={() => void activateProvider(p)}>
-                              使用
-                            </Button>
+                          {!providers.some((p) => p.id === editing.id) && !isCustomDraft && (
+                            <p className="text-ui-sm text-foreground-subtlest">
+                              填入 API Key 并选择模型即可接入；接入后可在对话中直接使用。
+                            </p>
                           )}
-                          <Button type="button" variant="outline" size="sm" disabled={saving}
-                            onClick={() => { setEditing({ ...p }); setFormModels([]); setTestResult(''); }}>
-                            编辑
-                          </Button>
-                          <Button type="button" variant="outline" size="sm" disabled={saving || providers.length <= 1}
-                            onClick={() => void removeProvider(p.id)}>
-                            删除
-                          </Button>
+                          <div className="grid grid-cols-2 gap-3">
+                            <Field label="名称" hint="显示在左下角与切换菜单里">
+                              <Input value={editing.name} placeholder="如 智谱 / OpenRouter / 本地"
+                                onChange={(e) => setEditing({ ...editing, name: e.target.value })} />
+                            </Field>
+                            <Field label="API Key" hint="仅保存在本机配置文件">
+                              <Input type="password" value={editing.apiKey} placeholder="sk-…"
+                                onChange={(e) => setEditing({ ...editing, apiKey: e.target.value })} />
+                            </Field>
+                          </div>
+                          <Field label="API 地址" hint="OpenAI 兼容的 chat/completions 端点（以 /v1 结尾）">
+                            <Input value={editing.baseUrl} placeholder="https://…/v1"
+                              onChange={(e) => setEditing({ ...editing, baseUrl: e.target.value })} />
+                          </Field>
+                          <Field label="默认模型" hint="可直接输入，或先「获取模型列表」再从下拉里选">
+                            <div className="flex items-center gap-2">
+                              <Input list="provider-model-options" value={editing.model} placeholder="如 glm-5.3-flashx"
+                                onChange={(e) => setEditing({ ...editing, model: e.target.value })} />
+                              <datalist id="provider-model-options">
+                                {formModels.map((m) => <option key={m} value={m} />)}
+                              </datalist>
+                              <Button type="button" variant="outline" className="shrink-0" disabled={testing || !editing.baseUrl}
+                                onClick={() => void fetchFormModels()}>
+                                {testing ? '获取中…' : '获取模型列表'}
+                              </Button>
+                            </div>
+                          </Field>
+                          <div className="grid grid-cols-2 gap-3">
+                            <Field label="上下文窗口（token）" hint="决定压缩阈值，须与真实模型一致">
+                              <Input type="number" value={String(editing.contextWindow ?? 1_000_000)}
+                                onChange={(e) => setEditing({ ...editing, contextWindow: Number(e.target.value) })} />
+                            </Field>
+                            <Field label="最大输出（token）" hint="推理模型的思考也占此额度">
+                              <Input type="number" value={String(editing.maxOutputTokens ?? '')}
+                                onChange={(e) => setEditing({ ...editing, maxOutputTokens: Number(e.target.value) || undefined })} />
+                            </Field>
+                          </div>
+                          <div className="flex items-center gap-2.5 border-t border-border pt-3">
+                            {isPresetDraft ? (
+                              <Button type="button" disabled={saving || !editing.baseUrl || !editing.model}
+                                onClick={() => void saveEditing(true)}>
+                                {saving ? '接入中…' : '连接并使用'}
+                              </Button>
+                            ) : (
+                              <>
+                                <Button type="button" disabled={saving || !editing.baseUrl || !editing.model}
+                                  onClick={() => void saveEditing(editing.id !== activeId)}>
+                                  {saving ? '保存中…' : editing.id === activeId ? '保存更改' : '保存并使用'}
+                                </Button>
+                                {editing.id !== activeId && (
+                                  <Button type="button" variant="outline" disabled={saving || !editing.baseUrl}
+                                    onClick={() => void saveEditing(false)}>
+                                    仅保存
+                                  </Button>
+                                )}
+                                {providers.length > 1 && (
+                                  <Button type="button" variant="ghost" disabled={saving}
+                                    className="ml-auto text-destructive hover:text-destructive"
+                                    onClick={() => { void removeProvider(editing.id); setSelectedKey(null); }}>
+                                    删除此供应商
+                                  </Button>
+                                )}
+                              </>
+                            )}
+                            {testResult && (
+                              <span className={cn('text-ui-sm', testResult.startsWith('连接正常') ? 'text-success' : 'text-destructive')}>
+                                {testResult}
+                              </span>
+                            )}
+                          </div>
                         </div>
-                      ))}
-                      {!editing && (
-                        <Button type="button" variant="outline" className="self-start"
-                          onClick={() => {
-                            setEditing({
-                              id: `prov-${Date.now()}`, name: '', baseUrl: '', apiKey: '',
-                              model: '', contextWindow: 1_000_000,
-                            });
-                            setFormModels([]);
-                            setTestResult('');
-                          }}>
-                          <PlusIcon /> 添加供应商
-                        </Button>
+                      ) : (
+                        <div className="text-ui-sm text-foreground-subtlest">从左侧选择一个供应商，或添加自定义端点。</div>
                       )}
                     </div>
-
-                    {editing && (
-                      <div className="mt-3 flex flex-col gap-3 rounded-xl border border-border bg-card/50 p-4">
-                        {!providers.some((p) => p.id === editing.id) && (
-                          <div className="flex flex-wrap items-center gap-1.5">
-                            <span className="text-ui-xs font-medium text-foreground-subtlest">从预设添加：</span>
-                            {PROVIDER_PRESETS.map((preset) => (
-                              <button key={preset.name} type="button"
-                                title={preset.baseUrl}
-                                className={cn('rounded-full border px-2.5 py-0.5 text-ui-xs transition-colors',
-                                  editing.baseUrl === preset.baseUrl
-                                    ? 'border-brand/60 bg-brand/10 text-foreground'
-                                    : 'border-border text-foreground-subtle hover:bg-hover hover:text-foreground')}
-                                onClick={() => setEditing({ ...editing, name: editing.name || preset.name, baseUrl: preset.baseUrl })}>
-                                {preset.name}
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                        <div className="grid grid-cols-2 gap-3">
-                          <Field label="名称" hint="显示在左下角与切换菜单里">
-                            <Input value={editing.name} placeholder="如 智谱 / OpenRouter / 本地"
-                              onChange={(e) => setEditing({ ...editing, name: e.target.value })} />
-                          </Field>
-                          <Field label="API Key" hint="仅保存在本机配置文件">
-                            <Input type="password" value={editing.apiKey} placeholder="sk-…"
-                              onChange={(e) => setEditing({ ...editing, apiKey: e.target.value })} />
-                          </Field>
-                        </div>
-                        <Field label="API 地址" hint="OpenAI 兼容的 chat/completions 端点（以 /v1 结尾）">
-                          <Input value={editing.baseUrl} placeholder="https://…/v1"
-                            onChange={(e) => setEditing({ ...editing, baseUrl: e.target.value })} />
-                        </Field>
-                        <Field label="默认模型" hint="可直接输入，或先「获取模型列表」再从下拉里选">
-                          <div className="flex items-center gap-2">
-                            <Input list="provider-model-options" value={editing.model} placeholder="如 glm-5.3-flashx"
-                              onChange={(e) => setEditing({ ...editing, model: e.target.value })} />
-                            <datalist id="provider-model-options">
-                              {formModels.map((m) => <option key={m} value={m} />)}
-                            </datalist>
-                            <Button type="button" variant="outline" size="sm" shrink-0 disabled={testing || !editing.baseUrl}
-                              onClick={() => void fetchFormModels()}>
-                              {testing ? '获取中…' : '获取模型列表'}
-                            </Button>
-                          </div>
-                        </Field>
-                        <div className="grid grid-cols-2 gap-3">
-                          <Field label="上下文窗口（token）" hint="决定压缩阈值，须与真实模型一致">
-                            <Input type="number" value={String(editing.contextWindow ?? 1_000_000)}
-                              onChange={(e) => setEditing({ ...editing, contextWindow: Number(e.target.value) })} />
-                          </Field>
-                          <Field label="最大输出（token）" hint="推理模型的思考也占此额度">
-                            <Input type="number" value={String(editing.maxOutputTokens ?? '')}
-                              onChange={(e) => setEditing({ ...editing, maxOutputTokens: Number(e.target.value) || undefined })} />
-                          </Field>
-                        </div>
-                        <div className="flex items-center gap-2.5">
-                          <Button type="button" disabled={saving || !editing.baseUrl || !editing.model}
-                            onClick={() => void saveEditing(true)}>
-                            {saving ? '保存中…' : '保存并使用'}
-                          </Button>
-                          <Button type="button" variant="outline" disabled={saving || !editing.baseUrl}
-                            onClick={() => void saveEditing(false)}>
-                            仅保存
-                          </Button>
-                          <Button type="button" variant="ghost" disabled={saving}
-                            onClick={() => { setEditing(null); setTestResult(''); }}>
-                            取消
-                          </Button>
-                          {testResult && (
-                            <span className={cn('text-ui-sm', testResult.startsWith('连接正常') ? 'text-success' : 'text-destructive')}>
-                              {testResult}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    )}
                   </Section>
                 )}
 
