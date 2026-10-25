@@ -94,8 +94,7 @@ import {
   GitBranchIcon, SearchIcon, ListChecksIcon, TriangleAlertIcon, CircleCheckIcon,
   MousePointer2Icon, GlobeIcon, ImageIcon, EyeIcon, RefreshCwIcon, FileCodeIcon,
   ClipboardListIcon, CrosshairIcon, ScrollTextIcon, KeyRoundIcon, PlayIcon,
-  ClapperboardIcon,
-} from 'lucide-react';
+  ClapperboardIcon, BoxIcon } from 'lucide-react';
 
 export const TOOL_RENDERERS = {
   Edit: {
@@ -167,6 +166,48 @@ const MCP_RENDERERS = {
       browser_evaluate: ['执行页面脚本', (i) => String(i?.expression || '').slice(0, 40)],
     },
   },
+  blender: {
+    Icon: BoxIcon,
+    tools: {
+      blender_launch: ['启动 Blender'], blender_quit: ['关闭 Blender'],
+      server_status: ['检查连接'], server_handlers: ['查询能力清单'],
+      addon_restart: ['重启 Blender 插件'], batch: ['批量执行操作'],
+      file_new: ['新建 .blend'], file_open: ['打开 .blend'], file_save: ['保存文件'], file_save_as: ['另存文件'],
+      scene_create: ['新建场景'], scene_list: ['列出场景'], scene_set_active: ['切换场景'], scene_set_frame_range: ['设置帧范围'],
+      collection_create: ['新建集合'], collection_list: ['列出集合'], collection_move_objects: ['移入集合'],
+      object_create: ['创建对象'], object_list: ['列出对象'], object_delete: ['删除对象'],
+      object_duplicate_linked: ['关联复制'], object_rename: ['重命名对象'], object_get_info: ['查看对象信息'],
+      object_set_transform: ['设置变换', (i) => i?.objectName], object_apply_transform: ['应用变换'],
+      object_add_blockout: ['搭 Blockout'], parametric_list: ['查参数化资产'], parametric_build: ['生成参数化模型'],
+      modifier_add: ['加修改器'], modifier_apply: ['应用修改器'], modifier_list: ['列出修改器'],
+      modifier_remove: ['移除修改器'], modifier_set_property: ['设修改器参数'],
+      mesh_bevel: ['倒角'], mesh_extrude_region_move: ['挤出移动'], mesh_loop_cut: ['环切'],
+      mesh_join: ['合并网格'], mesh_merge_by_distance: ['按距离焊接'], mesh_recalc_normals: ['重算法线'],
+      mesh_separate_by_loose_parts: ['按断开分离'], mesh_shade_smooth: ['平滑着色'], mesh_subdivide: ['细分'],
+      bmesh: ['编辑网格数据'],
+      material_create: ['新建材质'], material_set_principled: ['设置 PBR 材质'], material_assign_slot: ['分配材质槽'],
+      material_slot_add: ['加材质槽'], material_create_pbr_from_textures: ['贴图建材质'],
+      shader_node_add: ['加着色器节点'], shader_node_connect_pins: ['连接节点'], shader_node_set_input_value: ['设节点输入'],
+      node_group_create: ['建节点组'], geo_node_add_node: ['加几何节点'], geo_node_connect: ['连几何节点'],
+      geo_node_set_node_input: ['设几何节点输入'], geo_node_apply_to_object: ['应用几何节点'],
+      armature_create: ['新建骨架'], armature_create_biped: ['建 Biped 骨架'], bone_add: ['加骨骼'],
+      bone_ik_setup: ['配置 IK'], keyframe_add: ['打关键帧'], keyframe_bone_pose: ['骨骼姿势关键帧'], pose_set: ['设姿势'],
+      camera_create: ['新建相机'], camera_set_active: ['设为活动相机'], camera_set_dof: ['设景深'],
+      light_create: ['新建灯光'], light_set_property: ['设灯光属性'],
+      world_create: ['新建世界环境'], world_assign_to_scene: ['指定世界环境'],
+      render_set_engine: ['设渲染引擎'], render_set_resolution: ['设分辨率'],
+      render_render_still: ['渲染单帧'], render_render_animation: ['渲染动画'],
+      export_gltf: ['导出 glTF'], export_fbx_static: ['导出 FBX（静态）'],
+      export_fbx_skeletal: ['导出 FBX（绑骨）'], export_fbx_animation: ['导出 FBX（动画）'],
+      import_fbx: ['导入 FBX'], import_gltf: ['导入 glTF'], import_obj: ['导入 OBJ'],
+      postproc_decimate: ['减面'], postproc_smart_uv_project: ['智能 UV'],
+      uv_smart_project: ['智能 UV 展开'], uv_unwrap: ['UV 展开'],
+      vision_snapshot: ['截图看一眼'], vision_contact_sheet: ['多角度检查'],
+      vision_topology_inspect: ['拓扑检查'], vision_scale_report: ['尺寸检查'],
+      vision_silhouette_compare: ['轮廓对照'], vision_turntable: ['生成转台视频'],
+      vision_screenshot_viewport: ['视口截图'], vision_render_action: ['渲染动作'],
+    },
+  },
   studio: {
     Icon: ClapperboardIcon,
     tools: {
@@ -194,9 +235,9 @@ export function resolveRenderer(name) {
   if (TOOL_RENDERERS[name]) return TOOL_RENDERERS[name];
   if (typeof name === 'string' && name.startsWith('mcp__')) {
     const short = name.split('__').pop();
-    return { label: short, expandable: false };
+    return { label: short, expandable: true };
   }
-  return DEFAULT_RENDERER;
+  return { ...DEFAULT_RENDERER, expandable: true };
 }
 
 // actObj 工具入参 → 一行对象摘要（注册表 obj 优先，通用兜底链次之）。
@@ -218,7 +259,9 @@ export function actObj(name, input) {
 export function actVerbPlain(name) {
   const label = resolveRenderer(name).label;
   if (!label) return name;
-  return label.replace(/^[^一-龥]+/, '').replace(/了$/, '');
+  const stripped = label.replace(/^[^一-龥]+/, '').replace(/了$/, '');
+  // 非中文标签（工具短名等）剥完为空——保留原名，别只剩一个图标
+  return stripped || label;
 }
 
 // toolStats 编辑/写入工具的 ± 行数统计（卡片头部的 +N −N 徽标）。

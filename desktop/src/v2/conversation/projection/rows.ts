@@ -11,6 +11,10 @@ export const nextRowId = (): string => `r${++seq}`;
 /** 测试注入固定 id 前缀用（避免跨用例串号）。 */
 export const resetRowIds = (): void => { seq = 0; };
 
+// 工具结果内联截图标记（[IMAGE jpeg <base64>]；不要求闭合 ]——结果可能被截断）。
+// 抽取只在 tool_done 数据入口做一次，渲染层用 row.image，避免运行中反复扫描 MB 级字符串。
+export const IMAGE_MARKER_RE = /\[IMAGE (jpeg|png) ([A-Za-z0-9+\/=]{100,})/;
+
 export type ToolRow = Extract<Row, { kind: 'tool' }>;
 
 export type Tone = 'info' | 'error' | 'stopped';
@@ -59,6 +63,8 @@ export type Row =
   | {
     kind: 'tool'; id: string; toolUseId: string; name: string;
     input?: unknown; state: 'running' | 'ok' | 'err'; result?: string;
+    /** 工具结果内联截图（tool_done 时从 [IMAGE ...] 标记抽取一次，渲染层直接用）。 */
+    image?: string;
     /** 子 agent 运行过程（subagent_progress 帧按 tool_use_id 归并）。 */
     agent?: AgentProgress;
   }
@@ -228,7 +234,15 @@ export function applyFrame(rows: readonly Row[], frame: Envelope): Row[] {
       const t = out.findLast((r): r is ToolRow => r.kind === 'tool' && r.toolUseId === frame.tool_use_id);
       if (t) {
         const result = frame.tool_result || '';
-        out[out.indexOf(t)] = { ...t, state: /退出码非零|失败|错误/.test(result) ? 'err' : 'ok', result };
+        // 截图抽取在数据入口做一次（此处），渲染层直接用 row.image——
+        // 运行中每秒多次 UI 更新时不再对 MB 级结果串反复正则扫描
+        const m = result.match(IMAGE_MARKER_RE);
+        out[out.indexOf(t)] = {
+          ...t,
+          state: /退出码非零|失败|错误/.test(result) ? 'err' : 'ok',
+          result,
+          image: m ? `data:image/${m[1]};base64,${m[2]}` : t.image,
+        };
       }
       break;
     }

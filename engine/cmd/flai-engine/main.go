@@ -137,7 +137,7 @@ func main() {
 		goagent.WithPostCompactReminder(assetRehydrater{resolve: sessMap.resolve}), // 压缩后重注 SPEC.md / 最新测试报告（范围契约与测试结论不失忆）
 		goagent.WithApprover(newEnginePermHandler()),                               // 异步审批：permission_request 帧 → 前端审批卡（/approve 回传）
 		goagent.WithPermissionMode(goagent.PermissionAcceptEdits),                  // 初始模式「自动编辑」：普通工具免问，危险操作问用户（UI 可切 plan/bypass）
-		goagent.WithMaxTurns(80),
+		goagent.WithMaxTurns(envOrInt("FLAI_MAX_TURNS", 300)),
 		goagent.WithCostTracking(),
 		goagent.WithHTTPRoutes(userEditRoutes()),      // 编辑器写回通知端点（/notify/user-edit，app 创建后经 engineApp 接线）
 		goagent.WithHTTPRoutes(modesRoutes()),         // 模式发现端点（全部模式 + 聚合视图 + 工具集明细）

@@ -18,9 +18,9 @@ import { SteerComposer } from './SteerComposer';
 
 // ---------- 工具结果产物（ZCode 式）----------
 
-// 图片标记：截图类工具（电脑控制/浏览器/设备）的结果内联缩略图。
-// 不要求闭合 ]——结果文本被截断时也能提取。Timeline 的轮次缩略带也用它。
-export const IMG_MARKER_RE = /\[IMAGE (?:jpeg|png) ([A-Za-z0-9+/=]{100,})/;
+// 图片标记正则的唯一真源在 projection/rows.ts（抽取在 tool_done 数据入口做一次，
+// 存进 ToolRow.image）；此处转出供 Timeline 缩略带等旧引用使用。
+export { IMAGE_MARKER_RE } from './projection/rows';
 // 展示层剥离完整图片标记（巨型 base64 不进正文）
 const IMG_MARKER_STRIP_RE = /\[IMAGE (?:jpeg|png)[^\]]*\]\n?/g;
 
@@ -128,17 +128,13 @@ function ToolCard({ row }: { row: Extract<Row, { kind: 'tool' }> }) {
         <span className={`shrink-0 ${stCls}`}>{stIco}</span>
       </button>
       {/* 截图类工具：结果图片直接内联（ZCode 式） */}
-      {(() => {
-        const m = (row.result || '').match(IMG_MARKER_RE);
-        if (!m || row.state === 'running') return null;
-        return (
-          <div className="max-w-full px-3 pb-2">
-            <img src={`data:image/jpeg;base64,${m[1]}`} alt="截图"
-              className="max-h-64 max-w-full cursor-zoom-in rounded-md border border-border object-contain"
-              onClick={() => setOpen(true)} />
-          </div>
-        );
-      })()}
+      {row.image && row.state !== 'running' && (
+        <div className="max-w-full px-3 pb-2">
+          <img src={row.image} alt="截图" loading="lazy" decoding="async"
+            className="max-h-64 max-w-full cursor-zoom-in rounded-md border border-border object-contain"
+            onClick={() => setOpen(true)} />
+        </div>
+      )}
       {/* 产物卡片：检测生成的文档/表格/演示/PDF/网页 */}
       {row.state !== 'running' && row.result && <div className="px-3 pb-2"><ArtifactChips text={row.result} /></div>}
       <Collapse open={expandable && open} className="border-t border-border px-3 py-2">

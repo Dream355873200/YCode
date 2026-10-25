@@ -9,7 +9,7 @@ import { foldTurns, type TurnUnit } from './projection/turns';
 import {
   onUserScroll, shouldAutoScroll, showJumpBack, resetAnchor, type AnchorState,
 } from './projection/scrollAnchor';
-import { RowView, foldReads, ReadGroup, IMG_MARKER_RE } from './RowView';
+import { RowView, foldReads, ReadGroup } from './RowView';
 import { useConversation } from './store';
 import { Collapse } from '../components/ui/collapse';
 import { cn } from '../components/lib/utils';
@@ -69,17 +69,12 @@ function TurnBlock({ unit, sid, live, onView }: {
   const bodyRows = expanded ? [...unit.visibleRows, ...unit.tail] : unit.visibleRows;
   const showBody = open && (hasWork || running || aborted);
 
-  // 完成收起后仍可见的例图带：截图类工具（view_image/inspect_frames 等）
-  // 结果里的图片不随工作段折掉——用户点名要看的内容收起后必须还在。
-  // 一条结果可能附多图，全部抽出；缩略带最多 8 张，超出折叠为「+N」。
-  const shots = useMemo(() => unit.visibleRows.flatMap((r) => {
-    if (r.kind !== 'tool' || r.state === 'running') return [] as { id: string; src: string; label: string }[];
-    const out: { id: string; src: string; label: string }[] = [];
-    for (const m of (r.result || '').matchAll(new RegExp(IMG_MARKER_RE.source, 'g'))) {
-      out.push({ id: `${r.id}-${out.length}`, src: `data:image/jpeg;base64,${m[1]}`, label: r.name });
-    }
-    return out;
-  }), [unit.visibleRows]);
+  // 完成收起后仍可见的例图带：截图类工具的图片在数据入口已抽进 row.image，
+  // 这里只做过滤——运行中（expanded）不计算，避免高频更新下的额外开销。
+  const shots = useMemo(() => (expanded ? [] : unit.visibleRows.flatMap((r) => {
+    if (r.kind !== 'tool' || !r.image) return [] as { id: string; src: string; label: string }[];
+    return [{ id: r.id, src: r.image, label: r.name }];
+  })), [unit.visibleRows, expanded]);
   
   return (
     <div className="my-1" style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 600px' }}
@@ -324,6 +319,12 @@ export const Timeline = memo(function Timeline({ rows, sid, columnClassName }: {
     const dist = el.scrollHeight - el.scrollTop - el.clientHeight;
     setAnchor((a) => onUserScroll(a, dist));
   };
+  // 用户向上滚动的第一意图立即脱离贴底跟随（滚动位置检测会被每 5 秒的贴底
+  // 赋值覆盖，出现「运行中无法向上翻看」）；向下滚不动锚，交给 onScroll 判定。
+  const onWheel = (e: React.WheelEvent): void => {
+    if (jumpingRef.current) return;
+    if (e.deltaY < 0) setAnchor((a) => (a.state === 'following' ? { state: 'detached' } : a));
+  };
 
   // 内容追加：following 时贴底（一次性 scrollTo，不与用户滚动抢）
   useEffect(() => {
@@ -373,7 +374,7 @@ export const Timeline = memo(function Timeline({ rows, sid, columnClassName }: {
     <div className="relative min-h-0 flex-1">
       {/* 左缘轮次轨：固定在视口左缘，不随内容滚动 */}
       <TurnRail turns={turns} containerRef={scrollRef} onJump={jumpToTurn} />
-      <div ref={scrollRef} onScroll={onScroll} className="scroll-fine h-full overflow-y-auto">
+      <div ref={scrollRef} onScroll={onScroll} onWheel={onWheel} className="scroll-fine h-full overflow-y-auto">
         <div className={cn('mx-auto h-full w-full @min-[864px]/conversation:w-[calc(100%_-_6rem)] @min-[864px]/conversation:max-w-4xl @min-[1280px]/conversation:w-[calc(100%_-_24rem)] @min-[1280px]/conversation:max-w-6xl px-6 py-3 transition-transform duration-300', columnClassName)}>
           {units.map((u, i) =>
             u.type === 'user'
