@@ -50,7 +50,7 @@ interface AppCtxValue {
   /** 当前权限。 */
   permission: Permission;
   setPermission(p: Permission): void;
-  engineStatus: { status: string; addr: string; model: string };
+  engineStatus: { status: string; addr: string; model: string; provider: string };
   createDialogOpen: boolean;
   setCreateDialogOpen(v: boolean): void;
   /** 新建团队对话框（目标项目目录；null = 关闭）。 */
@@ -117,7 +117,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const drafts = useWorkspace((s) => s.drafts);
   const threadsLoaded = useWorkspace((s) => s.threadsLoaded);
 
-  const [engineStatus, setEngineStatus] = useState({ status: 'unknown', addr: '', model: '' });
+  const [engineStatus, setEngineStatus] = useState({ status: 'unknown', addr: '', model: '', provider: '' });
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [teamDialogDir, setTeamDialogDir] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpenRaw] = useState(false);
@@ -226,8 +226,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     startWorkspaceSync();
     window.amc.config.get().then((cfg) => {
-      const c = cfg as { engine?: { model?: string; mode?: string }; theme?: string; uiFontSize?: number };
-      setEngineStatus((e) => ({ ...e, model: c.engine?.model || '' }));
+      const c = cfg as { engine?: { model?: string; mode?: string }; providers?: { id: string; name: string }[]; activeProvider?: string; theme?: string; uiFontSize?: number };
+      const providerName = c.providers?.find((p) => p.id === c.activeProvider)?.name || '';
+      setEngineStatus((e) => ({ ...e, model: c.engine?.model || '', provider: providerName }));
       if (c.engine?.mode) setDefaultMode(c.engine.mode);
       // 主题跟随 config（index.html 已预置 .dark，避免 FOUC）
       if (c.theme) document.documentElement.classList.toggle('dark', c.theme === 'dark');

@@ -293,8 +293,10 @@ function SidebarFooter() {
     <div className="m-2 mt-0 flex items-center gap-2.5 rounded-lg border border-border bg-card px-2.5 py-2">
       <EngineDot status={engineStatus.status} />
       <span className="min-w-0 flex-1 truncate text-ui-base text-foreground-subtle"
-        title={engineStatus.status === 'running' ? '引擎运行中' : `引擎：${engineStatus.status}`}>
-        {engineStatus.model || engineStatus.status}
+        title={engineStatus.status === 'running'
+          ? [engineStatus.provider, engineStatus.model].filter(Boolean).join(' · ') || '引擎运行中'
+          : `引擎：${engineStatus.status}`}>
+        {[engineStatus.provider, engineStatus.model].filter(Boolean).join(' · ') || engineStatus.status}
       </span>
       <Button type="button" variant="ghost" size="icon-sm" aria-label="设置"
         className="text-foreground-subtle hover:bg-hover hover:text-foreground"

@@ -35,11 +35,37 @@ interface EngineConfig {
   autoStart?: boolean;
   mode?: string;
 }
+/** 供应商档案：一份 OpenAI 兼容端点配置；激活的那份同步进 engine.* 供引擎启动。 */
+interface ProviderProfile {
+  id: string;
+  name: string;
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+  contextWindow?: number;
+  maxOutputTokens?: number;
+}
 type Cfg = {
   engine?: EngineConfig;
+  providers?: ProviderProfile[];
+  activeProvider?: string;
   theme?: string;
   uiFontSize?: number;
 } & Record<string, unknown>;
+
+/** 预设供应商（OpenAI 兼容 chat/completions 端点；一键填名称与地址，模型列表在线拉取）。 */
+const PROVIDER_PRESETS: Array<{ name: string; baseUrl: string }> = [
+  { name: '智谱 GLM', baseUrl: 'https://open.bigmodel.cn/api/paas/v4' },
+  { name: 'Z.ai', baseUrl: 'https://api.z.ai/api/paas/v4' },
+  { name: 'DeepSeek', baseUrl: 'https://api.deepseek.com/v1' },
+  { name: 'Moonshot Kimi', baseUrl: 'https://api.moonshot.cn/v1' },
+  { name: '阿里百炼 Qwen', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1' },
+  { name: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1' },
+  { name: '硅基流动', baseUrl: 'https://api.siliconflow.cn/v1' },
+  { name: 'MiniMax', baseUrl: 'https://api.minimaxi.com/v1' },
+  { name: '小米 MiMo', baseUrl: 'https://api.xiaomimimo.com/v1' },
+  { name: 'Ollama 本地', baseUrl: 'http://localhost:11434/v1' },
+];
 
 /** 描述字段行：label + 控件 + 辅助说明（JetBrains 设置行的节奏）。 */
 function Field({ label, hint, children }: {
@@ -115,6 +141,9 @@ export function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState('');
+  // 供应商编辑：正在新增/修改的档案草稿；formModels 是该端点拉到的模型列表
+  const [editing, setEditing] = useState<ProviderProfile | null>(null);
+  const [formModels, setFormModels] = useState<string[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const route = stack[stack.length - 1] ?? { tab: 'general' };
@@ -155,6 +184,86 @@ export function SettingsPage() {
 
   const eng = cfg.engine || {};
 
+  // 供应商档案：首次进入从旧的单供应商 engine 字段播种（向后兼容）。
+  const providers: ProviderProfile[] = cfg.providers?.length
+    ? cfg.providers
+    : (eng.baseUrl
+      ? [{ id: 'default', name: '默认供应商', baseUrl: eng.baseUrl, apiKey: eng.apiKey || '', model: eng.model || '', contextWindow: eng.contextWindow, maxOutputTokens: eng.maxOutputTokens }]
+      : []);
+  const activeId = cfg.activeProvider || providers[0]?.id || '';
+
+  /** 写回供应商列表并同步激活档案到 engine.*（contextWindow 等是启动期参数，restart 时生效）。 */
+  const persistProviders = async (next: ProviderProfile[], active: string, restart: boolean): Promise<void> => {
+    const cur = next.find((p) => p.id === active) ?? next[0];
+    const nextCfg: Cfg = {
+      ...cfg,
+      providers: next,
+      activeProvider: cur?.id,
+      engine: {
+        ...eng,
+        baseUrl: cur?.baseUrl,
+        apiKey: cur?.apiKey,
+        model: cur?.model,
+        contextWindow: Number(cur?.contextWindow) || 1_000_000,
+        maxOutputTokens: Number(cur?.maxOutputTokens) || undefined,
+      },
+    };
+    setCfg(nextCfg);
+    await window.amc.config.save(nextCfg as Record<string, unknown>);
+    if (restart) await engine.restart();
+  };
+
+  const activateProvider = async (p: ProviderProfile): Promise<void> => {
+    setSaving(true);
+    try {
+      await persistProviders(providers, p.id, true);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveEditing = async (activate: boolean): Promise<void> => {
+    if (!editing) return;
+    const next = providers.some((p) => p.id === editing.id)
+      ? providers.map((p) => (p.id === editing.id ? editing : p))
+      : [...providers, editing];
+    setSaving(true);
+    try {
+      await persistProviders(next, activate ? editing.id : activeId, activate);
+      setEditing(null);
+      setFormModels([]);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const removeProvider = async (id: string): Promise<void> => {
+    const next = providers.filter((p) => p.id !== id);
+    const wasActive = id === activeId;
+    setSaving(true);
+    try {
+      await persistProviders(next, wasActive ? (next[0]?.id ?? '') : activeId, wasActive);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const fetchFormModels = async (): Promise<void> => {
+    if (!editing?.baseUrl) return;
+    setTesting(true);
+    setTestResult('');
+    try {
+      const list = await window.amc.engine.fetchModels({ baseUrl: editing.baseUrl, apiKey: editing.apiKey });
+      const n = Array.isArray(list) ? list.length : 0;
+      setFormModels(Array.isArray(list) ? list : []);
+      setTestResult(n ? `连接正常，可用模型 ${n} 个` : '端点可达，但未返回模型列表');
+    } catch (e) {
+      setTestResult(`连接失败：${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setTesting(false);
+    }
+  };
+
   /** 即时生效项（主题/字号）：写 config + 立刻应用，引擎不重启。 */
   const patchLive = async (patch: Partial<Cfg>): Promise<void> => {
     const next = { ...cfg, ...patch };
@@ -168,57 +277,16 @@ export function SettingsPage() {
     try { await window.amc.config.save(next as Record<string, unknown>); } catch { /* 磁盘异常：本次会话仍生效 */ }
   };
 
-  /** 模型设置：保存需重启引擎（contextWindow / maxOutputTokens 是启动期参数）。 */
-  const saveEngine = async (): Promise<void> => {
-    setSaving(true);
-    try {
-      await window.amc.config.save({
-        ...cfg,
-        engine: {
-          ...eng,
-          contextWindow: Number(eng.contextWindow) || 1_000_000,
-          maxOutputTokens: Number(eng.maxOutputTokens) || undefined,
-        },
-      });
-      await engine.restart();
-      close(false);
-    } finally {
-      setSaving(false);
-    }
-  };
-
   /** 默认模式：只写 config（模式按项目生效，会话级装配，不重启引擎）。 */
   const setDefault = async (id: string): Promise<void> => {
     await saveDefaultMode(id);
     setCfg((c) => (c ? { ...c, engine: { ...c.engine, mode: id } } : c));
   };
 
-  /** 端点连通性：拉一次 /models（主进程转发，key 不进渲染层）。 */
-  const testConnection = async (): Promise<void> => {
-    setTesting(true);
-    setTestResult('');
-    try {
-      const list = await window.amc.engine.listModels();
-      const n = Array.isArray(list) ? list.length : 0;
-      setTestResult(n ? `连接正常，可用模型 ${n} 个` : '端点可达，但未返回模型列表');
-    } catch (e) {
-      setTestResult(`连接失败：${e instanceof Error ? e.message : String(e)}`);
-    } finally {
-      setTesting(false);
-    }
-  };
-
   const stepFont = (d: number): void => {
     const v = Math.min(18, Math.max(12, (cfg.uiFontSize ?? 14) + d));
     if (v !== cfg.uiFontSize) void patchLive({ uiFontSize: v });
   };
-
-  const field = (label: string, k: keyof EngineConfig, ph: string, type = 'text', hint?: string): React.ReactNode => (
-    <Field label={label} hint={hint}>
-      <Input type={type} placeholder={ph} value={String(eng[k] ?? '')}
-        onChange={(e) => setCfg({ ...cfg, engine: { ...eng, [k]: e.target.value } })} />
-    </Field>
-  );
 
   const catalogSection = CATALOG_SECTIONS[tab];
   const catalogBody = (
@@ -322,31 +390,132 @@ export function SettingsPage() {
 
                 {tab === 'model' && (
                   <Section
-                    title="模型设置"
-                    desc="OpenAI 兼容端点；保存后自动重启引擎生效。对话中可在输入框右下角临时切换模型（无需重启）。">
-                    {field('API 地址', 'baseUrl', 'https://…/v1', 'text', 'OpenAI 兼容的 chat/completions 端点')}
-                    {field('API Key', 'apiKey', 'sk-…', 'password', '仅保存在本机配置文件，随请求发往该端点')}
-                    {field('默认模型', 'model', 'DeepSeek-V4.1-Flash', 'text', '引擎启动时加载的模型；运行中可临时切换')}
-                    {field('上下文窗口（token）', 'contextWindow', '1000000', 'number')}
-                    {field('最大输出（token）', 'maxOutputTokens', '393216', 'number', '推理模型的思考过程也占此额度')}
-
-                    <div className="flex items-center gap-3 pt-1">
-                      <Button type="button" variant="outline" disabled={testing}
-                        onClick={() => void testConnection()}>
-                        {testing ? '检测中…' : '测试连接'}
-                      </Button>
-                      <Button type="button" disabled={saving} onClick={() => void saveEngine()}>
-                        {saving ? '保存并重启引擎…' : '保存并重启引擎'}
-                      </Button>
-                      {testResult && (
-                        <span className={cn(
-                          'text-ui-sm',
-                          testResult.startsWith('连接正常') ? 'text-success' : 'text-destructive',
+                    title="模型供应商"
+                    desc="管理多个 OpenAI 兼容端点（中转 / 官方 / 本地），点「使用」切换并重启引擎。对话中可在输入框右下角临时切换模型与思考档位。">
+                    <div className="flex flex-col gap-2">
+                      {providers.map((p) => (
+                        <div key={p.id} className={cn(
+                          'flex items-center gap-3 rounded-xl border px-3.5 py-2.5',
+                          p.id === activeId ? 'border-brand/50 bg-brand/5' : 'border-border',
                         )}>
-                          {testResult}
-                        </span>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              <span className="truncate text-ui-base font-medium text-foreground">{p.name}</span>
+                              {p.id === activeId && (
+                                <span className="shrink-0 rounded-full bg-brand/15 px-2 py-0.5 text-ui-xs font-medium text-brand">使用中</span>
+                              )}
+                            </div>
+                            <div className="mt-0.5 truncate text-ui-sm text-foreground-subtlest" title={p.baseUrl}>
+                              {p.baseUrl} · {p.model || '未设模型'}
+                            </div>
+                          </div>
+                          {p.id !== activeId && (
+                            <Button type="button" variant="outline" size="sm" disabled={saving}
+                              onClick={() => void activateProvider(p)}>
+                              使用
+                            </Button>
+                          )}
+                          <Button type="button" variant="outline" size="sm" disabled={saving}
+                            onClick={() => { setEditing({ ...p }); setFormModels([]); setTestResult(''); }}>
+                            编辑
+                          </Button>
+                          <Button type="button" variant="outline" size="sm" disabled={saving || providers.length <= 1}
+                            onClick={() => void removeProvider(p.id)}>
+                            删除
+                          </Button>
+                        </div>
+                      ))}
+                      {!editing && (
+                        <Button type="button" variant="outline" className="self-start"
+                          onClick={() => {
+                            setEditing({
+                              id: `prov-${Date.now()}`, name: '', baseUrl: '', apiKey: '',
+                              model: '', contextWindow: 1_000_000,
+                            });
+                            setFormModels([]);
+                            setTestResult('');
+                          }}>
+                          <PlusIcon /> 添加供应商
+                        </Button>
                       )}
                     </div>
+
+                    {editing && (
+                      <div className="mt-3 flex flex-col gap-3 rounded-xl border border-border bg-card/50 p-4">
+                        {!providers.some((p) => p.id === editing.id) && (
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="text-ui-xs font-medium text-foreground-subtlest">从预设添加：</span>
+                            {PROVIDER_PRESETS.map((preset) => (
+                              <button key={preset.name} type="button"
+                                title={preset.baseUrl}
+                                className={cn('rounded-full border px-2.5 py-0.5 text-ui-xs transition-colors',
+                                  editing.baseUrl === preset.baseUrl
+                                    ? 'border-brand/60 bg-brand/10 text-foreground'
+                                    : 'border-border text-foreground-subtle hover:bg-hover hover:text-foreground')}
+                                onClick={() => setEditing({ ...editing, name: editing.name || preset.name, baseUrl: preset.baseUrl })}>
+                                {preset.name}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                        <div className="grid grid-cols-2 gap-3">
+                          <Field label="名称" hint="显示在左下角与切换菜单里">
+                            <Input value={editing.name} placeholder="如 智谱 / OpenRouter / 本地"
+                              onChange={(e) => setEditing({ ...editing, name: e.target.value })} />
+                          </Field>
+                          <Field label="API Key" hint="仅保存在本机配置文件">
+                            <Input type="password" value={editing.apiKey} placeholder="sk-…"
+                              onChange={(e) => setEditing({ ...editing, apiKey: e.target.value })} />
+                          </Field>
+                        </div>
+                        <Field label="API 地址" hint="OpenAI 兼容的 chat/completions 端点（以 /v1 结尾）">
+                          <Input value={editing.baseUrl} placeholder="https://…/v1"
+                            onChange={(e) => setEditing({ ...editing, baseUrl: e.target.value })} />
+                        </Field>
+                        <Field label="默认模型" hint="可直接输入，或先「获取模型列表」再从下拉里选">
+                          <div className="flex items-center gap-2">
+                            <Input list="provider-model-options" value={editing.model} placeholder="如 glm-5.3-flashx"
+                              onChange={(e) => setEditing({ ...editing, model: e.target.value })} />
+                            <datalist id="provider-model-options">
+                              {formModels.map((m) => <option key={m} value={m} />)}
+                            </datalist>
+                            <Button type="button" variant="outline" size="sm" shrink-0 disabled={testing || !editing.baseUrl}
+                              onClick={() => void fetchFormModels()}>
+                              {testing ? '获取中…' : '获取模型列表'}
+                            </Button>
+                          </div>
+                        </Field>
+                        <div className="grid grid-cols-2 gap-3">
+                          <Field label="上下文窗口（token）" hint="决定压缩阈值，须与真实模型一致">
+                            <Input type="number" value={String(editing.contextWindow ?? 1_000_000)}
+                              onChange={(e) => setEditing({ ...editing, contextWindow: Number(e.target.value) })} />
+                          </Field>
+                          <Field label="最大输出（token）" hint="推理模型的思考也占此额度">
+                            <Input type="number" value={String(editing.maxOutputTokens ?? '')}
+                              onChange={(e) => setEditing({ ...editing, maxOutputTokens: Number(e.target.value) || undefined })} />
+                          </Field>
+                        </div>
+                        <div className="flex items-center gap-2.5">
+                          <Button type="button" disabled={saving || !editing.baseUrl || !editing.model}
+                            onClick={() => void saveEditing(true)}>
+                            {saving ? '保存中…' : '保存并使用'}
+                          </Button>
+                          <Button type="button" variant="outline" disabled={saving || !editing.baseUrl}
+                            onClick={() => void saveEditing(false)}>
+                            仅保存
+                          </Button>
+                          <Button type="button" variant="ghost" disabled={saving}
+                            onClick={() => { setEditing(null); setTestResult(''); }}>
+                            取消
+                          </Button>
+                          {testResult && (
+                            <span className={cn('text-ui-sm', testResult.startsWith('连接正常') ? 'text-success' : 'text-destructive')}>
+                              {testResult}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </Section>
                 )}
 

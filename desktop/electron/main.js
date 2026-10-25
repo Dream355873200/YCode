@@ -59,14 +59,13 @@ ipcMain.handle('engine:restart', async () => {
   return engine.ensure(loadConfig(), browserctl.env());
 });
 ipcMain.handle('engine:status', () => ({ status: engine.state.status, addr: engine.state.addr }));
-// 模型列表：OpenAI 兼容端点的 GET {baseUrl}/models（composer 模型选择器数据源）。
-ipcMain.handle('engine:listModels', async () => {
-  const cfg = loadConfig().engine || {};
-  const base = String(cfg.baseUrl || '').replace(/\/$/, '');
+// OpenAI 兼容端点的 /models 拉取（模型选择器与供应商编辑表单共用）。
+async function fetchModels(baseUrl, apiKey) {
+  const base = String(baseUrl || '').replace(/\/$/, '');
   if (!base) return [];
   try {
     const res = await fetch(`${base}/models`, {
-      headers: cfg.apiKey ? { Authorization: `Bearer ${cfg.apiKey}` } : {},
+      headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
     });
     if (!res.ok) return [];
     const data = await res.json();
@@ -74,6 +73,17 @@ ipcMain.handle('engine:listModels', async () => {
   } catch {
     return [];
   }
+}
+
+// 模型列表：OpenAI 兼容端点的 GET {baseUrl}/models（composer 模型选择器数据源）。
+ipcMain.handle('engine:listModels', async () => {
+  const cfg = loadConfig().engine || {};
+  return fetchModels(cfg.baseUrl, cfg.apiKey);
+});
+// 供应商编辑表单用：按给定端点拉模型列表（编辑中的供应商未必是激活的那个）。
+ipcMain.handle('providers:fetchModels', async (_e, input) => {
+  const { baseUrl, apiKey } = input || {};
+  return fetchModels(baseUrl, apiKey);
 });
 // 对话与会话绑定由引擎维护（/threads；引擎是 session-map.json 的唯一写入方），
 // 壳只负责在需要时把引擎拉起来。

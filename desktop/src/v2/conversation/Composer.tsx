@@ -31,13 +31,7 @@ export const PERMISSIONS: Array<{ id: Permission; label: string; desc: string; i
 ];
 
 /** 思考强度（引擎 /thinking；'' = 跟随模型默认）。 */
-const EFFORTS: Array<{ id: string; label: string }> = [
-  { id: '', label: '默认' },
-  { id: 'off', label: '关' },
-  { id: 'low', label: '低' },
-  { id: 'medium', label: '中' },
-  { id: 'high', label: '高' },
-];
+// 思考档位由引擎按当前模型声明（GET /thinking 的 values），标签映射见下方 EFFORT_LABELS。
 
 const chipCls = 'flex h-7 items-center gap-1.5 rounded-lg px-2 text-ui-sm text-foreground-subtle transition-colors hover:bg-hover hover:text-foreground data-[state=open]:bg-hover data-[state=open]:text-foreground';
 
@@ -110,8 +104,14 @@ function PermissionPicker() {
   );
 }
 
-/** 模型与思考强度。模型按会话记忆（threads 注册表，切换只影响本对话）；
- * 无会话（草稿）时切换的是全局默认。思考强度为引擎全局。 */
+/** 模型与思考强度。模型、思考档位都按会话记忆（threads 注册表，切换只
+ * 影响本对话）；无会话（草稿）时切换的是全局默认。档位集由引擎按当前
+ * 生效模型声明（ThinkingLevels，各模型家族不同），按 values 渲染。 */
+const EFFORT_LABELS: Record<string, string> = {
+  off: '关', disabled: '关', none: '无', on: '开', enabled: '开',
+  low: '低', medium: '中', high: '高', xhigh: '超高', max: '最高',
+};
+
 function ModelPicker({ disabled }: { disabled: boolean }) {
   const { engineStatus, thread } = useApp();
   const refreshThreads = useWorkspace((s) => s.refreshThreads);
@@ -120,15 +120,20 @@ function ModelPicker({ disabled }: { disabled: boolean }) {
   // 生效模型：会话覆盖 > 全局默认。thread 变化（切换对话）即跟随。
   const [model, setModel] = useState(thread?.model || engineStatus.model);
   const [effort, setEffort] = useState('');
+  // 当前模型支持的思考档位（引擎按家族声明）；空数组 = 无旋钮，隐藏档位行
+  const [effortValues, setEffortValues] = useState<string[]>(['off', 'low', 'medium', 'high']);
   const [switching, setSwitching] = useState(false);
 
   useEffect(() => { setModel(thread?.model || engineStatus.model || ''); }, [thread?.id, thread?.model, engineStatus.model]);
   useEffect(() => {
-    engine.get('/thinking').then((r) => {
-      const e = (r.body as { effort?: string } | undefined)?.effort;
-      if (e !== undefined) setEffort(e);
+    const q = thread?.id ? `?session_id=${encodeURIComponent(thread.id)}` : '';
+    engine.get(`/thinking${q}`).then((r) => {
+      const b = r.body as { effort?: string; values?: string[] } | undefined;
+      if (!b) return;
+      setEffort(b.effort || '');
+      if (Array.isArray(b.values)) setEffortValues(b.values);
     }).catch(() => {});
-  }, [engineStatus.status]);
+  }, [engineStatus.status, thread?.id, thread?.model]);
   useEffect(() => {
     if (!open || models.length) return;
     window.amc.engine.listModels().then((list) => {
@@ -157,10 +162,17 @@ function ModelPicker({ disabled }: { disabled: boolean }) {
     }
   };
   const pickEffort = (id: string): void => {
+    if (disabled || id === effort) return;
     setEffort(id);
-    engine.post('/thinking', { effort: id }).catch(() => {});
+    if (thread?.id) {
+      // 会话级：写进对话注册表；换模型后不支持的档位由引擎剥除回默认
+      engine.post(`/threads/${thread.id}`, { effort: id })
+        .then(() => void refreshThreads()).catch(() => {});
+    } else {
+      engine.post('/thinking', { effort: id }).catch(() => {});
+    }
   };
-  const effortLabel = EFFORTS.find((e) => e.id === effort)?.label ?? '默认';
+  const effortLabel = effort ? EFFORT_LABELS[effort] ?? effort : '默认';
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -173,18 +185,22 @@ function ModelPicker({ disabled }: { disabled: boolean }) {
         </button>
       </PopoverTrigger>
       <PopoverContent side="top" align="end" className="w-72 p-2">
-        <div className="px-1 pb-1.5 text-ui-xs font-medium text-foreground-subtlest">思考强度</div>
-        <div className="grid grid-cols-5 gap-0.5 rounded-lg border border-border bg-input p-0.5" role="radiogroup">
-          {EFFORTS.map((e) => (
-            <button key={e.id || 'default'} type="button" role="radio" aria-checked={e.id === effort}
-              onClick={() => pickEffort(e.id)}
-              className={cn('rounded-md py-1 text-ui-sm transition-colors',
-                e.id === effort ? 'bg-selected font-medium text-foreground' : 'text-foreground-subtle hover:bg-hover hover:text-foreground')}>
-              {e.label}
-            </button>
-          ))}
-        </div>
-        <div className="mt-2.5 px-1 pb-1 text-ui-xs font-medium text-foreground-subtlest">模型</div>
+        {effortValues.length > 0 && (
+          <>
+            <div className="px-1 pb-1.5 text-ui-xs font-medium text-foreground-subtlest">思考强度</div>
+            <div className={cn('grid gap-0.5 rounded-lg border border-border bg-input p-0.5', effortValues.length >= 5 ? 'grid-cols-5' : effortValues.length === 4 ? 'grid-cols-4' : effortValues.length === 3 ? 'grid-cols-3' : 'grid-cols-2')} role="radiogroup">
+              {[{ id: '', label: '默认' }, ...effortValues.map((v) => ({ id: v, label: EFFORT_LABELS[v] ?? v }))].map((e) => (
+                <button key={e.id || 'default'} type="button" role="radio" aria-checked={e.id === effort}
+                  onClick={() => pickEffort(e.id)}
+                  className={cn('rounded-md py-1 text-ui-sm transition-colors',
+                    e.id === effort ? 'bg-selected font-medium text-foreground' : 'text-foreground-subtle hover:bg-hover hover:text-foreground')}>
+                  {e.label}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+        <div className={cn('mt-2.5 px-1 pb-1 text-ui-xs font-medium text-foreground-subtlest', effortValues.length === 0 && 'first:mt-0')}>模型</div>
         <div className="max-h-60 overflow-y-auto">
           {models.length === 0 && (
             <div className="px-2 py-1.5 text-ui-sm text-foreground-subtlest">{model ? `当前：${model}` : '未获取到模型列表'}</div>

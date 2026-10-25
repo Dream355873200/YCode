@@ -18,6 +18,7 @@ contextBridge.exposeInMainWorld('amc', {
     ensure: () => ipcRenderer.invoke('engine:ensure'),
     status: () => ipcRenderer.invoke('engine:status'),
     listModels: () => ipcRenderer.invoke('engine:listModels'),
+    fetchModels: (input) => ipcRenderer.invoke('providers:fetchModels', input),
     onStatus: (cb) => {
       const h = (_e, s) => cb(s);
       ipcRenderer.on('engine:status', h);

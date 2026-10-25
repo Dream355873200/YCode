@@ -35,6 +35,8 @@ export interface EngineBridge {
   ensure(): Promise<unknown>;
   status(): Promise<{ status: string; addr: string }>;
   listModels(): Promise<unknown>;
+  /** 按给定端点拉模型列表（供应商编辑表单用，key 随请求发出）。 */
+  fetchModels(input: { baseUrl: string; apiKey?: string }): Promise<unknown>;
   onStatus(cb: (s: { status: string; addr: string }) => void): () => void;
   onSseBegin(cb: (evt: Envelope) => void): () => void;
   onSseEvent(cb: (evt: Envelope) => void): () => void;
