@@ -181,17 +181,28 @@ export function SettingsPage() {
     return () => document.removeEventListener('keydown', onKey);
   }, [settingsOpen, close]);
 
-  if (!settingsOpen || !cfg) return null;
-
-  const eng = cfg.engine || {};
-
+  // —— 以下派生与 hook 必须在早退 return 之前（hooks 无条件注册）——
+  const eng = cfg?.engine || {};
   // 供应商档案：首次进入从旧的单供应商 engine 字段播种（向后兼容）。
-  const providers: ProviderProfile[] = cfg.providers?.length
+  const providers: ProviderProfile[] = cfg?.providers?.length
     ? cfg.providers
     : (eng.baseUrl
       ? [{ id: 'default', name: '默认供应商', baseUrl: eng.baseUrl, apiKey: eng.apiKey || '', model: eng.model || '', contextWindow: eng.contextWindow, maxOutputTokens: eng.maxOutputTokens }]
       : []);
-  const activeId = cfg.activeProvider || providers[0]?.id || '';
+  const activeId = cfg?.activeProvider || providers[0]?.id || '';
+
+  // 进入模型页时默认选中当前使用中的供应商
+  useEffect(() => {
+    if (!settingsOpen || !cfg || tab !== 'model' || selectedKey || !providers.length) return;
+    const p = providers.find((x) => x.id === activeId) ?? providers[0];
+    if (p) {
+      setEditing({ ...p });
+      setSelectedKey(`id:${p.id}`);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settingsOpen, tab, selectedKey, activeId]);
+
+  if (!settingsOpen || !cfg) return null;
 
   /** 写回供应商列表并同步激活档案到 engine.*（contextWindow 等是启动期参数，restart 时生效）。 */
   const persistProviders = async (next: ProviderProfile[], active: string, restart: boolean): Promise<void> => {
@@ -280,17 +291,6 @@ export function SettingsPage() {
     setTestResult('');
     setSelectedKey('custom');
   };
-
-  // 进入模型页时默认选中当前使用中的供应商
-  useEffect(() => {
-    if (tab !== 'model' || selectedKey || !providers.length) return;
-    const p = providers.find((x) => x.id === activeId) ?? providers[0];
-    if (p) {
-      setEditing({ ...p });
-      setSelectedKey(`id:${p.id}`);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, selectedKey, activeId]);
 
   /** 即时生效项（主题/字号）：写 config + 立刻应用，引擎不重启。 */
   const patchLive = async (patch: Partial<Cfg>): Promise<void> => {
