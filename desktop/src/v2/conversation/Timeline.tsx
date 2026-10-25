@@ -14,7 +14,13 @@ import { useConversation } from './store';
 import { Collapse } from '../components/ui/collapse';
 import { cn } from '../components/lib/utils';
 
-function TurnBlock({ unit, sid, live }: { unit: Extract<TurnUnit, { type: 'turn' }>; sid: string; live?: boolean }) {
+function TurnBlock({ unit, sid, live, onView }: {
+  unit: Extract<TurnUnit, { type: 'turn' }>;
+  sid: string;
+  live?: boolean;
+  /** 点例图缩略图：打开大图查看器（不展开轮次工作段）。 */
+  onView?: (shots: { id: string; src: string; label: string }[], index: number) => void;
+}) {
   const { work, tail } = unit;
   // 运行中判定取「本单元是最后一轮 && 会话 busy」，不用 runningTools——
   // 模型流式输出/思考期间 runningTools 归零，会让头部在「计时 ↔ 摘要」
@@ -110,16 +116,16 @@ function TurnBlock({ unit, sid, live }: { unit: Extract<TurnUnit, { type: 'turn'
         <div className="h-1.5" />
       </Collapse>
       {!expanded && tail.map((r) => <RowView key={r.id} row={r} sid={sid} />)}
-      {/* 收起态例图带：跟在轮尾正文之后（轮次产出都在底部），点击展开工作段看大图 */}
+      {/* 收起态例图带：跟在轮尾正文之后（轮次产出都在底部），点击打开大图查看器 */}
       {!expanded && shots.length > 0 && (
         <div className="mb-1 mt-0.5 flex flex-wrap items-center gap-2">
-          {shots.slice(0, 8).map((s) => (
-            <img key={s.id} src={s.src} alt={s.label} title={`${s.label}（点击展开）`}
-              onClick={() => setManual(true)}
+          {shots.slice(0, 8).map((s, i) => (
+            <img key={s.id} src={s.src} alt={s.label} title={s.label}
+              onClick={() => onView?.(shots, i)}
               className="h-44 cursor-zoom-in rounded-lg border border-border object-cover transition-transform duration-150 hover:scale-[1.02]" />
           ))}
           {shots.length > 8 && (
-            <button type="button" onClick={() => setManual(true)}
+            <button type="button" onClick={() => onView?.(shots, 8)}
               className="h-44 rounded-lg border border-border px-3 text-ui-sm text-foreground-subtlest hover:bg-hover hover:text-foreground">
               +{shots.length - 8} 张
             </button>
@@ -241,6 +247,41 @@ function fmtDur(sec: number): string {
   return `${Math.floor(sec / 60)} 分 ${sec % 60} 秒`;
 }
 
+type Shot = { id: string; src: string; label: string };
+
+/** 大图查看器：全屏遮罩 + 适配大图，左右箭头/方向键在本轮例图间切换，Esc/点背景关闭。 */
+function ImageViewer({ shots, index, onClose }: { shots: Shot[]; index: number; onClose: () => void }) {
+  const [i, setI] = useState(index);
+  useEffect(() => { setI(index); }, [index, shots]);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') onClose();
+      else if (e.key === 'ArrowRight') setI((v) => (v + 1) % shots.length);
+      else if (e.key === 'ArrowLeft') setI((v) => (v - 1 + shots.length) % shots.length);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [shots.length, onClose]);
+  const cur: Shot = shots[Math.min(i, shots.length - 1)] ?? { id: 'blank', src: '', label: '' };
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-black/85 p-8" onClick={onClose}>
+      <img src={cur.src} alt={cur.label}
+        className="max-h-[calc(100vh-7rem)] max-w-full cursor-zoom-out rounded-lg object-contain shadow-2xl"
+        onClick={(e) => e.stopPropagation()} />
+      <div className="flex items-center gap-4 text-ui-sm text-white/80" onClick={(e) => e.stopPropagation()}>
+        <button type="button" aria-label="上一张" onClick={() => setI((v) => (v - 1 + shots.length) % shots.length)}
+          className="rounded-md px-2 py-1 hover:bg-white/15 hover:text-white">← 上一张</button>
+        <span className="font-mono tabular-nums">{Math.min(i, shots.length - 1) + 1} / {shots.length}</span>
+        <button type="button" aria-label="下一张" onClick={() => setI((v) => (v + 1) % shots.length)}
+          className="rounded-md px-2 py-1 hover:bg-white/15 hover:text-white">下一张 →</button>
+        <span className="max-w-96 truncate text-white/50">{cur.label}</span>
+      </div>
+      <button type="button" aria-label="关闭" onClick={onClose}
+        className="absolute right-4 top-4 rounded-md px-2 py-1 text-ui-base text-white/70 hover:bg-white/15 hover:text-white">✕</button>
+    </div>
+  );
+}
+
 /** 时间线。memo：外壳（侧栏/右栏开合等 appState 变化）重渲染时，
  *  rows 引用不变就不重算整条对话。 */
 export const Timeline = memo(function Timeline({ rows, sid, columnClassName }: {
@@ -252,6 +293,8 @@ export const Timeline = memo(function Timeline({ rows, sid, columnClassName }: {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [anchor, setAnchor] = useState<AnchorState>(resetAnchor);
   const units = useMemo(() => foldTurns(rows), [rows]);
+  // 例图大图查看器：任何轮次的缩略带都能打开（跨轮切换只在同轮内）
+  const [viewer, setViewer] = useState<{ shots: Shot[]; index: number } | null>(null);
   const busy = useConversation((s) => s.sessions[sid]?.busy ?? false);
   const turns = useMemo(
     () => units.flatMap((u, i) => {
@@ -340,7 +383,8 @@ export const Timeline = memo(function Timeline({ rows, sid, columnClassName }: {
                   <RowView row={{ kind: 'user', id: u.id, text: u.text, steered: u.steered } as Row} sid={sid} />
                 </div>
               )
-              : <TurnBlock key={u.id} unit={u} sid={sid} live={busy && i === units.length - 1} />)}
+              : <TurnBlock key={u.id} unit={u} sid={sid} live={busy && i === units.length - 1}
+                onView={(shots, index) => setViewer({ shots, index })} />)}
           <div className="h-2" />
 
           {/* 工作计时 / 思考直播已并入工作段头部（TurnBlock）；这里只留询问中提示 */}
@@ -365,6 +409,7 @@ export const Timeline = memo(function Timeline({ rows, sid, columnClassName }: {
           <ArrowDownIcon className="size-3.5" />回到底部
         </button>
       )}
+      {viewer && <ImageViewer shots={viewer.shots} index={viewer.index} onClose={() => setViewer(null)} />}
     </div>
   );
 });
