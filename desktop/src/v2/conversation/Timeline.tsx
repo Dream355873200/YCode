@@ -191,15 +191,13 @@ function TurnRail({ turns, containerRef, onJump }: {
   const usable = Math.max(0, railH - 16);
   const gap = n > 1 ? Math.min(GAP_MAX, Math.max(GAP_MIN, usable / (n - 1))) : GAP_MAX;
   const contentH = n > 1 ? (n - 1) * gap + 6 : 6;
-  const overflow = contentH > usable;
+  const overflow = railH > 0 && contentH > usable;
   // 溢出滚动模式：当前轮次变化时把对应 tick 滚进轨道可视区
   useEffect(() => {
     if (!overflow || active < 0 || !railRef.current) return;
     const el = railRef.current;
     const top = 3 + active * gap;
-    if (top < el.scrollTop + 2 || top > el.scrollTop + el.clientHeight - 2) {
-      el.scrollTop = top - el.clientHeight / 2;
-    }
+    el.scrollTo({ top: Math.max(0, top - el.clientHeight / 2), behavior: 'smooth' });
   }, [active, overflow, gap]);
   if (n === 0) return null;
   const center = overflow ? 3 + contentH / 2 : railH / 2;
