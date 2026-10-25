@@ -1,0 +1,18 @@
+{
+ "slug": "synthwave",
+ "num": "80",
+ "en": "80s Synthwave / VHS",
+ "cn": "复古合成波",
+ "category_en": "Cinema & Eras",
+ "category_cn": "电影与时代",
+ "film": "NEON DRIVE · Midnight 1986",
+ "line": "A chrome title slams over a rushing neon grid and striped retro sun, the whole tape bleeding through a VHS pass.",
+ "line_cn": "镀铬标题砸落在飞驰的霓虹网格与条纹日落之上，整盘磁带透着 VHS 做旧的噪点与色偏。",
+ "uses": [
+  "音乐视频",
+  "游戏预告",
+  "复古主题活动"
+ ],
+ "frame_sec": 5.0,
+ "dur": 10.0
+}

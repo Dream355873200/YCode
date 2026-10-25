@@ -1,0 +1,18 @@
+{
+ "slug": "sticker-explainer",
+ "num": "82",
+ "en": "Sticker Explainer",
+ "cn": "贴纸科普",
+ "category_en": "Information & Keynote",
+ "category_cn": "信息与发布",
+ "film": "How Many Elements Hide in a Phone?",
+ "line": "Photo stickers with bold white outlines, flat icons and exact charts laid on one huge canvas, strung together by a single continuous camera.",
+ "line_cn": "粗白描边的照片贴纸、扁平图标与精确图表铺在一张超大画布上，一个连续镜头串起所有信息点。",
+ "uses": [
+  "硬核科普",
+  "财经知识区",
+  "企业宣传"
+ ],
+ "frame_sec": 5.0,
+ "dur": 10.0
+}

@@ -1,0 +1,18 @@
+{
+ "slug": "bauhaus",
+ "num": "79",
+ "en": "Geometric Bauhaus",
+ "cn": "包豪斯几何",
+ "category_en": "Graphic & Type",
+ "category_cn": "图形与排版",
+ "film": "KONSTRUKTION · 20 Beats",
+ "line": "Circles, triangles and rectangles act on a strict module grid, one beat one move, assembling into a perfect kinetic poster.",
+ "line_cn": "圆、三角、矩形在严格的模数网格上行动，一拍一动，最终组装成一张完美的动态海报。",
+ "uses": [
+  "音乐节与演出包装",
+  "文化展览宣传",
+  "动态海报"
+ ],
+ "frame_sec": 7.0,
+ "dur": 10.0
+}

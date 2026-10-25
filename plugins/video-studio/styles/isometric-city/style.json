@@ -1,0 +1,18 @@
+{
+ "slug": "isometric-city",
+ "num": "73",
+ "en": "Isometric Miniature City",
+ "cn": "等距微缩城市",
+ "category_en": "Information & Keynote",
+ "category_cn": "信息与发布",
+ "film": "ISOPOLIS · Let the City Grow",
+ "line": "A pastel miniature city builds itself: tiles drop in a wave, buildings grow with overshoot, life flows, then the whole island is revealed floating.",
+ "line_cn": "粉彩微缩城市自行生长：地砖波浪落位，建筑带过冲拔地而起，车流数据流动起来，最后整座岛悬浮揭示。",
+ "uses": [
+  "智慧城市与园区演示",
+  "科技品牌片",
+  "数据园区包装"
+ ],
+ "frame_sec": 6.0,
+ "dur": 10.0
+}

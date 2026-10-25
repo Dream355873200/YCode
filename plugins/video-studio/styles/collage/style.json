@@ -1,0 +1,18 @@
+{
+ "slug": "collage",
+ "num": "76",
+ "en": "Collage Cut-out",
+ "cn": "拼贴剪贴",
+ "category_en": "Print & Printmaking",
+ "category_cn": "印刷与版画",
+ "film": "NOGGIN Quarterly",
+ "line": "Victorian portraits with scissor-white edges flip open on newsprint; planets and pointing hands spill out at 12 fps with hand-placed jitter.",
+ "line_cn": "报纸底上，白描边的老照片头顶翻开，星球与手势以 12 帧定格加手摆抖动倾泻而出。",
+ "uses": [
+  "音乐类短视频",
+  "街头潮流内容",
+  "文化与专题片头"
+ ],
+ "frame_sec": 4.5,
+ "dur": 10.0
+}

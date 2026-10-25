@@ -1,0 +1,18 @@
+{
+ "slug": "shape-morph",
+ "num": "78",
+ "en": "Shape Morph",
+ "cn": "形变动画",
+ "category_en": "Graphic & Type",
+ "category_cn": "图形与排版",
+ "film": "morphe. · One Shape, Every Story",
+ "line": "One hero shape continuously becomes six to eight icons — cup, sun, gull, pin, heart — each morph bridged by a simple form, on the beat.",
+ "line_cn": "一个主角图形连续变成六到八个图标——杯、日、鸥、钉、心——每次形变经中介简形桥接，踩在节拍上。",
+ "uses": [
+  "发布会动效",
+  "高端 explainer",
+  "品牌叙事片段"
+ ],
+ "frame_sec": 5.5,
+ "dur": 10.0
+}

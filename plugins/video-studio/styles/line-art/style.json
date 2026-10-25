@@ -1,0 +1,18 @@
+{
+ "slug": "line-art",
+ "num": "72",
+ "en": "Line Art",
+ "cn": "线条动画",
+ "category_en": "Hand-drawn & Painting",
+ "category_cn": "手绘与绘画",
+ "film": "ATELIER LINEA · One Line",
+ "line": "A single constant-width line draws itself across the whole film; the tail of each figure is the start of the next, ending in a line-to-fill logo.",
+ "line_cn": "一根等宽细线自描贯穿全片：上一图形的尾线即下一图形的起线，收于线转面的 logo 定格。",
+ "uses": [
+  "奢侈品与建筑品牌",
+  "金融品牌片",
+  "Logo 动画"
+ ],
+ "frame_sec": 8.6,
+ "dur": 10.0
+}

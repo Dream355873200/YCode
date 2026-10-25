@@ -1,0 +1,18 @@
+{
+ "slug": "liquid",
+ "num": "77",
+ "en": "Liquid Motion",
+ "cn": "液态流动",
+ "category_en": "Graphic & Type",
+ "category_cn": "图形与排版",
+ "film": "drop. · It All Starts with a Drop",
+ "line": "Glossy candy liquid drips, fuses and floods across the frame, then coalesces into a wordmark with one last drip.",
+ "line_cn": "亮泽的糖果色液体滴落、融合、漫过全屏，最终聚成字标，落下最后一滴。",
+ "uses": [
+  "音乐视频包装",
+  "食品饮料广告",
+  "转场与栏目包装"
+ ],
+ "frame_sec": 7.2,
+ "dur": 10.0
+}

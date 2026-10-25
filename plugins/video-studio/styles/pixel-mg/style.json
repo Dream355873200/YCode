@@ -1,0 +1,18 @@
+{
+ "slug": "pixel-mg",
+ "num": "83",
+ "en": "Pixel Art MG",
+ "cn": "像素颗粒",
+ "category_en": "Games",
+ "category_cn": "游戏",
+ "film": "PIXEL QUEST",
+ "line": "A hero sprite runs through a dithered parallax world at 12 fps, coins sparkle, a chest bursts open — pure pixel-craft nostalgia.",
+ "line_cn": "主角精灵在抖动渐变的视差世界里 12 帧奔跑，金币闪光，宝箱炸开——纯粹的像素手艺怀旧。",
+ "uses": [
+  "游戏预告与宣传片",
+  "品牌怀旧营销",
+  "8-bit 音乐 MV"
+ ],
+ "frame_sec": 6.5,
+ "dur": 10.0
+}

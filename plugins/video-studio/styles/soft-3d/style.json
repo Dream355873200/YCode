@@ -1,0 +1,18 @@
+{
+ "slug": "soft-3d",
+ "num": "74",
+ "en": "Soft 3D Render",
+ "cn": "软胶 3D 渲染",
+ "category_en": "Materials & 3D",
+ "category_cn": "材质与 3D",
+ "film": "soft. · Soft Landing",
+ "line": "Pastel studio, candy materials, a cloner field rippling as an inflated wordmark drops in and jiggles to rest.",
+ "line_cn": "粉彩棚拍、糖果材质：克隆阵列随效果波荡漾，充气字标坠落、果冻般颤动后安稳落座。",
+ "uses": [
+  "高端产品 ident",
+  "品牌发布包装",
+  "食品饮料广告"
+ ],
+ "frame_sec": 7.5,
+ "dur": 10.0
+}
