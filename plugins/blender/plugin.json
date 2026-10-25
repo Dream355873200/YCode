@@ -13,7 +13,8 @@
         "@pobruno/blender-agent@0.1.1"
       ],
       "env": {
-        "BLENDER_PORT": "9877"
+        "BLENDER_PORT": "9877",
+        "BLENDER_BIN": "D:\\SteamLibrary\\steamapps\\common\\Blender\\blender.exe"
       }
     }
   ]
