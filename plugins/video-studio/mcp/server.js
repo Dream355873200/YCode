@@ -11,6 +11,7 @@
 "use strict";
 const fs = require("fs");
 const path = require("path");
+const os = require("os");
 const { spawn } = require("child_process");
 
 // ---------- 工程目录解析 ----------
@@ -32,6 +33,81 @@ function resolveDir(a) {
   return dir;
 }
 const DIR = { type: "string", description: "视频项目根目录（绝对路径，即当前项目目录）" };
+
+// ---------- 手书 MV 共享运行时（字体/JIZURA/npm 依赖装一次，各工程 junction 共享） ----------
+
+const MV_RUNTIME = path.join(os.homedir(), ".amobilecreater", "mv-runtime");
+const JIZURA_REF = "fc16bfe43ea4a6c25a21f1caf04d17326de14f00";
+
+function mvRuntimeState() {
+  const fontsDir = path.join(MV_RUNTIME, "engine", "fonts");
+  const fontsOk = (() => {
+    try { return fs.existsSync(path.join(fontsDir, "manifest.json")) && fs.readdirSync(fontsDir).some((f) => f.endsWith(".ttf")); } catch { return false; }
+  })();
+  const jizuraOk = fs.existsSync(path.join(MV_RUNTIME, "jizura", "app", "jizura_engine.js"));
+  const nodeOk = fs.existsSync(path.join(MV_RUNTIME, "node_modules", "playwright", "package.json"));
+  return { fontsOk, jizuraOk, nodeOk, ready: fontsOk && jizuraOk && nodeOk };
+}
+
+function linkJunction(dst, src) {
+  try { if (fs.readlinkSync(dst) === src) return "linked"; } catch { /* 目标不是链接 */ }
+  if (fs.existsSync(dst)) return "exists";
+  fs.mkdirSync(path.dirname(dst), { recursive: true });
+  fs.symlinkSync(src, dst, "junction");
+  return "linked";
+}
+
+/** 确保母本工程（MV_RUNTIME）就绪：缺哪样装哪样，全部完成后返回。 */
+async function bootstrapMvRuntime(missing) {
+  fs.mkdirSync(MV_RUNTIME, { recursive: true });
+  const template = path.join(__dirname, "..", "skills", "tegaki-mv", "template");
+  // 母本必须是个完整脚手架（有 package.json/tools/engine），否则重铺（不覆盖已有安装）
+  if (!fs.existsSync(path.join(MV_RUNTIME, "engine", "index.html"))) {
+    const py = process.platform === "win32" ? "python" : "python3";
+    const r = await runCmd(py, [path.join(__dirname, "..", "skills", "tegaki-mv", "scripts", "new_project.py"), MV_RUNTIME, "--force"]);
+    if (r.code !== 0) throw new Error(`母本工程脚手架失败：${(r.err || r.out).slice(-500)}`);
+  }
+  if (!missing.nodeOk) {
+    const npm = process.platform === "win32" ? "npm.cmd" : "npm";
+    const r = await runCmd(npm, ["install", "--no-audit", "--no-fund"], { cwd: MV_RUNTIME, timeoutMs: 15 * 60_000 });
+    if (r.code !== 0) throw new Error(`共享运行时 npm install 失败：${(r.err || r.out).slice(-500)}`);
+  }
+  if (!missing.fontsOk) {
+    // 母本 scaffold 自带 fonts.css/manifest/OFL 清单，二进制 ttf 由 fetch_fonts 补（--out-dir 指回母本）
+    const py = process.platform === "win32" ? "python" : "python3";
+    const r = await runCmd(py, [path.join(MV_RUNTIME, "tools", "fetch_fonts.py")], { cwd: MV_RUNTIME, timeoutMs: 40 * 60_000 });
+    if (r.code !== 0) throw new Error(`共享字体下载失败（~260MB，可重跑；或从已有工程拷 engine/fonts 到 ${path.join(MV_RUNTIME, "engine", "fonts")}）：${(r.err || r.out).slice(-500)}`);
+  }
+  if (!missing.jizuraOk) {
+    const vendor = path.join(MV_RUNTIME, "vendor", "JIZURA");
+    fs.mkdirSync(vendor, { recursive: true });
+    const g = (args) => runCmd("git", args, { cwd: vendor, timeoutMs: 10 * 60_000 });
+    let r = await g(["init", "-q", vendor]);
+    if (r.code === 0) r = await g(["-C", vendor, "config", "remote.origin.url", "https://github.com/852wa/JIZURA"]);
+    if (r.code === 0) r = await g(["-C", vendor, "fetch", "--depth", "1", "origin", JIZURA_REF]);
+    if (r.code === 0) r = await g(["-C", vendor, "checkout", "-q", "--detach", "FETCH_HEAD"]);
+    if (r.code !== 0) throw new Error(`JIZURA 克隆失败（GitHub 可达性）：${(r.err || r.out).slice(-500)}`);
+    const npm = process.platform === "win32" ? "npm.cmd" : "npm";
+    r = await runCmd(npm, ["run", "jizura:build"], { cwd: MV_RUNTIME, timeoutMs: 10 * 60_000 });
+    if (r.code !== 0) throw new Error(`JIZURA 构建失败：${(r.err || r.out).slice(-500)}`);
+  }
+}
+
+/** 新工程接线共享运行时：node_modules / engine/fonts / vendor/JIZURA 三处 junction。 */
+function wireMvRuntime(dir) {
+  const links = [
+    [path.join(dir, "node_modules"), path.join(MV_RUNTIME, "node_modules")],
+    [path.join(dir, "engine", "fonts"), path.join(MV_RUNTIME, "engine", "fonts")],
+    [path.join(dir, "vendor", "JIZURA"), path.join(MV_RUNTIME, "vendor", "JIZURA")],
+  ];
+  const out = [];
+  for (const [dst, src] of links) {
+    // scaffold 自带的同名实体目录（engine/fonts 清单文件）让位给 junction——真身已在母本
+    fs.rmSync(dst, { recursive: true, force: true });
+    out.push(`${path.relative(dir, dst)} → ${linkJunction(dst, src) === "linked" ? "已接线" : "已存在"}`);
+  }
+  return out;
+}
 
 // ---------- registry.gen.ts 重生成（场景组件静态导入表） ----------
 
@@ -437,6 +513,21 @@ ${existing === "remotion" ? manifestSummary(dir) : ""}`.trim();
       if (r.code !== 0 || !fs.existsSync(path.join(dir, "engine", "index.html"))) {
         throw new Error(`手书 MV 脚手架失败（需要 python3.10+）：\n${(r.err || r.out).slice(-1200)}\n备选：直接读 skills/tegaki-mv/SKILL.md 手动按模板搭。`);
       }
+      // 共享运行时：字体(~260MB)/JIZURA 构建/npm 依赖装一次进母本（~/.amobilecreater/mv-runtime），
+      // 各工程 junction 共享——不再每项目全量安装
+      const missing = mvRuntimeState();
+      let runtimeNote;
+      if (missing.ready) {
+        runtimeNote = `共享运行时已就绪（${MV_RUNTIME}），本次 0 下载。`;
+      } else {
+        const parts = [];
+        if (!missing.nodeOk) parts.push("npm 依赖");
+        if (!missing.fontsOk) parts.push("字体 ~260MB");
+        if (!missing.jizuraOk) parts.push("JIZURA 克隆构建");
+        runtimeNote = `首次初始化：正在向共享运行时（${MV_RUNTIME}）安装 ${parts.join("、")}——一次性成本（可能 10-30 分钟，取决于网络），后续工程秒级。`;
+      }
+      await bootstrapMvRuntime(missing);
+      const wired = wireMvRuntime(dir);
       if (!fs.existsSync(path.join(dir, ".git"))) {
         await runCmd("git", ["init"], { cwd: dir });
         await runCmd("git", ["add", "."], { cwd: dir });
@@ -444,13 +535,16 @@ ${existing === "remotion" ? manifestSummary(dir) : ""}`.trim();
       }
       return `手书 MV 工程已初始化到 ${dir}（模板：vocaloid-style-mv-pipeline by NikusonP，MIT）。
 
+${runtimeNote}
+共享接线：
+${wired.map((l) => `  - ${l}`).join("\n")}
+
 下一步（按 skills/tegaki-mv/SKILL.md 工作流走）：
-1. 工程里 npm install，然后 npm run setup —— 装 Playwright/Python 依赖/字体(~260MB)/克隆 JIZURA；
-   网络紧张可 npm run setup 加 -SkipFonts（字体跳过后部分排版场景降级）
-2. 环境验证建议先跑 demo 冒烟（template/demo/README.md，合成歌曲零素材）
-3. 工作流：analyze_audio 听歌 → 概念/人设 → 分镜 → engine/timeline.js → stills 评审循环 → 渲染
-4. 渲染产物必须落 out/film.mp4（成片）/ out/preview.mp4（预览）才会出现在「视频预览」面板
-5. 场景代码不得使用 Math.random/Date.now——一切是歌曲时间 t 的纯函数（上游契约）`;
+1. 环境验证建议先跑 demo 冒烟（template/demo/README.md，合成歌曲零素材）；
+   注意浏览器还需一次性 npx playwright install chromium（Playwright 浏览器本身就是全局缓存）
+2. 工作流：analyze_audio 听歌 → 概念/人设 → 分镜 → engine/timeline.js → stills 评审循环 → 渲染
+3. 渲染产物必须落 out/film.mp4（成片）/ out/preview.mp4（预览）才会出现在「视频预览」面板
+4. 场景代码不得使用 Math.random/Date.now——一切是歌曲时间 t 的纯函数（上游契约）`;
     }
     // ---- Remotion 缺省分支（原逻辑） ----
     // 安全合并：目标已存在的文件一律跳过（不覆盖用户/你的改动）

@@ -1,0 +1,36 @@
+{
+  "id": "blender",
+  "name": "Blender",
+  "description": "驱动实时 Blender 会话做 3D：建模/硬表面/材质/绑骨动画/几何节点/灯光渲染，导出 glTF·FBX·USD 游戏资产与转台视频（需要本机 Blender 4.2+ 并安装 Blender 智能体插件的 addon）",
+  "icon": "box",
+  "starters": [
+    {
+      "label": "做一个低多边形小屋",
+      "prompt": "用 blockout 起稿做一个低多边形小屋场景（主体 + 树 + 围栏），上简单材质，出一张渲染图。"
+    },
+    {
+      "label": "硬表面建模",
+      "prompt": "参考描述做一个硬表面模型："
+    },
+    {
+      "label": "绑骨 + 动画",
+      "prompt": "给当前场景的角色建 biped 绑骨，做一个简单的行走循环动画并出转台预览。"
+    },
+    {
+      "label": "导出游戏资产",
+      "prompt": "把当前选中的模型做拓扑检查和减面，导出为 glTF（游戏引擎可用），并报告尺寸与面数。"
+    }
+  ],
+  "plugins": [
+    "blender"
+  ],
+  "projectFields": [
+    {
+      "id": "dir",
+      "label": "工作目录",
+      "type": "folder",
+      "required": true,
+      "placeholder": "选择存放 .blend 产物与导出文件的目录"
+    }
+  ]
+}

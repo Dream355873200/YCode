@@ -8,8 +8,13 @@
     {
       "name": "blender",
       "command": "npx",
-      "args": ["-y", "@pobruno/blender-agent@0.1.0"],
-      "env": { "BLENDER_PORT": "9877" }
+      "args": [
+        "-y",
+        "@pobruno/blender-agent@0.1.0"
+      ],
+      "env": {
+        "BLENDER_PORT": "9877"
+      }
     }
   ]
 }
