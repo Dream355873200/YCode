@@ -1,0 +1,15 @@
+{
+  "id": "blender",
+  "name": "Blender 智能体",
+  "description": "确定性驱动实时 Blender 会话：建模/绑骨/动画/材质/着色器与几何节点/灯光渲染/FBX·glTF·USD 导出，216 个类型化工具、分组撤销、结构化返回（官方 @pobruno/blender-agent MCP，本仓库零重写）。需 Blender 4.2+ 安装并启用 addon/BlenderAgent.zip",
+  "rules": "rules.md",
+  "skills": "skills",
+  "mcpServers": [
+    {
+      "name": "blender",
+      "command": "npx",
+      "args": ["-y", "@pobruno/blender-agent@latest"],
+      "env": { "BLENDER_PORT": "9877" }
+    }
+  ]
+}
