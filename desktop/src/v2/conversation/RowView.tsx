@@ -1,7 +1,7 @@
 // RowView — row → 组件分发。展示层唯一职责：把权威 row 画出来。
 // 工具卡片走渲染器注册表（lib/toolRender.jsx）；
 // 交互卡（审批/确认/提问）直接挂 store 回传。
-import { memo, useEffect, useRef, useState } from 'react';
+import React, { memo, useEffect, useRef, useState } from 'react';
 import {
   Bot, Brain, Check as CheckIco, ChevronRightIcon, CircleAlertIcon, CircleStopIcon,
   CornerDownRightIcon, FileTextIcon, GoalIcon, Loader2 as Loader2Ico, PanelRightIcon, Square as StopIco, X as XIco,
@@ -17,6 +17,31 @@ import { Collapse } from '../components/ui/collapse';
 import { SteerComposer } from './SteerComposer';
 
 // ---------- 工具结果产物（ZCode 式）----------
+
+/** 已落盘截图（本地路径）：经 readFileBase64 懒加载为 data URL 再渲染。 */
+export function FileImage({ path, alt, className, style, onClick }: {
+  path: string; alt?: string; className?: string; style?: React.CSSProperties; onClick?: () => void;
+}) {
+  const [src, setSrc] = React.useState<string | null>(null);
+  React.useEffect(() => {
+    let alive = true;
+    window.amc.fs.readFileBase64(path).then((res) => {
+      if (!alive || !res?.ok || !res.b64) { if (alive) setSrc(''); return; }
+      const b64 = res.b64;
+      const ext = (path.split('.').pop() || 'jpg').toLowerCase();
+      const mime = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : ext === 'gif' ? 'image/gif' : 'image/jpeg';
+      setSrc(`data:${mime};base64,${b64}`);
+    }).catch(() => { if (alive) setSrc(''); });
+    return () => { alive = false; };
+  }, [path]);
+  if (src === null) {
+    return <div className={className} style={style}>截图中…</div>;
+  }
+  if (src === '') {
+    return <div className={className} style={style}>截图文件缺失</div>;
+  }
+  return <img src={src} alt={alt} loading="lazy" decoding="async" className={className} style={style} onClick={onClick} />;
+}
 
 // 图片标记正则的唯一真源在 projection/rows.ts（抽取在 tool_done 数据入口做一次，
 // 存进 ToolRow.image）；此处转出供 Timeline 缩略带等旧引用使用。
@@ -93,7 +118,7 @@ function StatusIco({ running, err }: { running: boolean; err: boolean }) {
 
 // ---------- 工具卡（ToolLayout 骨架 + 注册表分发） ----------
 
-function ToolCard({ row, suppressImages }: { row: Extract<Row, { kind: 'tool' }>; suppressImages?: boolean }) {
+function ToolCard({ row, suppressImages, onViewShot }: { row: Extract<Row, { kind: 'tool' }>; suppressImages?: boolean; onViewShot?: (shots: { id: string; src?: string; file?: string; label: string }[], index: number) => void; }) {
   const [open, setOpen] = useState(false);
   const R = resolveRenderer(row.name);
   const input = typeof row.input === 'string' ? safeJson(row.input) : row.input;
@@ -135,8 +160,19 @@ function ToolCard({ row, suppressImages }: { row: Extract<Row, { kind: 'tool' }>
             onClick={() => setOpen(true)} />
         </div>
       )}
-      {row.image && suppressImages && row.state !== 'running' && (
-        <div className="px-3 pb-2 text-ui-sm text-foreground-subtlest">🖼 截图已捕获（运行结束后在下方统一展示）</div>
+      {row.imageFile && row.state !== 'running' && !suppressImages && (
+        <div className="max-w-full px-3 pb-2">
+          <FileImage path={row.imageFile} alt="截图"
+            className="max-h-64 max-w-full cursor-zoom-in rounded-md border border-border object-contain"
+            onClick={() => setOpen(true)} />
+        </div>
+      )}
+      {suppressImages && row.state !== 'running' && (row.image || row.imageFile) && (
+        <button type="button"
+          onClick={() => onViewShot?.([{ id: row.id, src: row.image, file: row.imageFile, label: row.name }], 0)}
+          className="mb-2 ml-3 rounded-md border border-border px-2 py-0.5 text-left text-ui-sm text-foreground-subtlest transition-colors hover:bg-hover hover:text-foreground">
+          🖼 查看截图（已捕获，点击放大）
+        </button>
       )}
       {/* 产物卡片：检测生成的文档/表格/演示/PDF/网页 */}
       {row.state !== 'running' && row.result && <div className="px-3 pb-2"><ArtifactChips text={row.result} /></div>}
@@ -504,7 +540,7 @@ function GoalTurnDivider({ text }: { text: string }) {
   );
 }
 
-export function RowView({ row, sid, liveThinking, live, suppressImages }: { row: Row; sid: string; liveThinking?: boolean; live?: boolean; suppressImages?: boolean }) {
+export function RowView({ row, sid, liveThinking, live, suppressImages, onViewShot }: { row: Row; sid: string; liveThinking?: boolean; live?: boolean; suppressImages?: boolean; onViewShot?: (shots: { id: string; src?: string; file?: string; label: string }[], index: number) => void; }) {
   switch (row.kind) {
     case 'user':
       if (GOAL_TURN_RE.test(row.text)) return <GoalTurnDivider text={row.text} />;
@@ -520,7 +556,7 @@ export function RowView({ row, sid, liveThinking, live, suppressImages }: { row:
     case 'reasoning':
       return <Reasoning row={row} live={liveThinking} />;
     case 'tool':
-      return row.name.startsWith('Agent_') ? <AgentCard row={row} /> : <ToolCard row={row} suppressImages={suppressImages} />;
+      return row.name.startsWith('Agent_') ? <AgentCard row={row} /> : <ToolCard row={row} suppressImages={suppressImages} onViewShot={onViewShot} />;
     case 'permission':
       return <PermissionCard row={row} sid={sid} />;
     case 'confirm':

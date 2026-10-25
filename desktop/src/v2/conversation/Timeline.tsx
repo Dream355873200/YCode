@@ -19,7 +19,7 @@ function TurnBlock({ unit, sid, live, onView }: {
   sid: string;
   live?: boolean;
   /** 点例图缩略图：打开大图查看器（不展开轮次工作段）。 */
-  onView?: (shots: { id: string; src: string; label: string }[], index: number) => void;
+  onView?: (shots: { id: string; src?: string; file?: string; label: string }[], index: number) => void;
 }) {
   const { work, tail } = unit;
   // 运行中判定取「本单元是最后一轮 && 会话 busy」，不用 runningTools——
@@ -103,7 +103,7 @@ function TurnBlock({ unit, sid, live, onView }: {
           r.kind === 'readgroup' ? (
             <ReadGroup key={r.id} group={r} />
           ) : (
-            <RowView key={r.id} row={r as Row} sid={sid} suppressImages={running}
+            <RowView key={r.id} row={r as Row} sid={sid} suppressImages={running} onViewShot={onView}
               liveThinking={r.kind === 'reasoning' && r.id === bodyRows[bodyRows.length - 1]?.id && running}
               live={running && r.kind === 'assistant_text' && r.id === bodyRows[bodyRows.length - 1]?.id} />
           )
@@ -240,7 +240,7 @@ function fmtDur(sec: number): string {
   return `${Math.floor(sec / 60)} 分 ${sec % 60} 秒`;
 }
 
-type Shot = { id: string; src: string; label: string };
+type Shot = { id: string; src?: string; file?: string; label: string };
 
 /** 大图查看器：全屏遮罩 + 适配大图，左右箭头/方向键在本轮例图间切换，Esc/点背景关闭。 */
 function ImageViewer({ shots, index, onClose }: { shots: Shot[]; index: number; onClose: () => void }) {

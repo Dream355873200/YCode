@@ -13,6 +13,9 @@ export const resetRowIds = (): void => { seq = 0; };
 
 // 工具结果内联截图标记（[IMAGE jpeg <base64>]；不要求闭合 ]——结果可能被截断）。
 // 抽取只在 tool_done 数据入口做一次，渲染层用 row.image，避免运行中反复扫描 MB 级字符串。
+// 已落盘截图文件标记：主进程 IPC 前把 base64 换成本地路径（前端懒加载）。
+export const IMAGE_FILE_RE = /\[IMAGE_FILE ([^\]\n]+)\]/;
+
 export const IMAGE_MARKER_RE = /\[IMAGE (jpeg|png) ([A-Za-z0-9+\/=]{100,})/;
 
 export type ToolRow = Extract<Row, { kind: 'tool' }>;
@@ -63,6 +66,8 @@ export type Row =
   | {
     kind: 'tool'; id: string; toolUseId: string; name: string;
     input?: unknown; state: 'running' | 'ok' | 'err'; result?: string;
+    /** 已落盘截图的本地路径（主进程 IPC 前替换 base64，前端懒加载）。 */
+    imageFile?: string;
     /** 工具结果内联截图（tool_done 时从 [IMAGE ...] 标记抽取一次，渲染层直接用）。 */
     image?: string;
     /** 子 agent 运行过程（subagent_progress 帧按 tool_use_id 归并）。 */
@@ -246,6 +251,7 @@ export function applyFrame(rows: readonly Row[], frame: Envelope): Row[] {
           state: /退出码非零|失败|错误/.test(result) ? 'err' : 'ok',
           result,
           image: m ? `data:image/${m[1]};base64,${m[2]}` : t.image,
+          imageFile: (result.match(/\[IMAGE_FILE ([^\]\n]+)\]/) || [])[1] || t.imageFile,
         };
       }
       break;
