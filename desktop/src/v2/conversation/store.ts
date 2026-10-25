@@ -70,6 +70,10 @@ const liveStreams = new Set<string>();
 /** 后台子 agent 等待轮询（主 agent 空闲 + 有后台子 agent 在跑时启用）。 */
 const waitTimers = new Map<string, ReturnType<typeof setInterval>>();
 const lastActiveSid = { current: '' };
+// SSE 帧缓冲：按会话排队、≤150ms 批量应用（React 18 同任务内多次 patch
+// 合并为一次渲染）——blender 视觉循环等高频事件不再逐帧触发渲染。
+const frameBuf = new Map<string, Envelope[]>();
+const flushTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 /** 草稿回填请求（editQueued → Composer 消费；nonce 保证同文可重复触发）。 */
 let draftRestore: { sid: string; text: string; nonce: number } | null = null;
@@ -180,39 +184,66 @@ export const useConversation = create<ConversationStore>((set, get) => {
     const terminal = evt.type === 'done' || evt.type === 'error' || evt.type === 'interrupted';
     if (terminal) stopResume(sid); // 在 set 外先停轮询（set 更新器内不做副作用）
 
-    // resync：主进程自动续传后仍落后于服务端缓冲（中间帧已丢）——引擎
-    // 历史整体重放，未决提问随后对账补回；resync 本身不投影
-    if (evt.type === 'resync') {
-      void engine.get(`/sessions/${sid}/messages`).then((res) => {
-        if (!Array.isArray(res.body)) return;
-        patch(set, sid, (s) => ({ ...s, rows: historyToRows(res.body as never) }));
-        void reconcilePendingAsk(sid, patch, set);
-      }).catch(() => { /* 引擎暂不可达：下个周期再试 */ });
+    // resync / 终态帧直通（resync 罕见且是整历史替换；终态需要立即收口）
+    if (evt.type === 'resync' || terminal) {
+      flushFrames(sid, evt);
       return;
     }
 
-    // queue_run：队列消费开新轮——弹出队头（drain 严格 FIFO），busy 维持
-    if (evt.type === 'queue_run') {
-      splitters.set(sid, new ThinkTagSplitter()); // 新 run：标签状态复位
-      patch(set, sid, (s) => ({ ...s, queue: s.queue.slice(1), busy: true, runStartedAt: Date.now() }));
+    const q = frameBuf.get(sid) || [];
+    q.push(evt);
+    frameBuf.set(sid, q);
+    if (!flushTimers.has(sid)) {
+      flushTimers.set(sid, setTimeout(() => {
+        flushTimers.delete(sid);
+        flushFrames(sid);
+      }, 150));
     }
+  };
 
-    // text_delta 先过 think 标签拆分；终态帧前冲出残留思考段
-    const frames: Envelope[] = evt.type === 'text_delta'
-      ? splitThinkFrames(sid, evt)
-      : terminal
-        ? [...flushThinkFrames(sid), evt]
-        : [evt];
+  // 批量应用某会话的缓冲帧（可附带一个终态帧，保证顺序在其后）。
+  const flushFrames = (sid: string, terminalEvt?: Envelope): void => {
+    const buffered = frameBuf.get(sid) || [];
+    frameBuf.delete(sid);
+    const frames = terminalEvt ? [...buffered, terminalEvt] : buffered;
 
-    for (const f of frames) {
-      patch(set, sid, (s) => ({
-        ...s,
-        rows: applyFrame(s.rows, f),
-        usage: f.type === 'usage' && f.usage ? f.usage : s.usage,
-        busy: terminal ? false : s.busy,
-        runStartedAt: f.type === 'run_start' || f.type === 'queue_run' ? Date.now() : terminal ? null : s.runStartedAt,
-      }));
-    }
+    const applyOne = (evt: Envelope): void => {
+      // resync：主进程自动续传后仍落后于服务端缓冲（中间帧已丢）——引擎
+      // 历史整体重放，未决提问随后对账补回；resync 本身不投影
+      if (evt.type === 'resync') {
+        void engine.get(`/sessions/${sid}/messages`).then((res) => {
+          if (!Array.isArray(res.body)) return;
+          patch(set, sid, (s) => ({ ...s, rows: historyToRows(res.body as never) }));
+          void reconcilePendingAsk(sid, patch, set);
+        }).catch(() => { /* 引擎暂不可达：下个周期再试 */ });
+        return;
+      }
+
+      // queue_run：队列消费开新轮——弹出队头（drain 严格 FIFO），busy 维持
+      if (evt.type === 'queue_run') {
+        splitters.set(sid, new ThinkTagSplitter()); // 新 run：标签状态复位
+        patch(set, sid, (s) => ({ ...s, queue: s.queue.slice(1), busy: true, runStartedAt: Date.now() }));
+      }
+
+      const terminal = evt.type === 'done' || evt.type === 'error' || evt.type === 'interrupted';
+      // text_delta 先过 think 标签拆分；终态帧前冲出残留思考段
+      const frames: Envelope[] = evt.type === 'text_delta'
+        ? splitThinkFrames(sid, evt)
+        : terminal
+          ? [...flushThinkFrames(sid), evt]
+          : [evt];
+
+      for (const f of frames) {
+        patch(set, sid, (s) => ({
+          ...s,
+          rows: applyFrame(s.rows, f),
+          usage: f.type === 'usage' && f.usage ? f.usage : s.usage,
+          busy: terminal ? false : s.busy,
+          runStartedAt: f.type === 'run_start' || f.type === 'queue_run' ? Date.now() : terminal ? null : s.runStartedAt,
+        }));
+      }
+    };
+    frames.forEach(applyOne);
     syncWait(sid);
   };
 

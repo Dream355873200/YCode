@@ -209,6 +209,30 @@ function maybeHandleFrontendTool(sid, evt) {
     .catch(() => { /* 回传也失败（引擎已断）：结果随 30 分钟超时按失败收口 */ });
 }
 
+// 视觉循环（blender 等）的工具结果内联 base64 截图：IPC 全量克隆会占满
+// 主进程单线程（UI 卡死）。落盘 userData/tool-images/<session>/，标记换成
+// 文件路径，渲染端经 readFileBase64 懒加载。
+const IMG_SAVE_RE = /\[IMAGE (jpeg|png|webp|gif) ([A-Za-z0-9+/=]{200,})\]/g;
+function stripImagesForIpc(sid, evt) {
+  if (!evt || typeof evt.tool_result !== 'string' || !evt.tool_result.includes('[IMAGE ')) return evt;
+  try {
+    const dir = path.join(app.getPath('userData'), 'tool-images', sid);
+    evt.tool_result = evt.tool_result.replace(IMG_SAVE_RE, (m, media, b64) => {
+      try {
+        const hash = require('crypto').createHash('sha1').update(b64).digest('hex').slice(0, 16);
+        const ext = media === 'jpeg' ? 'jpg' : media;
+        const file = path.join(dir, `${hash}.${ext}`);
+        if (!fs.existsSync(file)) {
+          fs.mkdirSync(dir, { recursive: true });
+          fs.writeFileSync(file, Buffer.from(b64, 'base64'));
+        }
+        return `[IMAGE_FILE ${file}]`;
+      } catch { return m; }
+    });
+  } catch { /* 替换失败按原文转发 */ }
+  return evt;
+}
+
 function send(channel, payload) {
   if (state.win && !state.win.isDestroyed()) state.win.webContents.send(channel, payload);
 }
@@ -221,7 +245,7 @@ async function streamChat({ message, sessionId, resumeQueue }) {
       if (evt && evt.session_id) sid = evt.session_id;
       if (first) { send('sse:begin', evt); first = false; }
       maybeHandleFrontendTool(sid, evt);
-      send('sse:event', evt);
+      send('sse:event', stripImagesForIpc(sid, evt));
     }
     send('sse:done', { session_id: sid });
   } catch (e) {
