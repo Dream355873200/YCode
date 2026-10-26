@@ -1,0 +1,74 @@
+{
+  "version": "示例：30 秒产品混剪（中快档，把占位素材换成真实路径即可用）",
+  "timeline": { "width": 1920, "height": 1080, "fps": 30 },
+  "cuts": [
+    {
+      "id": "c1",
+      "source": "assets/open.mp4",
+      "in": 2.0,
+      "out": 5.0,
+      "transition": { "type": "fade", "duration": 0.4 },
+      "reason": "钩子：产品全景逆光剪影，先给悬念不给细节"
+    },
+    {
+      "id": "c2",
+      "source": "assets/detail-a.mp4",
+      "in": 0.5,
+      "out": 1.6,
+      "reason": "快切第一刀：材质细节特写，接住开场悬念"
+    },
+    {
+      "id": "c3",
+      "source": "assets/detail-b.mp4",
+      "in": 1.2,
+      "out": 2.3,
+      "reason": "同景别换角度，与 c2 构成动作接动作"
+    },
+    {
+      "id": "c4",
+      "source": "assets/poster.png",
+      "duration": 2.5,
+      "animation": "ken_burns_in",
+      "transition": { "type": "fade", "duration": 0.5 },
+      "reason": "呼吸段：主视觉海报缓推，旁白第一句落在这一段"
+    },
+    {
+      "id": "c5",
+      "source": "assets/demo.mp4",
+      "in": 8.0,
+      "out": 13.5,
+      "speed": 1.5,
+      "transition": { "type": "fade", "duration": 0.4 },
+      "reason": "主体：完整使用演示，1.5 倍速压进节奏，保留关键操作"
+    },
+    {
+      "id": "c6",
+      "source": "assets/logo.png",
+      "duration": 2.0,
+      "animation": "zoom_slow",
+      "transition": { "type": "fadeblack", "duration": 0.8 },
+      "reason": "收尾：黑场隔开正片，logo 缓推配音乐收束"
+    }
+  ],
+  "overlays": [
+    {
+      "source": "assets/badge.png",
+      "from": 0,
+      "to": 4,
+      "position": "top-right",
+      "scale": 0.15,
+      "opacity": 0.9
+    }
+  ],
+  "audio": {
+    "music": { "source": "assets/bgm.mp3", "volume": 0.45, "fade_in": 1.0, "fade_out": 2.0, "ducking": true },
+    "narration": [
+      { "source": "assets/vo-1.mp3", "at": 6.0 }
+    ],
+    "sfx": [
+      { "source": "assets/whoosh.mp3", "at": 5.2, "volume": 0.8 },
+      { "source": "assets/impact.mp3", "at": 8.2, "volume": 0.9 }
+    ]
+  },
+  "subtitles": { "source": "assets/subs.srt", "font_size": 15, "margin_v": 60, "outline": 2 }
+}

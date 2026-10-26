@@ -1,0 +1,10 @@
+{
+  "id": "video-edit",
+  "name": "剪辑间",
+  "description": "素材混剪管线：摸底素材→定节奏网格→声明式剪辑决策（每刀带理由）→校验→ffmpeg 渲染→渲后终审+防幻灯片评分，产出预览/成片",
+  "rules": "rules.md",
+  "skills": "skills",
+  "mcpServers": [
+    { "name": "edit", "command": "node", "args": ["${PLUGIN_DIR}/mcp/server.js"] }
+  ]
+}
