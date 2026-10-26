@@ -2,7 +2,7 @@
 
 1. 项目结构：项目根一个 `edl.json` + `assets/`（素材）+ `out/`（产物）。新项目先把素材归位 assets/，用 probe_media 逐个摸底（时长/分辨率/有没有声音），不摸底不排刀。
 2. 素材没分析过不得排 EDL：来源或内容不明的素材，先用视频工坊的 analyze_video 做场景切分和关键帧分析（或 probe_media + view_image 逐个看），搞清每段素材里有什么、哪几秒可用，再动手排。
-3. 先定节奏网格再排刀：按片种定每分钟镜头数档位（见 edit-craft 技能），每条 cut 必带 reason——一句话说清这一刀为什么存在（情绪/信息/呼吸/音乐转折）。说不出的镜头删掉。
+3. 先认片种再排刀：广告/混剪/讲解/叙事各有一份片种手册（edit-craft 技能的 references/genres/），先读对应手册拿档位、结构模板和坑；每条 cut 必带 reason——一句话说清这一刀为什么存在（情绪/信息/呼吸/音乐转折）。说不出的镜头删掉。
 4. 排完先 check_edl，全绿才 render_cut。第一次渲染用 quality=draft 看小样，确认节奏再出 final。
 5. 交付前必须跑 cut_review：verdict 是 revise 或 fail 时，按维度原因改 EDL 重排，不是跳过检查。
 6. 渲后终审是强制关：render_cut 返回里有时长偏差/音轨缺失就是失败，修 EDL 重渲，不要把问题成片给用户。
