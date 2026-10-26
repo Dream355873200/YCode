@@ -5351,15 +5351,6 @@
  ],
  "suscymbal": [
   {
-   "file": "suscymbal/susCymb1_cresc_1_5s.flac",
-   "name": "susCymb1_cresc_1.5s",
-   "dur": 9.0,
-   "peak": 0.3922,
-   "rms": 0.030037,
-   "ch": 2,
-   "name_midi": null
-  },
-  {
    "file": "suscymbal/susCymb1_cresc_2s.flac",
    "name": "susCymb1_cresc_2s",
    "dur": 9.0,
@@ -5374,15 +5365,6 @@
    "dur": 9.0,
    "peak": 0.32133,
    "rms": 0.028087,
-   "ch": 2,
-   "name_midi": null
-  },
-  {
-   "file": "suscymbal/susCymb1_cresc_7_5s.flac",
-   "name": "susCymb1_cresc_7.5s",
-   "dur": 9.0,
-   "peak": 0.30734,
-   "rms": 0.031168,
    "ch": 2,
    "name_midi": null
   },
